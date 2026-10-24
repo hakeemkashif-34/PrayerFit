@@ -17,10 +17,13 @@ There are two places where we differ from adhanpy on purpose:
    uses the night after this day. So Fajr is checked against adhanpy's own
    sunrise and sunset times, with our rule applied to them.
 
-Those two checks use times before rounding. The rest compare the rounded times
-that users see.
+All checks use times before rounding. adhanpy rounds to the nearest minute,
+and we round prayer starts up, so the rounded times can be a minute apart even
+when the maths agrees. adhanpy also has a bug at :59 (12:59:45 shows as 12:59,
+not 13:00). Our rounding has its own tests in test_prayer_times_rules.py.
 """
 
+import importlib
 import math
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -52,6 +55,14 @@ ADHAN_METHODS = {
 }
 
 
+@pytest.fixture
+def adhanpy_without_rounding(monkeypatch):
+    """Make adhanpy return its times before rounding, for this test only."""
+    # The module and its class are both called PrayerTimes, so get the module by its full name.
+    module = importlib.import_module("adhanpy.PrayerTimes")
+    monkeypatch.setattr(module, "rounded_minute", lambda moment: moment)
+
+
 def _utc(day, hours):
     return datetime.combine(day, time(), tzinfo=timezone.utc) + timedelta(hours=hours)
 
@@ -79,7 +90,7 @@ def _adhanpy_fajr(place, day, fajr_angle):
 @pytest.mark.parametrize("year", YEARS)
 @pytest.mark.parametrize("method", list(CalculationMethod))
 @pytest.mark.parametrize("place", REFERENCE_CITIES, ids=place_id)
-def test_matches_adhanpy(place, method, year):
+def test_matches_adhanpy(place, method, year, adhanpy_without_rounding):
     params = CalculationParameters(method=ADHAN_METHODS[method])
     # Match our high latitude rule. adhanpy's default is middle of the night everywhere.
     params.high_latitude_rule = (
@@ -102,7 +113,7 @@ def test_matches_adhanpy(place, method, year):
         )
 
         for name in ("sunrise", "dhuhr", "maghrib", "isha"):
-            our_time = getattr(ours, name).time
+            our_time = getattr(ours, name).exact_time
             their_time = getattr(theirs, name)
             if abs(our_time - their_time) > ONE_MINUTE:
                 mismatches.append(f"{day} {name}: ours {our_time}, adhanpy {their_time}")
