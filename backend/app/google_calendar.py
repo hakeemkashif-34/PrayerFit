@@ -1,7 +1,7 @@
 """The only code that talks to the Google Calendar API.
 
-It has exactly 4 calls: create a calendar, look one up, add an event, and
-update an event. There's nothing here that lists or changes the user's other
+It has exactly 5 calls: create a calendar, look one up, change its time
+zone, add an event, and update an event. There's no delete call at all. There's nothing here that lists or changes the user's other
 calendars, so the app can't touch them by mistake. The calendar.app.created
 scope would block it anyway.
 """
@@ -85,6 +85,10 @@ class GoogleCalendar:
 
     def get_calendar(self, calendar_id: str) -> dict:
         return self._request("GET", self._calendar_path(calendar_id))
+
+    def set_calendar_time_zone(self, calendar_id: str, time_zone: str) -> dict:
+        # PATCH only changes the fields sent, so the name stays "Prayers".
+        return self._request("PATCH", self._calendar_path(calendar_id), {"timeZone": time_zone})
 
     def insert_event(self, calendar_id: str, event: dict) -> dict:
         return self._request("POST", f"{self._calendar_path(calendar_id)}/events", event)

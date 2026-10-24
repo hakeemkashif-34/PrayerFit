@@ -24,6 +24,9 @@ def ensure_prayers_calendar(
     2. Saved one still exists in Google: reuse it.
     3. The user deleted it in Google: create a new one, and mark their events
        as pending so they get written to the new calendar.
+
+    If the user's time zone changed (they moved), the calendar's time zone
+    is changed to match.
     """
     # Lock this user's row until the commit, so two requests at the same
     # time can't both decide there's no calendar and create two.
@@ -33,6 +36,9 @@ def ensure_prayers_calendar(
     if saved is not None:
         try:
             calendar.get_calendar(saved.google_calendar_id)
+            if saved.time_zone != time_zone:
+                calendar.set_calendar_time_zone(saved.google_calendar_id, time_zone)
+                saved.time_zone = time_zone
             db.commit()  # releases the lock
             return saved
         except GoogleNotFound:
