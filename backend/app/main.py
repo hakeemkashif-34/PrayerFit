@@ -14,11 +14,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.config import get_app_settings
 from app.db import get_engine
 from app.google_errors import CalendarAccessMissing, ReauthRequired
-from app.routers import auth, prayer_times
+from app.routers import auth, prayer_times, prayers
 
 app = FastAPI(title="Muslim Calendar API")
 app.include_router(prayer_times.router)
 app.include_router(auth.router)
+app.include_router(prayers.router)
 
 
 @app.exception_handler(ReauthRequired)
