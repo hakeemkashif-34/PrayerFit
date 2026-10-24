@@ -1,0 +1,4 @@
+# Everything in requirements.txt, plus tools for testing.
+-r requirements.txt
+pytest==9.1.1
+httpx2==2.16.0  # FastAPI's TestClient needs this
