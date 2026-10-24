@@ -2,7 +2,7 @@
 // Edit opens the same step used in setup. Saving updates the calendar.
 
 import { useState, type ReactNode } from "react";
-import { api, ApiError } from "./api";
+import { api, ApiError, SIGN_IN_URL } from "./api";
 import { asrName, masjidName, methodName, PRAYER_NAMES, PRAYERS, WEEKDAYS } from "./labels";
 import { masjidLabel } from "./Setup";
 import { AddressStep } from "./steps/AddressStep";
@@ -70,6 +70,7 @@ export function SettingsPage({ email, initial, initialCalendar, onSignedOut }: P
               Try again
             </button>
           )}
+          {calendar.status === "sign_in_needed" && <a href={SIGN_IN_URL}>Sign in again</a>}
         </p>
       )}
 

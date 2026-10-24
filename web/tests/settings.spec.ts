@@ -29,6 +29,26 @@ test("editing a setting saves it and says what changed in the calendar", async (
   await expect(page.getByRole("status")).toHaveText("Calendar updated. 3 events sent to Google.");
 });
 
+test("a save that can't reach Google offers Sign in again", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  await api.install(page);
+  await page.route("**/api/settings/methods", (route) =>
+    route.fulfill({
+      json: {
+        settings: finishedSettings(),
+        calendar: { status: "sign_in_needed", sent: 0, waiting: 69, message: "Saved. Sign in again so your calendar can update." },
+      },
+    }),
+  );
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Edit prayer time method" }).click();
+  await page.getByRole("button", { name: "Save" }).click();
+
+  await expect(page.getByRole("status")).toContainText("Saved. Sign in again so your calendar can update.");
+  await expect(page.getByRole("link", { name: "Sign in again" })).toHaveAttribute("href", "/auth/google/login");
+});
+
 test("cancel leaves the setting as it was", async ({ page }) => {
   const api = new MockApi().signedIn(finishedSettings());
   await api.install(page);
