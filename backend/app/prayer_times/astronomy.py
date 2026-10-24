@@ -20,6 +20,10 @@ from datetime import date
 # 34 for air bending the light (refraction), plus 16 for half the sun's width.
 SUNRISE_ALTITUDE = -50 / 60
 
+# time_at_altitude stops searching when it has the time to within this many
+# days (about 0.01 seconds).
+CLOSE_ENOUGH = 1e-7
+
 
 def _sin(degrees: float) -> float:
     return math.sin(math.radians(degrees))
@@ -151,9 +155,9 @@ def altitude(latitude: float, declination: float, hour_angle: float) -> float:
 class SolarDay:
     """The sun's path over one place on one UTC date. Chapter 15.
 
-    The method: guess the time from the sun's position at midnight,
-    then correct the guess once using where the sun really is at that time.
-    One correction is accurate to a few seconds.
+    Solar noon uses the book's method: guess from the sun's position, then
+    correct once. For the other times we search with binary search, explained
+    in time_at_altitude.
     """
 
     def __init__(self, day: date, latitude: float, longitude: float):
@@ -188,6 +192,10 @@ class SolarDay:
         )
         return _wrap_180(sidereal + self.longitude - right_ascension), declination
 
+    def _altitude_at(self, m: float) -> float:
+        hour_angle, declination = self._hour_angle_at(m)
+        return altitude(self.latitude, declination, hour_angle)
+
     def noon(self) -> float:
         """Solar noon (transit): the moment the sun is highest. Hours after midnight UTC."""
         hour_angle, _ = self._hour_angle_at(self._noon_guess)
@@ -204,21 +212,28 @@ class SolarDay:
         Negative altitudes are below the horizon (Fajr and Isha use -15 to -19.5).
         Returns None if the sun never reaches that altitude on this day,
         which happens far north in summer, when it never gets dark enough.
+
+        Binary search: from solar noon to solar midnight the sun only goes down,
+        so the time is somewhere in that half day. Check the middle, keep the
+        half that still has the answer, and repeat. Each step halves the gap,
+        so about 23 steps get from half a day to 0.01 seconds.
+
+        The book's method (guess, then correct) is faster, but on days when the
+        sun only just reaches the target, a correction can be minutes off or even
+        land on the wrong day. Binary search can't do that.
         """
-        declination = self._today.declination
-        cos_hour_angle = (_sin(target) - _sin(self.latitude) * _sin(declination)) / (
-            _cos(self.latitude) * _cos(declination)
-        )
-        if not -1 <= cos_hour_angle <= 1:
+        noon = self.noon() / 24
+        midnight = noon + (0.5 if after_noon else -0.5)
+        # Midnight is the sun's lowest point, so if it's still above the target
+        # there (or still below it at noon), the sun never crosses it today.
+        if self._altitude_at(noon) < target or self._altitude_at(midnight) > target:
             return None
 
-        hour_angle = math.degrees(math.acos(cos_hour_angle))
-        m = self._noon_guess + (hour_angle if after_noon else -hour_angle) / 360
-
-        # Correct the guess using the sun's real position at time m.
-        actual_hour_angle, actual_declination = self._hour_angle_at(m)
-        actual_altitude = altitude(self.latitude, actual_declination, actual_hour_angle)
-        m += (actual_altitude - target) / (
-            360 * _cos(actual_declination) * _cos(self.latitude) * _sin(actual_hour_angle)
-        )
-        return m * 24
+        high, low = noon, midnight  # the sun is above the target at high, below at low
+        while abs(high - low) > CLOSE_ENOUGH:
+            middle = (high + low) / 2
+            if self._altitude_at(middle) > target:
+                high = middle
+            else:
+                low = middle
+        return (high + low) / 2 * 24
