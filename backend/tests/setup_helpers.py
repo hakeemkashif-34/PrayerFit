@@ -6,6 +6,9 @@ questions. test_settings.py goes through the real setup endpoints.
 
 from datetime import UTC, datetime
 
+# Long before any "now" the tests use, so the nightly job counts every night.
+SETUP_FINISHED_AT = datetime(2026, 1, 1, tzinfo=UTC)
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -64,7 +67,7 @@ def save_setup(
                 for prayer in PRAYERS:
                     setattr(day, prayer, prayer in (at_masjid or {}).get(weekday, set()))
         if finished and row.setup_completed_at is None:
-            row.setup_completed_at = datetime.now(UTC)
+            row.setup_completed_at = SETUP_FINISHED_AT
         db.commit()
 
 
