@@ -29,6 +29,7 @@ SEVENTH_OF_THE_NIGHT_FROM = 48
 
 # Above about 65.7 degrees there are days with no sunset (midnight sun) or no
 # sunrise (polar night). 65 degrees still has both every day of the year.
+# Places further north (or south) use the times at 65 degrees every day.
 NEAREST_LATITUDE = 65
 
 
@@ -40,8 +41,8 @@ class HighLatitudeRule(StrEnum):
     # Fajr is never earlier than the last seventh of the night, and Isha never
     # later than the first seventh.
     SEVENTH_OF_THE_NIGHT = "seventh_of_the_night"
-    # The sun doesn't rise or set at all, so use the times at 65 degrees
-    # latitude, the nearest place where it does.
+    # The place is above 65 degrees, so use the times at 65 degrees, the
+    # nearest latitude where the sun rises and sets every day.
     NEAREST_LATITUDE = "nearest_latitude"
 
 
@@ -128,7 +129,7 @@ def _exact_times(
 ) -> dict[str, tuple[datetime, HighLatitudeRule | None]] | None:
     """Unrounded UTC times, each with the high latitude rule used (if any).
 
-    Returns None if the sun doesn't rise or set on this day or the nights
+    Returns None if the sun doesn't rise or set on this day or the days
     around it, because then there's no night to measure.
     """
     yesterday = SolarDay(utc_day - timedelta(days=1), latitude, longitude)
@@ -218,17 +219,24 @@ def calculate_prayer_times(
     shadow_length = SHADOW_LENGTHS[asr_method]
     utc_day = _utc_day_for(on_date, latitude, longitude, zone)
 
-    times = _exact_times(utc_day, latitude, longitude, settings, shadow_length)
-    if times is None:
+    if abs(latitude) <= NEAREST_LATITUDE:
+        times = _exact_times(utc_day, latitude, longitude, settings, shadow_length)
+    else:
+        # Not only on days with no sunrise or sunset. The days next to those have
+        # just minutes of daylight or darkness, so Asr lands on Dhuhr, and the times
+        # would jump by over an hour when switching rules. Using 65 degrees every
+        # day keeps them steady.
         nearest = math.copysign(NEAREST_LATITUDE, latitude)
         times = _exact_times(utc_day, nearest, longitude, settings, shadow_length)
-        if times is None:
-            raise ValueError(f"Couldn't calculate prayer times at latitude {latitude}.")
-        # Dhuhr only depends on longitude, so it didn't change.
-        times = {
-            name: (moment, None if name == "dhuhr" else HighLatitudeRule.NEAREST_LATITUDE)
-            for name, (moment, _) in times.items()
-        }
+        if times is not None:
+            # Dhuhr only depends on longitude, so it didn't change.
+            times = {
+                name: (moment, None if name == "dhuhr" else HighLatitudeRule.NEAREST_LATITUDE)
+                for name, (moment, _) in times.items()
+            }
+    if times is None:
+        # Can't happen at 65 degrees or less, but fail loudly rather than return a wrong time.
+        raise ValueError(f"Couldn't calculate prayer times at latitude {latitude}.")
 
     def build(name: str) -> PrayerTime:
         exact, rule = times[name]
