@@ -200,6 +200,8 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 4. **Dhuhr is 1 minute after solar noon** for every method except Umm al-Qura.
    a) Solar noon is when the centre of the sun crosses the meridian. The sun is about 2 minutes wide, so its back edge crosses about 1 minute later.
    b) These values match the adhan library.
+   c) Example: Ottawa on October 24, 2026. Solar noon is 12:46:57. Plus 1 minute is 12:47:57, which rounds up to **12:48**. Rounding solar noon alone would give 12:47, so the extra minute is on purpose. Since milestone 4, Dhuhr's event description says this, with that day's solar noon.
+   d) Other sites may say 12:46:55 for solar noon. Solar formulas differ by a couple of seconds. That doesn't change the answer.
 5. **Asr methods**: `standard` (Shafi'i, Maliki, Hanbali) uses 1 shadow length. `hanafi` uses 2, so Hanafi Asr is always later.
 6. `StrEnum` makes each choice a string, like `"isna"`. FastAPI uses that to check the URL and to show the choices on `/docs`.
 
@@ -447,7 +449,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 4. **Insert or update**:
    a) Row already sent to this calendar: update (PUT). If Google says 404, insert it again.
    b) Otherwise insert. On 409, update.
-5. **`status: confirmed`** in every update. A user-deleted event stays in Google as "cancelled" with its ID still taken. Updating it with `confirmed` brings it back, so it reappears once, not twice. I couldn't test this against the real Google, so it's in the manual checks.
+5. **`status: confirmed`** in every update. A user-deleted event stays in Google as "cancelled" with its ID still taken. Updating it with `confirmed` brings it back, so it reappears once, not twice. I couldn't test this against the real Google, so it's in the manual checks. (Since milestone 4, unchanged events aren't sent again, so a deleted event only comes back when it changes. See milestone 4, section 6.)
 6. **`extendedProperties.private.appEventId`**: the app's UUID on each Google event. Private properties are only visible to this app. Milestone 6 uses it to match Google events back to rows.
 7. **Partway failures**: a timeout, 429, or 5xx stops the run. Rows sent so far stay `synced`, the rest stay `pending`, and the answer is 503 with `saved` and `waiting` lists. Running again finishes the job.
 8. **Event times**:
@@ -481,3 +483,193 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 3. **Checks I couldn't automate** (they need the real Google):
    a) Delete one prayer in Google Calendar, run `POST /prayers/today` again, and check it comes back exactly once.
    b) Delete the whole Prayers calendar, run it again, and check a new one appears with all 5 prayers.
+
+## Milestone 4: Setup questions and nightly updates
+
+### 1. Where things are
+
+1. **`web/`**: the website, React and TypeScript, built with Vite.
+   a) `src/App.tsx`: picks the screen: sign in, sign in again, setup, or settings.
+   b) `src/api.ts`: every call to the backend, and turning errors into messages.
+   c) `src/Setup.tsx` and `src/steps/`: the 5 setup questions. The settings page reuses the same step components for its Edit buttons.
+   d) `src/SettingsPage.tsx`: each saved setting on a card with an Edit button, and Sign out.
+   e) `nginx.conf` and `Dockerfile`: build the site, then serve it with nginx, which also passes API calls to the backend.
+   f) `tests/`: Playwright tests with a mocked API (`mock-api.ts`).
+2. **`backend/app/geo/`**: finding places.
+   a) `nominatim.py`: address to location.
+   b) `timezones.py`: location to time zone, offline.
+   c) `overpass.py`: masjids near a location.
+   d) `throttle.py`: keeps calls to those free services under 1 per second.
+3. **`backend/app/user_settings.py`**: reads and saves setup answers, and decrypts the address.
+4. **`backend/app/routers/settings.py`**: the setup and settings endpoints.
+5. **`backend/app/calendar_window.py`**: works out the next 14 days of events and sends only the ones that changed.
+6. **`backend/app/nightly.py`** and **`backend/app/worker.py`**: the nightly job and the worker service that runs it.
+7. **`backend/app/http_client.py`**: was `google_http.py`. Renamed because OpenStreetMap calls use it too.
+8. **`backend/alembic/versions/0002_settings_masjids_jobs.py`**: the new tables.
+
+### 2. One site: nginx in front of everything
+
+1. **The problem**: the session cookie is `SameSite=Lax`, and the backend refuses any POST whose `Origin` isn't `APP_ORIGIN`. If the website ran on port 5173 and the API on port 8000, they'd be different origins, and every save would get 403.
+2. **The fix**: nginx serves the website and passes API calls on, all from `http://localhost:8000`.
+   a) `/api/me` goes to the backend as `/me`. The trailing slash in `proxy_pass http://backend:8000/;` strips `/api`.
+   b) `/auth/...` goes to the backend unchanged. That's why the Google redirect URI didn't have to change.
+   c) Anything else gets `index.html`, the website.
+3. The backend isn't published to the host any more. Only nginx is.
+4. Uvicorn runs with `--root-path /api`, so `/api/docs` knows its JSON is at `/api/openapi.json`.
+5. After sign-in, the callback sends the browser to `/` (the website) instead of `/docs`. A failed sign-in goes to `/?sign_in_error=cancelled` (or `expired`, `state`, `google`). Only these fixed codes go in the URL, and the website turns each into its own message, so nobody can make a link that shows their own text on the sign-in page.
+6. Every 401 now has a `reason`: `not_signed_in` shows **Sign in with Google**, and `google_sign_in_expired` shows **Sign in again**, not an error.
+
+### 3. Database
+
+1. **`user_settings`**: one row per user.
+   a) The typed address, the place Nominatim found, and the coordinates are all **encrypted** with the same Fernet key as the Google tokens. Coordinates point to a home just as well as an address does, so they're encrypted too.
+   b) The time zone is plain text. The nightly job needs it to know when 3:00 am is.
+   c) Each answer is empty until its step is saved. `missing_steps` lists what's left.
+2. **`masjids`**: OpenStreetMap masjids (with `osm_type` and `osm_id`) and typed-in ones (with `created_by_user_id`).
+   a) OpenStreetMap masjids are public, so every user can see them. Typed-in ones are only shown to the user who typed them.
+   b) Nothing is made up. A masjid with no name on OpenStreetMap has an empty name and shows as "No name on OpenStreetMap". The address is only what OpenStreetMap's `addr:*` tags say. No times are stored yet.
+   c) OSM IDs are only unique within a type (a node and a way can share a number), so the unique key is `(osm_type, osm_id)`.
+3. **`weekly_masjid_prayers`**: 7 rows per user, one per weekday, each with 5 true/false columns. 0 is Monday, the same as Python's `date.weekday()`.
+4. **`user_jumuah_masjids`**: links a user to each Jumuah masjid. A user can have several, or none.
+5. **`geocode_cache`**, **`overpass_cache`**, **`api_throttle`**: see sections 4 and 5.
+6. **`nightly_jobs`**: see section 7.
+7. **New `prayer_events` columns**: `place` (`home` or `masjid`), `masjid_id`, `summary` (the title), `description`, and `synced_hash`.
+
+### 4. Addresses: Nominatim
+
+1. **Nominatim** is OpenStreetMap's free address search. Its usage policy has rules, and I follow each one:
+   a) **Say who you are**: every request has the User-Agent `MuslimCalendar/0.4 (+mailto:<OSM_CONTACT_EMAIL>)`.
+   b) **At most 1 request per second**, for the whole app (see `throttle.py`, below).
+   c) **Cache results**: each answer is kept for 30 days, and "not found" is cached too.
+   d) **No search-as-you-type**: the website only searches when **Find address** is pressed.
+   e) **Credit OpenStreetMap**: "© OpenStreetMap contributors" with a link, on the address and masjid steps.
+2. **`throttle.py`**: the last call time lives in one Postgres row.
+   a) A caller locks the row (`SELECT ... FOR UPDATE`), waits until 1 second has passed, writes the new time, and commits.
+   b) Anyone else blocks on the lock until then.
+   c) Using Postgres instead of a Python variable means the limit holds across every process.
+3. **Search, then confirm**: `POST /setup/address/search` shows the place and saves nothing. **Yes, that's it** calls `PUT /settings/address` with the same text. That reads the answer from the cache, so the saved location is exactly what the user saw, and the browser never sends coordinates.
+4. **Keeping the address private**:
+   a) It's sent in the request body, never the URL, so it can't show up in access logs.
+   b) httpx2 logs every URL at INFO, and a Nominatim URL contains the address. `http_client.py` sets the `httpx2` and `httpcore2` loggers to WARNING.
+   c) Error messages never include it. A timeout error from httpx can include the URL, so the app shows its own message instead.
+   d) The cache key is an **HMAC** of the address (a hash mixed with the secret key), and the cached answer is encrypted. Without the key, someone can't check a guess like "is 123 Main St in here?"
+   e) `test_address_never_shows_up_in_logs` captures every log line during a full setup and checks the address isn't there. I checked the test works by turning the httpx2 logger back on: it failed.
+
+### 5. Time zone and nearby masjids
+
+1. **Time zone**: `timezonefinder` has the world's time zone borders inside the package, so it works offline and costs nothing. Ottawa gives `America/Toronto`, Regina gives `America/Regina` (no daylight saving).
+2. **Overpass** is OpenStreetMap's free query service. The query asks for every node, way, or relation tagged `amenity=place_of_worship` and `religion=muslim` near a point. `out center` gives a middle point for buildings drawn as shapes.
+3. **Privacy and caching with a grid**:
+   a) The location is rounded to 2 decimal places (about 1 km). Overpass only ever gets that rounded point, never the home.
+   b) The query radius is 17 km around the cell's centre. Any point in a cell is under 0.8 km from the centre, so every home in the cell gets its full 15 km.
+   c) Each cell's results are cached for 7 days. Neighbours in the same cell share one Overpass call.
+   d) The exact distance is worked out on the server from the real location, kept if 15 km or less, and sorted closest first.
+4. **Distance** is the haversine formula: the straight-line distance over the Earth's curve. Ottawa to Toronto comes out at about 352 km, which the tests check. No ratings, just name and distance.
+5. If Overpass is busy (429 or 504), the user sees "OpenStreetMap's masjid search is busy. Try again in a minute."
+
+### 6. The 14-day window
+
+1. **What it does** (`refresh_calendar`):
+   a) Work out each prayer for today plus the next 13 days with the milestone 2 calculator.
+   b) Pick home or masjid for each prayer from the weekly grid.
+   c) Save each event, then send the ones that changed to Google.
+2. **Days, not hours**: the dates are `today + timedelta(days=n)`. Adding days to a date moves the calendar date. On November 1, 2026 (a 25-hour day), adding 24 hours to midnight would land on 11 pm the same day, and a day would repeat. The tests check the window across November 1 and March 8.
+3. **Titles**: `Fajr at home` or `Dhuhr at KMA`.
+   a) The masjid part is the short name if there is one, then the OpenStreetMap name, then "the masjid".
+   b) The short name is per user, so one person's "KMA" doesn't change anyone else's calendar.
+4. **Descriptions**:
+   a) Line 1: where the time came from, like `Calculated (ISNA, standard Asr)`.
+   b) Masjid events add: "Iqamah times not added yet, so this is the calculated prayer time." Iqamah times come in milestone 5. Until then nothing invents one.
+   c) Dhuhr adds why it's after solar noon, with that day's solar noon, like `(12:46:57 pm)`.
+5. **Only send what changed** (`synced_hash`):
+   a) After Google confirms an event, the app saves a SHA-256 hash of exactly what it sent.
+   b) Next time, it builds the event again and hashes it. Same hash means nothing changed, so it isn't sent.
+   c) Ticking Asr on Tuesdays sends 2 events, not 70. Saving the same answer twice sends nothing.
+6. **Leave the past alone**: a row that already started is skipped, even if the settings changed. It's history.
+7. **One update per user at a time**: the website and the nightly job could update the same user at once. `user_lock` takes a Postgres advisory lock (a lock on a number, not a row) for that user.
+   a) It's held on its own connection, because the update commits many times, and a normal transaction lock would end at the first commit.
+8. **Moving**: if the time zone changes, `ensure_prayers_calendar` PATCHes the calendar's `timeZone`. It's the same calendar, not a new one.
+9. **When it runs**:
+   a) **Fill my calendar** fills all 14 days, while the user waits (about 10 to 20 seconds with real Google).
+   b) Each Edit after setup updates the calendar straight away.
+   c) If Google fails partway, the settings are still saved. The website shows "Some prayers haven't reached Google Calendar yet" with **Try again** (`POST /calendar/sync`), and the nightly job retries too.
+10. **A trade-off**: in milestone 3, running `POST /prayers/today` again sent all 5 events every time, which also brought back an event the user deleted in Google. Now unchanged events aren't sent, so a deleted event only comes back when its details change. Noticing edits and deletions made in Google is milestone 6 (two-way sync).
+11. **`POST /prayers/today`** no longer takes a location. It uses the saved settings and answers 409 "Finish setup first" before setup is done.
+
+### 7. The nightly job
+
+1. **Its own service**: `worker` in Docker Compose runs `python -m app.worker`. Same image as the backend, different command. It checks every 60 seconds.
+2. **3:00 am in each user's own time zone**:
+   a) A job is due once the user's local clock reads 3:00 or later.
+   b) Not 2:00 am: on March 8, 2026, Toronto's clocks jump from 2:00 to 3:00, so 2:00 to 2:59 never happens. 3:00 always does in Toronto.
+   c) Comparing the clock reading instead of building a "3:00 am" time also handles places where 3:00 itself is skipped. Helsinki jumps from 3:00 to 4:00, so its job runs at 4:00.
+   d) On November 1, 1:30 am happens twice, and both are still before 3:00.
+3. **Never twice**:
+   a) Each job is saved before it runs, with the ID `nightly:{user_id}:{date}`. Saving it again does nothing (`INSERT ... ON CONFLICT DO NOTHING`).
+   b) A worker claims the job with one `UPDATE ... WHERE status = 'pending'`. Postgres only lets one of two workers change that row, so only one runs it. A test starts 2 workers at the same moment.
+   c) Even a repeat would be safe: fixed event IDs and the hash check mean nothing is duplicated.
+4. **Catching up**: when the worker starts, the first check finds today's job (if it's past 3:00) and runs it.
+   a) Only the newest night runs, because it rolls the whole window forward. Older unfinished jobs are marked `skipped`.
+   b) A night before the user finished setup is never run. Finishing setup already filled the calendar.
+5. **Crashes**: a job still `running` after 15 minutes means its worker died, so it goes back to `pending`.
+6. **Expired sign-in**: the job is marked `needs_sign_in` and the worker moves on to the next user. After the user signs in again, the next check runs it. A test has 3 users where the middle one's sign-in expired.
+7. **Google errors**: the job is `failed` and tries again 15 minutes later, up to 5 times a night.
+8. **One user's bug can't stop everyone**: any other error is caught, logged, and marked `failed`.
+9. **Never deletes**: the Calendar client still has no delete call. Past prayers stay in Google.
+10. **`run-now`**: runs today's job straight away, using the same job IDs. A second run says "Already ran today". `--force` runs it again, which sends 0 events if nothing changed.
+
+### 8. The website
+
+1. **No router library**: the app only has 4 screens, so `App.tsx` keeps a `view` in React state and switches on it.
+2. **Same code for setup and Edit**: each step takes `onSaved`, and optionally `onCancel`. Setup shows the next unanswered step. The settings page shows the step inside the card being edited.
+3. **Short name**: belongs to one masjid, so picking a different masjid clears it. Otherwise "Dhuhr at KMA" would show for Stittsville. Playwright caught this.
+4. **Picking a masjid after "I pray at home"** opens the weekly grid straight away, with no Cancel, since the calendar needs it.
+5. **Phones**: one column, at most 560 px wide, tap targets at least 48 px tall. The weekly grid has one row per day and 5 columns, so it fits on a phone without scrolling sideways.
+6. **Sign out** posts to `/auth/logout` and goes back to the sign-in screen.
+
+### 9. Tests
+
+1. **`tests/fake_osm.py`**: a fake Nominatim and Overpass, like the fake Google. It checks the User-Agent and the query, and answers only with masjids within the query's radius. Any URL it doesn't know fails the test.
+2. **`tests/setup_helpers.py`**:
+   a) `save_setup` writes a finished setup straight into the database, for tests that only care what happens after setup.
+   b) `setup_through_api` answers every question through the real endpoints.
+3. **`test_geo.py`**: Nominatim and its cache, failures with no address in the message, the 1 second spacing, time zones for 5 cities, distances, sorting, the 15 km cut-off, the rounded cell, and the Overpass cache.
+4. **`test_settings.py`**:
+   a) Each answer saves.
+   b) The address is encrypted in the raw database row and never logged.
+   c) The time zone comes from the location.
+   d) A typed-in masjid saves.
+   e) The weekly grid saves all 7 days.
+   f) "I pray at home" skips the grid.
+   g) Everything is scoped to one user. Bob can't see or pick Alice's typed-in masjid.
+5. **`test_calendar_window.py`**:
+   a) 70 events with no duplicates.
+   b) "at home" and "at KMA" titles.
+   c) The iqamah note.
+   d) The Dhuhr line.
+   e) A change only sends the future events that changed.
+   f) Past events stay.
+   g) Google failing partway finishes later without duplicates.
+   h) The next day adds 5 events and deletes nothing.
+6. **`test_window_dst.py`**: the 14-day window across November 1 and March 8. Each day has its 5 prayers, with the right offset, and each event lasts exactly 15 minutes.
+7. **`test_nightly.py`**:
+   a) 3:00 am in each time zone, including both daylight saving days and Helsinki.
+   b) Once per user per day, even when started twice or by 2 workers at once.
+   c) A crashed job reruns.
+   d) A missed night catches up.
+   e) One expired sign-in doesn't stop the others.
+   f) Retries and the 5-attempt limit.
+   g) Fixing times that changed.
+   h) `run-now`.
+8. **Playwright** (`web/tests/`): the sign-in screen, "Sign in again", the full setup flow (address, methods, picking a masjid with a short name, the weekly grid, Jumuah, finish), "I pray at home", a typed-in masjid, editing a setting, Cancel, and Sign out. Each test runs on a desktop and a Pixel 7 sized screen.
+9. **GitHub Actions** runs both: the `backend` job (pytest with Postgres) and the `web` job (type check and Playwright). Neither has any real keys.
+
+### 10. How to check it works
+
+1. **Tests**: `pytest` in `backend` (`414 passed`) and `npx playwright test` in `web` (`28 passed`).
+2. **For real**: follow "Go through setup" in the README with your test Google account. The Prayers calendar should have 70 events.
+3. **Change a setting**: tick one more prayer on one weekday. The message should say 2 events were sent, and only those 2 change in Google Calendar.
+4. **Nightly job**: `docker compose exec worker python -m app.worker run-now --email you@gmail.com`, then again, then with `--force`. Still 70 events.
+5. **Checks I couldn't automate** (they need the real services):
+   a) The masjids near your address on the real Overpass. Some may have no name on OpenStreetMap.
+   b) That nginx starts and passes `/api` and `/auth` through. I checked the Compose file with `docker compose config` and the `--root-path` setup with uvicorn directly, but there was no Docker engine where I built this.
