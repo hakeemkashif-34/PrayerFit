@@ -666,7 +666,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 
 ### 10. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`414 passed`) and `npx playwright test` in `web` (`28 passed`).
+1. **Tests**: `pytest` in `backend` (`416 passed`) and `npx playwright test` in `web` (`30 passed`).
 2. **For real**: follow "Go through setup" in the README with your test Google account. The Prayers calendar should have 70 events.
 3. **Change a setting**: tick one more prayer on one weekday. The message should say 2 events were sent, and only those 2 change in Google Calendar.
 4. **Nightly job**: `docker compose exec worker python -m app.worker run-now --email you@gmail.com`, then again, then with `--force`. Still 70 events.
