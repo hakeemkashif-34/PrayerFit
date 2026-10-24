@@ -26,6 +26,11 @@ class AppSettings:
     session_days: int
 
 
+def _optional(name: str, default: str) -> str:
+    # Docker Compose passes a missing .env value as "", so treat "" as missing.
+    return os.environ.get(name) or default
+
+
 def _required(name: str) -> str:
     value = os.environ.get(name)
     if not value:
@@ -38,9 +43,7 @@ def get_google_settings() -> GoogleSettings:
     return GoogleSettings(
         client_id=_required("GOOGLE_CLIENT_ID"),
         client_secret=_required("GOOGLE_CLIENT_SECRET"),
-        redirect_uri=os.environ.get(
-            "GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback"
-        ),
+        redirect_uri=_optional("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback"),
         token_encryption_key=_required("TOKEN_ENCRYPTION_KEY"),
     )
 
@@ -48,7 +51,7 @@ def get_google_settings() -> GoogleSettings:
 @lru_cache
 def get_app_settings() -> AppSettings:
     return AppSettings(
-        origin=os.environ.get("APP_ORIGIN", "http://localhost:8000").rstrip("/"),
-        cookie_secure=os.environ.get("COOKIE_SECURE", "true").lower() != "false",
-        session_days=int(os.environ.get("SESSION_DAYS", "30")),
+        origin=_optional("APP_ORIGIN", "http://localhost:8000").rstrip("/"),
+        cookie_secure=_optional("COOKIE_SECURE", "true").lower() != "false",
+        session_days=int(_optional("SESSION_DAYS", "30")),
     )
