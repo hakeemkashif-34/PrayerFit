@@ -20,7 +20,9 @@ os.environ["APP_ORIGIN"] = "http://testserver"
 # The test client uses plain http, and won't send Secure cookies over it.
 os.environ["COOKIE_SECURE"] = "false"
 
+from datetime import datetime, time  # noqa: E402
 from urllib.parse import parse_qs, urlparse  # noqa: E402
+from zoneinfo import ZoneInfo  # noqa: E402
 
 import pytest  # noqa: E402
 from alembic import command  # noqa: E402
@@ -28,6 +30,7 @@ from alembic.config import Config  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
+from app.clock import get_now  # noqa: E402
 from app.db import get_engine  # noqa: E402
 from app.google_http import get_google_http  # noqa: E402
 from app.main import app  # noqa: E402
@@ -94,3 +97,15 @@ def sign_in(client: TestClient, fake: FakeGoogle, sub: str = "user-a", email: st
     )
     assert response.status_code == 303, response.text
     return response
+
+
+@pytest.fixture
+def set_today():
+    """Pretend it's noon on a given day in a given time zone."""
+
+    def set_day(day, time_zone="America/Toronto"):
+        moment = datetime.combine(day, time(12), tzinfo=ZoneInfo(time_zone))
+        app.dependency_overrides[get_now] = lambda: moment
+
+    yield set_day
+    app.dependency_overrides.pop(get_now, None)
