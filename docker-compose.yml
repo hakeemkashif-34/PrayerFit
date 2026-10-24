@@ -1,0 +1,36 @@
+# Runs the backend and Postgres together:  docker compose up --build
+# Values come from .env (copy .env.example to .env first).
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      # Keeps the data when the container is removed.
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      # Ready once Postgres accepts connections.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE}
+    ports:
+      - "8000:8000"
+    depends_on:
+      # Wait until Postgres passes its healthcheck, not just until it starts.
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
