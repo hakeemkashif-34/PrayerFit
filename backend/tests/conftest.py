@@ -4,13 +4,29 @@ The db fixture is only used by tests that need Postgres. The prayer time
 tests don't ask for it, so they still run without a database.
 """
 
-import pytest
-from alembic import command
-from alembic.config import Config
-from sqlalchemy import text
+import os
 
-from app.db import get_engine
-from app.models import Base
+from cryptography.fernet import Fernet
+
+# Fake settings, set before the app reads them. These override any real
+# values in the environment, so the tests never use real Google keys.
+os.environ["GOOGLE_CLIENT_ID"] = "test-client-id.apps.googleusercontent.com"
+os.environ["GOOGLE_CLIENT_SECRET"] = "test-client-secret"
+os.environ["GOOGLE_REDIRECT_URI"] = "http://testserver/auth/google/callback"
+# A new key every run, so nothing depends on a key saved somewhere.
+os.environ["TOKEN_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+# TestClient sends requests to http://testserver.
+os.environ["APP_ORIGIN"] = "http://testserver"
+# The test client uses plain http, and won't send Secure cookies over it.
+os.environ["COOKIE_SECURE"] = "false"
+
+import pytest  # noqa: E402
+from alembic import command  # noqa: E402
+from alembic.config import Config  # noqa: E402
+from sqlalchemy import text  # noqa: E402
+
+from app.db import get_engine  # noqa: E402
+from app.models import Base  # noqa: E402
 
 
 @pytest.fixture(scope="session")
