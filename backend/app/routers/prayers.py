@@ -17,7 +17,7 @@ from app.clock import get_now
 from app.db import get_db
 from app.google_calendar import GoogleCalendar
 from app.google_errors import GoogleError, GoogleTemporaryError
-from app.google_http import get_google_http
+from app.http_client import get_http
 from app.models import PrayerEvent, User
 from app.prayer_sync import SyncIncomplete, events_for_day, save_day, send_to_google
 from app.prayer_times import DEFAULT_TIMEZONE, AsrMethod, CalculationMethod, calculate_prayer_times
@@ -121,7 +121,7 @@ def add_today_prayers(
     request: TodayRequest,
     user: Annotated[User, Depends(current_user)],
     db: Annotated[Session, Depends(get_db)],
-    http: Annotated[httpx2.Client, Depends(get_google_http)],
+    http: Annotated[httpx2.Client, Depends(get_http)],
     now: Annotated[datetime, Depends(get_now)],
 ) -> TodayResponse:
     """Add today's 5 prayers to the Prayers calendar. Safe to run again: it updates, never duplicates."""

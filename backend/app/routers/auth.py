@@ -19,7 +19,7 @@ from app.auth.tokens import save_tokens
 from app.config import get_app_settings
 from app.db import get_db
 from app.google_errors import GoogleError
-from app.google_http import get_google_http
+from app.http_client import get_http
 from app.models import GoogleToken, User
 
 router = APIRouter(tags=["sign-in"])
@@ -63,7 +63,7 @@ def _sign_in_failed(message: str) -> JSONResponse:
 def callback(
     request: Request,
     db: Annotated[DbSession, Depends(get_db)],
-    http: Annotated[httpx2.Client, Depends(get_google_http)],
+    http: Annotated[httpx2.Client, Depends(get_http)],
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
