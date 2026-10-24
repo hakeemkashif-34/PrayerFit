@@ -5,9 +5,13 @@ connections to Postgres so each request doesn't have to open a new one.
 """
 
 import os
+from collections.abc import Iterator
 from functools import lru_cache
+from typing import Annotated
 
+from fastapi import Depends
 from sqlalchemy import Engine, create_engine
+from sqlalchemy.orm import Session
 
 
 def database_url() -> str:
@@ -35,3 +39,13 @@ def get_engine() -> Engine:
         pool_pre_ping=True,  # test a pooled connection before using it, in case Postgres restarted
         connect_args={"connect_timeout": 3},  # give up after 3 seconds instead of hanging
     )
+
+
+def get_db(engine: Annotated[Engine, Depends(get_engine)]) -> Iterator[Session]:
+    """Give each request its own database session, closed when the request ends.
+
+    expire_on_commit=False keeps loaded rows usable after a commit. The
+    prayers endpoint commits after every Google call, and still reads the rows.
+    """
+    with Session(engine, expire_on_commit=False) as session:
+        yield session

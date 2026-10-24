@@ -6,16 +6,69 @@ Run locally with:  uvicorn app.main:app --reload
 
 from typing import Annotated
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.config import get_app_settings
 from app.db import get_engine
-from app.routers import prayer_times
+from app.google_errors import CalendarAccessMissing, ReauthRequired
+from app.routers import auth, prayer_times, prayers
 
 app = FastAPI(title="Muslim Calendar API")
 app.include_router(prayer_times.router)
+app.include_router(auth.router)
+app.include_router(prayers.router)
+
+
+@app.exception_handler(ReauthRequired)
+def ask_to_sign_in_again(request: Request, error: ReauthRequired) -> JSONResponse:
+    # A dead refresh token is normal (7 days in Testing mode), not a crash.
+    return JSONResponse(
+        status_code=401,
+        content={
+            "detail": {
+                "message": "Google sign-in expired. Sign in again.",
+                "login_url": "/auth/google/login",
+            }
+        },
+    )
+
+
+@app.exception_handler(CalendarAccessMissing)
+def ask_for_calendar_access(request: Request, error: CalendarAccessMissing) -> JSONResponse:
+    return JSONResponse(
+        status_code=403,
+        content={
+            "detail": {
+                "message": "Sign in again and allow calendar access.",
+                "login_url": "/auth/google/login",
+            }
+        },
+    )
+
+
+# Methods that change something. GET requests must never change data.
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+@app.middleware("http")
+async def check_origin(request: Request, call_next):
+    """Refuse changes that come from another website.
+
+    Browsers always send an Origin header with a POST, saying which site
+    the page was on. If it isn't this app, a page elsewhere is trying to
+    use the user's cookie, so the request is refused. This backs up the
+    SameSite=Lax cookie. A missing Origin is refused too.
+    """
+    if request.method in UNSAFE_METHODS:
+        if request.headers.get("origin") != get_app_settings().origin:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Request came from another site, so it was refused."},
+            )
+    return await call_next(request)
 
 
 @app.get("/health")

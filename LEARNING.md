@@ -325,3 +325,159 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    f) http://localhost:8000/docs shows the endpoint with every choice in a dropdown.
 
 3. **GitHub Actions**: the PR's "Tests" check runs all 235 tests.
+
+---
+
+## Milestone 3: Google Calendar
+
+### 1. Where things are
+
+1. **`backend/app/config.py`**: reads the Google keys and app settings from the environment. Google keys are only read when a Google endpoint runs, so `/health` works without them.
+2. **`backend/app/models.py`**: the database tables (users, sessions, Google tokens, Prayers calendars, prayer events).
+3. **`backend/alembic/`** and **`alembic.ini`**: migrations, the history of changes to the tables.
+4. **`backend/app/auth/`**: sign-in.
+   a) `google_oauth.py`: PKCE, the Google sign-in URL, swapping the code for tokens, refreshing, and reading the ID token.
+   b) `crypto.py`: encrypts tokens before they're saved.
+   c) `tokens.py`: saves tokens and hands out a working access token, refreshing it when needed.
+   d) `sessions.py`: the session cookie and the `current_user` dependency.
+5. **`backend/app/routers/auth.py`**: `/auth/google/login`, `/auth/google/callback`, `/auth/logout`, `/me`.
+6. **`backend/app/google_calendar.py`**: the only code that talks to the Calendar API. 4 calls, nothing else.
+7. **`backend/app/prayers_calendar.py`**: finds, reuses, or recreates the "Prayers" calendar.
+8. **`backend/app/prayer_sync.py`**: turns prayer times into events, saves them, and sends them to Google without duplicates.
+9. **`backend/app/routers/prayers.py`**: `POST /prayers/today` and `GET /prayers/today/events`.
+10. **`backend/app/google_errors.py`**: one error type per kind of Google problem.
+11. **`backend/app/google_http.py`** and **`backend/app/clock.py`**: the HTTP client and the current time, as dependencies, so tests can swap them.
+
+### 2. Database and migrations
+
+1. **SQLAlchemy models** describe each table as a Python class. `Mapped[str]` means a column that can't be empty. `Mapped[str | None]` means it can be.
+2. **Every table has `user_id`** (except `users`). Every query filters on it. That's how one user can never see another's data.
+3. **Alembic** keeps a numbered list of changes to the tables. `alembic upgrade head` applies any that haven't run yet, and records which ran in a table called `alembic_version`.
+4. I made the first migration with `alembic revision --autogenerate`, which compares the models with the empty database and writes the `create_table` calls. Then I read it and tidied it.
+5. `alembic/env.py` reads `DATABASE_URL` through `app/db.py`, so no password is in `alembic.ini`.
+6. Docker runs `alembic upgrade head` before starting the server. The tests run the same migrations once, in `conftest.py`.
+7. `test_migrations.py` checks the models and the migrations match. If someone changes a model and forgets a migration, it fails.
+8. `get_db` in `app/db.py` gives each request its own database session and closes it after.
+9. `expire_on_commit=False`: by default SQLAlchemy forgets every loaded value after a commit and reloads it on the next read. The prayers endpoint commits after each Google call and keeps using the rows, so I turned that off.
+
+### 3. Signing in with Google (OAuth)
+
+1. **The flow** (authorization code flow), all on the server:
+   a) `/auth/google/login` sends the browser to Google with a random `state` and a PKCE `code_challenge`.
+   b) The user picks an account and clicks Allow.
+   c) Google sends the browser to `/auth/google/callback?code=...&state=...`.
+   d) The server checks the state, then sends the code and the PKCE `code_verifier` to Google's token endpoint, and gets tokens back.
+   e) The browser never sees a Google token. It only gets a session cookie.
+
+2. **State** stops login CSRF. Without it, someone could send me a link that finishes *their* sign-in in *my* browser, and my prayers would go into their calendar. The state is random, stored in a cookie tied to my browser, and has to match what comes back.
+
+3. **PKCE** (Proof Key for Code Exchange, said "pixie")
+   a) The server makes a random `code_verifier` and sends Google only its SHA-256 hash, the `code_challenge`.
+   b) When swapping the code for tokens, the server sends the verifier. Google hashes it and checks it matches.
+   c) Why: if someone steals the code from the redirect (a browser extension, a log), they can't use it without the verifier, which never left the server.
+   d) `S256` means the challenge is a SHA-256 hash, not the verifier itself.
+
+4. **The `oauth_flow` cookie** holds the state and verifier between the two requests.
+   a) Encrypted with the same Fernet key as the tokens, so the browser can't read or change it.
+   b) `Max-Age=600` and Fernet's own time check: the sign-in has to finish within 10 minutes.
+   c) `Path=/auth/google`, so it's only sent to the sign-in endpoints.
+   d) Deleted on every callback answer, success or failure, so each sign-in flow works once.
+   e) I used a cookie instead of a table because it's tied to the browser and needs no cleanup.
+
+5. **Scopes**: `openid` and `email` say who I am. `calendar.app.created` lets the app create its own calendars and manage events on them only. It can't read or change any other calendar. No Gmail, no full calendar access.
+
+6. **`access_type=offline`** asks for a refresh token. **`prompt=consent`** shows the consent screen every time, because Google only sends a refresh token when consent is shown.
+
+7. **Unticked calendar box**: Google lets users untick a scope. The callback saves which scopes came back. Without the calendar one, `/me` shows `"calendar_access": false` and `POST /prayers/today` answers 403 "Sign in again and allow calendar access."
+
+8. **The ID token** is a JWT (3 base64 parts joined by dots) that says who signed in.
+   a) I read `sub` (Google's permanent user ID) and `email`. Users are matched by `sub`, since emails can change.
+   b) I check the issuer is Google, the audience is my client ID, and it hasn't expired.
+   c) I skip the signature check. The OpenID Connect spec (section 3.1.3.7) allows that when the token came straight from Google's token endpoint over HTTPS in the server's own request.
+
+### 4. Tokens
+
+1. **Access token**: lasts about 1 hour. Sent with every Calendar API call.
+2. **Refresh token**: used to get a new access token. In Testing mode Google expires it after 7 days.
+3. **Encryption** (`crypto.py`): Fernet, from the `cryptography` package. AES encryption plus a signature.
+   a) A copy of the database without `TOKEN_ENCRYPTION_KEY` from `.env` is useless.
+   b) The signature means a changed value fails to decrypt instead of becoming garbage.
+   c) Each encryption adds a random IV, so the same token encrypts differently every time.
+   d) If the key is lost or changed, nobody's tokens decrypt and everyone has to sign in again.
+4. **Refreshing** (`get_access_token` in `tokens.py`):
+   a) If the saved access token has more than 60 seconds left, use it. The margin stops it expiring mid-request.
+   b) Otherwise refresh with Google and save the new one.
+   c) If Google answers `invalid_grant`, the refresh token is dead. The app sets `needs_reauth`, and the API answers 401 with `"Google sign-in expired. Sign in again."` and `login_url`. No crash.
+   d) If the Calendar API rejects a token we thought was fine (401), the client refreshes once and tries once more.
+   e) Signing in again saves new tokens and clears `needs_reauth`.
+
+### 5. Sessions and cross-site protection
+
+1. **Session cookie**: `secrets.token_urlsafe(32)`, 256 random bits.
+2. **Only the hash is saved**: the `sessions` table has the SHA-256 of the cookie. Someone who reads the database can't sign in with it. SHA-256 without a salt is fine here because the value is random and long, unlike a password.
+3. **HttpOnly**: JavaScript can't read the cookie, so a script injected into the page can't steal it.
+4. **Secure**: only sent over HTTPS. Browsers treat `http://localhost` as secure, so it works locally. The tests turn it off because the test client uses plain http.
+5. **SameSite=Lax**: the browser doesn't send the cookie on POSTs from other sites, but does send it when following a normal link (like Google's redirect back). Strict would drop it on that redirect.
+6. **Origin check** (middleware in `main.py`): every POST, PUT, PATCH, and DELETE must have `Origin` equal to `APP_ORIGIN`, or it gets 403. Browsers always send `Origin` with a POST, and a page can't fake it. This is a second guard next to SameSite. A missing Origin is refused too.
+7. **Sign-out** (`POST /auth/logout`) deletes the session row, so even a copied cookie stops working.
+8. **`current_user`** is a dependency every user endpoint uses. It hashes the cookie, finds an unexpired session, and returns the user, or 401.
+
+### 6. The Prayers calendar
+
+1. `ensure_prayers_calendar` in `prayers_calendar.py`:
+   a) No saved calendar: create "Prayers" in the request's time zone and save its ID.
+   b) Saved one exists in Google: reuse it.
+   c) Google says 404 or 410 (the user deleted it): create a new one, save the new ID, and mark the old events as pending so they go to the new one.
+2. It locks the user's row (`SELECT ... FOR UPDATE`) until it commits, so two requests at the same moment can't both create a calendar.
+3. If the database is wiped, the app can't find the old calendar and makes a second "Prayers". I accepted that instead of asking for more access.
+4. `google_calendar.py` only has 4 calls: create a calendar, get a calendar, insert an event, update an event. There's no code that could touch another calendar.
+
+### 7. Today's prayers without duplicates
+
+1. **Steps in `POST /prayers/today`**:
+   a) Work out "today" in the location's time zone.
+   b) Calculate with the milestone 2 calculator. Sunrise is skipped, it's not a prayer.
+   c) Save 5 rows in `prayer_events`, all `pending`, and commit. Nothing has gone to Google yet.
+   d) Make sure the access token works, then find or create the Prayers calendar.
+   e) Send each row to Google. After each one, mark it `synced` and commit.
+2. **One row per prayer per day**: the table is unique on `(user_id, local_date, prayer)`. Saving uses `INSERT ... ON CONFLICT DO UPDATE`, so a second run updates the same row, even if two requests run at once.
+3. **The row's UUID is the Google event ID**. Google lets apps choose event IDs, using the characters 0-9 and a-v. A UUID in hex (0-9, a-f) fits.
+   a) Google refuses a second event with the same ID (409 Conflict).
+   b) So if a request times out but Google actually saved the event, the retry gets 409, and the app updates the event instead. No copy.
+4. **Insert or update**:
+   a) Row already sent to this calendar: update (PUT). If Google says 404, insert it again.
+   b) Otherwise insert. On 409, update.
+5. **`status: confirmed`** in every update. A user-deleted event stays in Google as "cancelled" with its ID still taken. Updating it with `confirmed` brings it back, so it reappears once, not twice. I couldn't test this against the real Google, so it's in the manual checks.
+6. **`extendedProperties.private.appEventId`**: the app's UUID on each Google event. Private properties are only visible to this app. Milestone 6 uses it to match Google events back to rows.
+7. **Partway failures**: a timeout, 429, or 5xx stops the run. Rows sent so far stay `synced`, the rest stay `pending`, and the answer is 503 with `saved` and `waiting` lists. Running again finishes the job.
+8. **Event times**:
+   a) Start is the rounded prayer time from the calculator.
+   b) End is start plus 15 minutes, added in UTC and converted back. Adding in local time could be off by an hour if a clock change fell inside.
+   c) Sent to Google as `dateTime` with the offset plus `timeZone`, like `2026-11-01T17:01:00-05:00` and `America/Toronto`.
+9. **Description**: where the time came from, like `Calculated (ISNA, standard Asr)`. When a high latitude rule was used, it's added: `Calculated (ISNA, standard Asr, seventh of the night rule)`.
+
+### 8. Tests
+
+1. **`tests/fake_google.py`**: a fake Google that answers the token endpoint and the Calendar API.
+   a) It plugs into the app through `httpx2.MockTransport`, so the app's real code runs and only the network is replaced.
+   b) It keeps calendars and events in memory and records every request, including whose token was used.
+   c) It checks PKCE for real: the verifier has to hash to the challenge.
+   d) It can time out, rate limit, fail with 500, "save the event but lose the answer", expire tokens, kill refresh tokens, and delete calendars or events.
+   e) Any URL it doesn't know fails the test, so no test can reach the real Google.
+2. **`tests/conftest.py`**: fake settings (a new Fernet key each run), the migrations, emptying tables before each test, the fake Google, the clock, and a `sign_in` helper.
+3. **`test_auth.py`**: PKCE and S256, only the 3 scopes, wrong or missing state rejected, a flow can't be used twice, HttpOnly cookie with only its hash saved, sign-out, Origin check.
+4. **`test_tokens.py`**: tokens stored encrypted, no token ever in a response, expired token refreshed, dead refresh token gives `needs_reauth`.
+5. **`test_google_calendar.py`**: each Google error code turns into the right error, timeouts are temporary, 401 refreshes once.
+6. **`test_today_prayers.py`**: 5 events with the right times, 15 minutes, descriptions, and `appEventId`. Running twice gives 5. Failing on the 3rd event (timeout, 429, 500, 503, lost answer) leaves no duplicates and a rerun finishes. Only the Prayers calendar is ever written. A deleted event comes back once.
+7. **`test_prayers_calendar.py`**: created once and reused, recreated after deletion with all 5 prayers.
+8. **`test_user_isolation.py`**: two users with two cookies. Neither sees the other's events, and Bob's run only uses Bob's token and calendar.
+9. **`test_today_prayers_dst.py`**: Toronto on March 7 and 8 and October 31 and November 1, 2026. Every event has the right offset and lasts exactly 15 minutes.
+10. **`pytest -m "not database"`** runs only the tests that don't need Postgres. `conftest.py` marks the others automatically.
+
+### 9. How to check it works
+
+1. **Tests**: `pytest` in `backend` with Postgres running. You should see `311 passed`. GitHub Actions runs the same tests with no Google keys.
+2. **For real**: follow "Google Calendar" in the README to set up Google Cloud, fill in `.env`, sign in, and run `POST /prayers/today` from `/docs`.
+3. **Checks I couldn't automate** (they need the real Google):
+   a) Delete one prayer in Google Calendar, run `POST /prayers/today` again, and check it comes back exactly once.
+   b) Delete the whole Prayers calendar, run it again, and check a new one appears with all 5 prayers.
