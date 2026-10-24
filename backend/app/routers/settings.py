@@ -29,6 +29,7 @@ from app.prayer_sync import SyncIncomplete
 from app.prayer_times import AsrMethod, CalculationMethod
 from app.user_settings import (
     PRAYERS,
+    find_settings,
     get_settings,
     jumuah_masjids,
     missing_steps,
@@ -118,7 +119,7 @@ def _masjid_out(masjid: Masjid, distance: float | None = None) -> MasjidOut:
 
 
 def settings_out(db: Session, user_id: uuid.UUID) -> SettingsOut:
-    row = get_settings(db, user_id)
+    row = find_settings(db, user_id)
     main = db.get(Masjid, row.main_masjid_id) if row.main_masjid_id else None
     missing = missing_steps(db, row)
     return SettingsOut(
@@ -156,7 +157,9 @@ def update_calendar(db: Session, http: httpx2.Client, user_id: uuid.UUID, now: d
     try:
         result = refresh_calendar(db, http, user_id, now)
     except SetupIncomplete:
-        return CalendarUpdate(status="not_set_up", message="Finish setup first.")
+        return CalendarUpdate(
+            status="not_set_up", message="Saved. Answer the question below so your calendar can update."
+        )
     except (ReauthRequired, CalendarAccessMissing):
         return CalendarUpdate(
             status="sign_in_needed",
@@ -194,9 +197,7 @@ def _saved(db: Session, http: httpx2.Client, user: User, now: datetime) -> SaveR
 @router.get("/settings", response_model=SettingsOut)
 def read_settings(user: UserDep, db: DbDep) -> SettingsOut:
     """Your saved setup answers. Only ever your own."""
-    out = settings_out(db, user.id)
-    db.commit()  # keeps the empty row made on the first visit
-    return out
+    return settings_out(db, user.id)
 
 
 # ---- Step 1: address ----
@@ -289,7 +290,7 @@ class NearbyResponse(BaseModel):
 
 @router.get("/masjids/nearby", response_model=NearbyResponse)
 def list_nearby_masjids(user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> NearbyResponse:
-    location = read_location(get_settings(db, user.id))
+    location = read_location(find_settings(db, user.id))
     if location is None:
         raise HTTPException(status_code=409, detail={"message": "Save your address first."})
     nearby = nearby_masjids(db, http, *location, now)

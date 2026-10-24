@@ -30,6 +30,13 @@ def get_settings(db: Session, user_id: uuid.UUID) -> UserSettings:
     return row
 
 
+def find_settings(db: Session, user_id: uuid.UUID) -> UserSettings:
+    """This user's settings, or an unsaved empty row. For reading only:
+    GET requests must never change data."""
+    row = db.scalars(select(UserSettings).where(UserSettings.user_id == user_id)).first()
+    return row if row is not None else UserSettings(user_id=user_id, jumuah_saved=False)
+
+
 def save_location(row: UserSettings, address: str, found: FoundPlace, time_zone: str) -> None:
     row.address_encrypted = encrypt(address)
     row.place_name_encrypted = encrypt(found.place_name)

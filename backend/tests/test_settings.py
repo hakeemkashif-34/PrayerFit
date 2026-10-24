@@ -393,6 +393,12 @@ def test_settings_belong_to_one_user(fake_google, osm, set_today, db):
         assert len(session.scalars(select(UserJumuahMasjid)).all()) == 2  # only Alice's
 
 
+def test_reading_settings_saves_nothing(signed_in, db):
+    signed_in.get("/settings")
+    with DbSession(db) as session:
+        assert session.scalars(select(UserSettings)).all() == []
+
+
 def test_settings_need_sign_in(client):
     assert client.get("/settings").status_code == 401
     assert client.put("/settings/methods", json={}).status_code == 401
