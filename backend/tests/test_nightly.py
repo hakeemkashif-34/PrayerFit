@@ -234,6 +234,18 @@ def test_signing_in_again_runs_the_skipped_job(fake_google, db, http):
     assert len(live_events(fake_google, "bob")) == 70
 
 
+def test_missing_calendar_access_isnt_retried_every_minute(fake_google, db, http):
+    with new_client() as browser:
+        sign_in(browser, fake_google, sub="alice", email="alice@example.com",
+                scopes="openid https://www.googleapis.com/auth/userinfo.email")
+    save_setup(db, sub="alice")
+    now = at(date(2026, 10, 24), 3, 0)
+
+    assert [r.status for r in run_due_jobs(db, http, now)] == ["needs_sign_in"]
+    assert run_due_jobs(db, http, now + timedelta(minutes=1)) == []
+    assert jobs(db)[0].attempts == 1
+
+
 def test_google_errors_are_retried_later(fake_google, db, http):
     add_user(fake_google, db, "alice")
     fake_google.fail_event_write = {5: 503}

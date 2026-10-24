@@ -21,7 +21,7 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx2
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -97,7 +97,9 @@ def _finish(db: Session, job_id_: str, status: str, now: datetime, sent: int = 0
     job = db.get(NightlyJob, job_id_, populate_existing=True)
     job.status = status
     job.events_sent = sent
-    job.finished_at = now
+    # The database's clock, the same one GoogleToken.updated_at uses, so
+    # "signed in again since this finished" compares like with like.
+    job.finished_at = func.now()
     job.error = error
     job.retry_at = now + RETRY_AFTER if status == "failed" and job.attempts < MAX_ATTEMPTS else None
     db.commit()
@@ -157,11 +159,20 @@ def _make_retries_pending(db: Session, now: datetime) -> None:
         )
         .values(status="pending")
     )
-    # The user has signed in again since their job was skipped.
-    signed_back_in = select(GoogleToken.user_id).where(GoogleToken.needs_reauth.is_(False))
+    # The user has signed in again since their job was skipped. Checking
+    # updated_at means a job isn't retried every minute for nothing.
+    signed_back_in = (
+        select(GoogleToken.id)
+        .where(
+            GoogleToken.user_id == NightlyJob.user_id,
+            GoogleToken.needs_reauth.is_(False),
+            GoogleToken.updated_at > NightlyJob.finished_at,
+        )
+        .exists()
+    )
     db.execute(
         update(NightlyJob)
-        .where(NightlyJob.status == "needs_sign_in", NightlyJob.user_id.in_(signed_back_in))
+        .where(NightlyJob.status == "needs_sign_in", signed_back_in)
         .values(status="pending")
     )
     db.commit()
