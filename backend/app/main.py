@@ -13,11 +13,40 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import get_app_settings
 from app.db import get_engine
+from app.google_errors import CalendarAccessMissing, ReauthRequired
 from app.routers import auth, prayer_times
 
 app = FastAPI(title="Muslim Calendar API")
 app.include_router(prayer_times.router)
 app.include_router(auth.router)
+
+
+@app.exception_handler(ReauthRequired)
+def ask_to_sign_in_again(request: Request, error: ReauthRequired) -> JSONResponse:
+    # A dead refresh token is normal (7 days in Testing mode), not a crash.
+    return JSONResponse(
+        status_code=401,
+        content={
+            "detail": {
+                "message": "Google sign-in expired. Sign in again.",
+                "login_url": "/auth/google/login",
+            }
+        },
+    )
+
+
+@app.exception_handler(CalendarAccessMissing)
+def ask_for_calendar_access(request: Request, error: CalendarAccessMissing) -> JSONResponse:
+    return JSONResponse(
+        status_code=403,
+        content={
+            "detail": {
+                "message": "Sign in again and allow calendar access.",
+                "login_url": "/auth/google/login",
+            }
+        },
+    )
+
 
 # Methods that change something. GET requests must never change data.
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
