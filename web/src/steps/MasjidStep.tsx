@@ -44,8 +44,16 @@ export function MasjidStep({ settings, onSaved, onCancel }: Props) {
     }
   }
 
+  // A short name belongs to one masjid, so picking another one clears it.
+  function pick(value: string) {
+    setChoice(value);
+    setShortName(value === settings.main_masjid?.id ? (settings.main_masjid_short_name ?? "") : "");
+  }
+
   const options = [...(nearby?.masjids ?? []), ...(nearby?.typed_by_you ?? [])];
   const atAMasjid = choice !== "" && choice !== HOME;
+  const picked = options.find((m) => m.id === choice);
+  const fullName = choice === CUSTOM ? customName.trim() || "your masjid" : picked ? masjidName(picked) : "your masjid";
 
   return (
     <form onSubmit={save} aria-labelledby="masjid-title">
@@ -65,7 +73,7 @@ export function MasjidStep({ settings, onSaved, onCancel }: Props) {
           {nearby.masjids.length === 0 && <p className="hint">No masjids found on OpenStreetMap near you.</p>}
           {options.map((m) => (
             <label key={m.id} className="choice">
-              <input type="radio" name="masjid" value={m.id} checked={choice === m.id} onChange={() => setChoice(m.id)} />
+              <input type="radio" name="masjid" value={m.id} checked={choice === m.id} onChange={() => pick(m.id)} />
               <span>
                 <strong>{masjidName(m)}</strong>
                 <small>
@@ -77,7 +85,7 @@ export function MasjidStep({ settings, onSaved, onCancel }: Props) {
             </label>
           ))}
           <label className="choice">
-            <input type="radio" name="masjid" value={CUSTOM} checked={choice === CUSTOM} onChange={() => setChoice(CUSTOM)} />
+            <input type="radio" name="masjid" value={CUSTOM} checked={choice === CUSTOM} onChange={() => pick(CUSTOM)} />
             <span>
               <strong>My masjid isn't listed</strong>
             </span>
@@ -91,7 +99,7 @@ export function MasjidStep({ settings, onSaved, onCancel }: Props) {
             </div>
           )}
           <label className="choice">
-            <input type="radio" name="masjid" value={HOME} checked={choice === HOME} onChange={() => setChoice(HOME)} />
+            <input type="radio" name="masjid" value={HOME} checked={choice === HOME} onChange={() => pick(HOME)} />
             <span>
               <strong>I pray at home</strong>
             </span>
@@ -108,7 +116,7 @@ export function MasjidStep({ settings, onSaved, onCancel }: Props) {
             placeholder="KMA"
             maxLength={40}
           />
-          <p className="hint">Events will say "Dhuhr at {shortName.trim() || "the masjid's name"}".</p>
+          <p className="hint">Events will say "Dhuhr at {shortName.trim() || fullName}".</p>
         </div>
       )}
       {error && (
