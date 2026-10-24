@@ -69,3 +69,14 @@ University jama'ah hub: from Muslim_Calendar_App.md.
 Full product description
 See Muslim_Calendar_App.md for the problems, features, and stretch goals.
 
+## Writing style
+
+PR titles and descriptions, commit messages, code comments, README, and LEARNING.md all follow this:
+
+1. Write PR descriptions, README, and LEARNING.md in first person, as me. "I added a database check to /health," not "This PR introduces a database check."
+2. Commit messages are one short line in the standard style, like "Add database check to /health."
+3. Code comments are short and explain why, not what.
+4. Use plain, simple English, the way a second-year student would explain it. Short sentences.
+5. Use specific details: the file name, the number, the exact error.
+6. No em dashes, no emojis, and no filler words like "ensures," "robust," "seamless," "comprehensive," or "leverage."
+7. Use Canadian spelling.
