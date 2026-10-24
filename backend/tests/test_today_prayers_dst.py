@@ -11,6 +11,7 @@ import pytest
 
 from app.prayer_times import calculate_prayer_times
 from tests.conftest import sign_in
+from tests.setup_helpers import save_setup
 
 TORONTO = {"latitude": 43.6532, "longitude": -79.3832, "timezone": "America/Toronto"}
 
@@ -24,11 +25,12 @@ TORONTO = {"latitude": 43.6532, "longitude": -79.3832, "timezone": "America/Toro
         (date(2026, 11, 1), "-05:00"),  # fall back
     ],
 )
-def test_event_times_on_daylight_saving_days(client, fake_google, set_today, day, offset):
+def test_event_times_on_daylight_saving_days(client, fake_google, set_today, db, day, offset):
     sign_in(client, fake_google)
+    save_setup(db, location=(TORONTO["latitude"], TORONTO["longitude"]))
     set_today(day)
 
-    response = client.post("/prayers/today", json=TORONTO)
+    response = client.post("/prayers/today")
 
     assert response.status_code == 200
     expected = calculate_prayer_times(TORONTO["latitude"], TORONTO["longitude"], day, TORONTO["timezone"])
@@ -45,13 +47,14 @@ def test_event_times_on_daylight_saving_days(client, fake_google, set_today, day
         assert end - start == timedelta(minutes=15)
 
 
-def test_spring_forward_dhuhr_is_an_hour_later_on_the_clock(client, fake_google, set_today):
+def test_spring_forward_dhuhr_is_an_hour_later_on_the_clock(client, fake_google, set_today, db):
     """Solar noon barely moves in a day, so Dhuhr's clock time should jump by about 1 hour."""
     sign_in(client, fake_google)
+    save_setup(db, location=(TORONTO["latitude"], TORONTO["longitude"]))
     times = {}
     for day in (date(2026, 3, 7), date(2026, 3, 8)):
         set_today(day)
-        dhuhr = client.post("/prayers/today", json=TORONTO).json()["events"][1]
+        dhuhr = client.post("/prayers/today").json()["events"][1]
         times[day] = datetime.fromisoformat(dhuhr["starts_at"])
 
     clock_difference = (
