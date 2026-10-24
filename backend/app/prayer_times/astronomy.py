@@ -219,8 +219,8 @@ class SolarDay:
         so about 23 steps get from half a day to 0.01 seconds.
 
         The book's method (guess, then correct) is faster, but on days when the
-        sun only just reaches the target, a correction can be minutes off or even
-        land on the wrong day. Binary search can't do that.
+        sun only just reaches the target, one correction can be minutes off, and
+        repeating it can jump to the wrong day. Binary search can't do either.
         """
         noon = self.noon() / 24
         midnight = noon + (0.5 if after_noon else -0.5)

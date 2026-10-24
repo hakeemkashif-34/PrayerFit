@@ -9,7 +9,7 @@ There are two places where we differ from adhanpy on purpose:
 1. Asr. Asr starts when a shadow is its noon length plus 1 (or 2) object lengths.
    adhanpy works out the noon shadow from where the sun is at midnight UTC, not
    at noon. At Edmonton that moves Asr by up to 2 minutes. We use where the sun
-   is at noon. PrayTimes uses where the sun is at Asr, which lands within 40
+   is at noon. PrayTimes uses where the sun is at Asr, which lands within 25
    seconds of ours, so Asr is compared with PrayTimes.
 
 2. Fajr when a high latitude rule is used. The rule takes a fraction of the
