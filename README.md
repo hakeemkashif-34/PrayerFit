@@ -22,6 +22,21 @@ Open http://localhost:8000/health. You should see `{"status":"ok","database":"ok
 
 To see the error case, stop the database with `docker compose stop db` and refresh. You should get a 503 error and `{"status":"error","database":"unreachable"}`. Start it again with `docker compose start db`.
 
+## Prayer times
+
+Open http://localhost:8000/prayer-times?latitude=45.4215&longitude=-75.6972&date=2026-10-24 to get Ottawa's prayer times for that day.
+
+| Parameter | Required | Default | Example |
+|---|---|---|---|
+| `latitude` | yes | | `45.4215` |
+| `longitude` | yes | | `-75.6972` |
+| `date` | no | today in that time zone | `2026-10-24` |
+| `method` | no | `isna` | `isna`, `mwl`, `egyptian`, `karachi`, `umm_al_qura` |
+| `asr_method` | no | `standard` | `standard`, `hanafi` |
+| `timezone` | no | `DEFAULT_TIMEZONE` from `.env`, or `America/Toronto` | `America/Edmonton` |
+
+Every time comes back with where it came from (`"source": "calculated"`, the method, and the Asr method). http://localhost:8000/docs lists every endpoint and lets you try them in the browser.
+
 ## Run the tests
 
 The tests need a real Postgres. The easiest way is to start only the database from Docker Compose.
@@ -40,6 +55,8 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `2 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `235 passed`.
+
+The prayer time tests don't need the database. To run only those: `pytest -k "not health"`.
 
 When you're done, stop Postgres with `docker compose down`.

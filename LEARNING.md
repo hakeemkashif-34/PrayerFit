@@ -120,3 +120,208 @@ What each part of the app does and why it was built that way. Updated after each
 
 3. **GitHub Actions**
    a) Open the PR and look for the green check next to "Tests". The Actions tab shows the full log.
+
+---
+
+## Milestone 2: Prayer times
+
+### 1. Where things are
+
+1. **`backend/app/prayer_times/`**: the calculation. Pure maths, no database and no web code, so it's easy to test.
+   a) `astronomy.py`: where the sun is, and when it reaches a given height in the sky.
+   b) `methods.py`: the calculation methods (ISNA and others) and the Asr methods.
+   c) `calculator.py`: puts it together into Fajr, Sunrise, Dhuhr, Asr, Maghrib, and Isha for one place and one day.
+   d) `__init__.py`: lists what other files can import, so they write `from app.prayer_times import calculate_prayer_times`.
+2. **`backend/app/routers/prayer_times.py`**: the `GET /prayer-times` endpoint.
+   a) A router is a group of endpoints in its own file. `main.py` adds it with `app.include_router(...)`. This keeps `main.py` small as more endpoints come.
+
+### 2. How prayer times are worked out
+
+Every prayer time is "the moment the sun is at a certain height". The height is called the **altitude**, in degrees. 0 is the horizon, negative is below it.
+
+| Prayer | When it starts |
+|---|---|
+| Fajr | Sun is 15 to 19.5 degrees below the horizon, before sunrise (depends on the method) |
+| Sunrise | Top of the sun at the horizon. Ends Fajr. |
+| Dhuhr | Just after the sun is highest (solar noon) |
+| Asr | A stick's shadow equals its noon shadow plus 1 stick length (Hanafi: 2) |
+| Maghrib | Sunset |
+| Isha | Sun is 15 to 18 degrees below the horizon, after sunset (Umm al-Qura: 90 minutes after Maghrib) |
+
+So the job is: (1) know where the sun is at any moment, and (2) find the moment it reaches each altitude.
+
+### 3. `astronomy.py`
+
+1. **Where the formulas come from**
+   a) Jean Meeus, "Astronomical Algorithms". It's the standard book for this. The adhan library uses it too, which is why our times can be compared with it.
+   b) Each function names the chapter it comes from.
+
+2. **`julian_day`**
+   a) Counts days from a fixed start point instead of using year, month, day.
+   b) Why: the gap between two dates becomes a subtraction. No months or leap years to handle.
+
+3. **`sun_position`**
+   a) Gives three numbers for midnight UTC on a date.
+   b) **Declination**: how far north or south of the equator the sun is. About +23.4 in June, -23.4 in December. This is why summer days are long.
+   c) **Right ascension**: the sun's position along the sky, like a longitude for the sky.
+   d) **Sidereal time**: how far the Earth has turned, measured against the stars.
+
+4. **`SolarDay`**
+   a) Works out the sun for yesterday, today, and tomorrow, then estimates any moment in between (interpolation, chapter 3). The sun moves smoothly, so three points are enough.
+   b) **Hour angle**: how far the sun is past this place's meridian (the north-south line overhead). 0 at solar noon.
+   c) `noon()`: solar noon, when the hour angle is 0.
+   d) `time_at_altitude(target, after_noon)`: when the sun is at the target altitude. Returns `None` if it never gets there that day.
+
+5. **Why `time_at_altitude` uses binary search**
+   a) From solar noon to solar midnight, the sun only goes down. So the answer is somewhere in that half day.
+   b) Check the middle. If the sun is still above the target, the answer is in the later half. Otherwise the earlier half. Repeat.
+   c) Each step halves the gap. About 23 steps get from half a day to 0.01 seconds.
+   d) If the sun is still above the target at midnight (or below it at noon), there's no answer. That's how we know it never gets dark enough.
+   e) Why not the book's method: the book guesses a time and corrects it once. That's fast and usually within seconds. But on days when the sun only just reaches the target (Fajr at 18 degrees in London or Edmonton), I measured it up to 4 minutes off. Repeating the correction fixed that, but at Alert it jumped to the wrong day. Binary search can't do either. I checked it against a minute-by-minute scan and it matched to 0.003 seconds.
+
+6. **Sunrise altitude is -0.833, not 0**
+   a) The air bends light, so you see the sun about 0.57 degrees before it's really over the horizon.
+   b) Sunrise is when the top of the sun shows, not the centre. That's another 0.27 degrees (half the sun's width).
+
+### 4. `methods.py`
+
+1. **Calculation methods**: different groups of scholars disagree on how dark it has to be for Fajr and Isha.
+
+| Method | Fajr angle | Isha |
+|---|---|---|
+| `isna` (default) | 15 | 15 |
+| `mwl` | 18 | 17 |
+| `egyptian` | 19.5 | 17.5 |
+| `karachi` | 18 | 18 |
+| `umm_al_qura` | 18.5 | 90 minutes after Maghrib |
+
+2. ISNA is the default because most masjids in Ottawa use it.
+3. Umm al-Qura uses 120 minutes in Ramadan. That isn't handled yet. It's noted in the code.
+4. **Dhuhr is 1 minute after solar noon** for every method except Umm al-Qura.
+   a) Solar noon is when the centre of the sun crosses the meridian. The sun is about 2 minutes wide, so its back edge crosses about 1 minute later.
+   b) These values match the adhan library.
+5. **Asr methods**: `standard` (Shafi'i, Maliki, Hanbali) uses 1 shadow length. `hanafi` uses 2, so Hanafi Asr is always later.
+6. `StrEnum` makes each choice a string, like `"isna"`. FastAPI uses that to check the URL and to show the choices on `/docs`.
+
+### 5. `calculator.py`
+
+1. **`calculate_prayer_times(latitude, longitude, on_date, time_zone, method, asr_method)`**
+   a) `on_date` is a local date, like a date on a wall calendar.
+   b) `time_zone` defaults to `America/Toronto`.
+   c) Returns a `DailyPrayerTimes` with six `PrayerTime`s.
+
+2. **All the maths is in UTC**
+   a) UTC has no daylight saving, so adding hours is always safe.
+   b) Only at the end is each time converted to the local zone with `.astimezone(zone)`.
+   c) Next day means the next calendar date (`date + timedelta(days=1)` on a `date`), never "add 24 hours". On a daylight saving day, a local day is 23 or 25 hours long.
+
+3. **`_utc_day_for`**: picks the UTC date whose solar noon falls on the local date.
+   a) Almost always it's the same date.
+   b) Near the date line (Samoa, for example) it's the day before or after. Without this, you'd get the wrong day's times.
+
+4. **Asr uses the sun's declination at solar noon**
+   a) The rule compares with the noon shadow, so the noon shadow should use where the sun is at noon.
+   b) adhan uses where the sun is at midnight UTC instead, which is 5 or 6 pm the day before in Edmonton. That moves Asr by up to 2 minutes there.
+
+5. **Rounding**
+   a) `round_up_to_minute` for Fajr, Dhuhr, Asr, Maghrib, and Isha. 12:00:01 shows as 12:01. The app never shows a prayer before it starts.
+   b) `round_down_to_minute` for sunrise. Sunrise ends Fajr, so showing it a little early is the safe side.
+   c) Rounding happens in UTC. Every time zone in use today is a whole number of minutes from UTC, so this gives the same answer as rounding the local time.
+
+6. **High latitude rules**
+   a) In Edmonton in June the sun only goes about 13 degrees below the horizon. It never reaches the 15 that ISNA uses, so there's no normal Fajr or Isha.
+   b) Instead of an error, the app uses a share of the night (sunset to sunrise).
+   c) Below 48 degrees: Fajr no earlier than the middle of the night, Isha no later. Same cut-off as adhan's recommended rule.
+   d) From 48 degrees: Fajr no earlier than the last seventh of the night, Isha no later than the first seventh. Summer nights up there are short, so half the night would be too loose.
+   e) The limit is used whenever the normal time is missing or goes past it.
+   f) Fajr uses the night it ends (last sunset to this sunrise). Isha uses the night it starts (this sunset to tomorrow's sunrise). Because both use the same night, Isha can never run past the next Fajr. adhan uses tonight for Fajr too, which moves it by up to about 40 seconds in late summer.
+   g) Above 65 degrees (Inuvik, Alert, Antarctica), some days have no sunset (midnight sun) or no sunrise (polar night). The app uses the times at 65 degrees, the nearest latitude where the sun rises and sets every day.
+   h) It does that every day, not just on days with no sunrise or sunset. The days next to those have only minutes of daylight or darkness. Asr lands on Dhuhr, and switching rules made times jump by over an hour from one day to the next.
+
+7. **Where each time came from**
+   a) Every `PrayerTime` has `source = "calculated"`, the `method`, the `asr_method`, and `high_latitude_rule` (`None` unless a rule replaced the time).
+   b) Later, masjid times will have their own source, so users can tell calculated times and iqamah times apart.
+   c) `exact_time` keeps the time before rounding, in UTC. The tests use it. The endpoint doesn't show it.
+
+### 6. `GET /prayer-times`
+
+1. Takes `latitude`, `longitude`, `date`, `method`, `asr_method`, and `timezone`. Only latitude and longitude are required.
+2. Example: `/prayer-times?latitude=45.4215&longitude=-75.6972&date=2026-10-24`
+
+```json
+{
+  "date": "2026-10-24",
+  "timezone": "America/Toronto",
+  "latitude": 45.4215,
+  "longitude": -75.6972,
+  "method": "isna",
+  "asr_method": "standard",
+  "times": {
+    "fajr": {"time": "2026-10-24T06:10:00-04:00", "source": "calculated", "method": "isna", "asr_method": "standard", "high_latitude_rule": null},
+    "sunrise": {"time": "2026-10-24T07:31:00-04:00", "...": "..."},
+    "dhuhr": {"time": "2026-10-24T12:48:00-04:00", "...": "..."},
+    "asr": {"time": "2026-10-24T15:35:00-04:00", "...": "..."},
+    "maghrib": {"time": "2026-10-24T18:03:00-04:00", "...": "..."},
+    "isha": {"time": "2026-10-24T19:24:00-04:00", "...": "..."}
+  }
+}
+```
+
+3. Times include the offset (`-04:00`), so anyone reading them knows exactly which moment it is.
+4. No date means today in that time zone, not the server's. The server on Azure will most likely run on UTC.
+5. The default time zone comes from `DEFAULT_TIMEZONE` in `.env`, then `America/Toronto`.
+6. Bad input gives 422 (Unprocessable Content). FastAPI checks the numbers, date, and method names by itself from the type hints. The time zone is checked by hand, since any string could be sent.
+7. `../../etc/passwd` as a time zone also gives 422. `ZoneInfo` refuses names that try to leave the time zone folder, and the endpoint turns that error into a 422.
+8. The Python name is `on_date` with `alias="date"`, so the URL still says `date` but the code doesn't hide Python's `date` type.
+9. `tzdata` in `requirements.txt` gives Python the time zone rules on computers that don't have them, like Windows.
+
+### 7. Tests
+
+1. **`tests/places.py`**: the places and years every test shares. 7 cities to compare with other libraries, plus St. John's (a half hour time zone), Iqaluit, Inuvik, Alert, and McMurdo Station for the far north and south.
+
+2. **`test_prayer_times_reference.py`**: compares with two well-known libraries, every day of 2026 and 2028 (a leap year), for Ottawa, Toronto, Edmonton, Mecca, London, Sydney, and Karachi.
+   a) adhanpy (the Python version of adhan) for Fajr, Sunrise, Dhuhr, Maghrib, and Isha, for all 5 methods.
+   b) praytimes (the Python version of PrayTimes.org) for Asr, standard and Hanafi.
+   c) Both are in `requirements-dev.txt` only. The app never uses them.
+   d) Every time must match within 1 minute. In practice the worst gap with adhanpy is 10 seconds, and with PrayTimes about 25 seconds for Asr.
+   e) Asr is compared with PrayTimes because adhanpy uses the wrong declination for Asr (see section 5, point 4). PrayTimes uses the declination at Asr, which is within 25 seconds of ours.
+   f) Fajr is checked against adhanpy's own sunrise and sunset times with our night rule applied, because adhanpy uses a different night for the high latitude rule (section 5, point 6f).
+   g) Times are compared before rounding. adhanpy rounds to the nearest minute and we round up, so rounded times can be a minute apart even when the maths agrees. adhanpy also has a bug at :59 (12:59:45 shows as 12:59, not 13:00).
+   h) To get adhanpy's times before rounding, a **fixture** uses `monkeypatch` to swap its rounding function for one that does nothing, only during that test.
+   i) I broke the code on purpose (a wrong Fajr angle, a wrong Dhuhr offset, the wrong Asr declination) to check the tests fail. They did.
+
+3. **`test_daylight_saving.py`**: Toronto's clock changes on March 8 and November 1, 2026.
+   a) Every time in the week around each change is on the right date with the right offset (-05:00 or -04:00).
+   b) On the wall clock, every prayer jumps by about an hour. In real time, one Dhuhr to the next is still about 24 hours.
+   c) A Python trap: subtracting two times in the same `ZoneInfo` compares wall clocks. The March 7 to March 8 Dhuhr gap comes out as 25 hours. Converting both to UTC first gives the real gap. The tests do that everywhere times are compared.
+
+4. **`test_prayer_times_rules.py`**
+   a) Rounding: start times are never before the exact time and less than a minute after it. Sunrise is the other way round.
+   b) Every time says `"calculated"` plus its method and Asr method.
+   c) Order: Fajr < Sunrise < Dhuhr < Asr < Maghrib < Isha, and Isha is never after the next day's Fajr. Every place, every method, every day of 2026.
+   d) Hanafi Asr is always later than standard Asr, every place, every day.
+   e) These tests found two real bugs: the jump to the wrong day at Alert, and Asr landing in the same minute as Dhuhr near the poles. Those led to the binary search and to using 65 degrees every day.
+
+5. **`test_high_latitude.py`**
+   a) Edmonton in June: proves the sun never reaches 15 degrees, then checks Fajr and Isha are exactly one seventh of the right night.
+   b) St. John's in June with the Egyptian method: checks the middle of the night rule.
+   c) Ottawa and Mecca: no rule is ever used, every day, every method. The rules must never touch normal times.
+   d) Inuvik on June 21 (midnight sun) and December 21 (polar night), and McMurdo Station: times match the ones at 65 degrees.
+
+6. **`test_prayer_times_endpoint.py`**: the endpoint returns all six times in order, matches the calculator, shows sources and the high latitude rule, uses the time zone, and gives 422 for bad input.
+
+### 8. How to check it works
+
+1. **Tests**
+   a) Start the database and set `DATABASE_URL` like in milestone 1, then run `pytest` in `backend`. You should see `235 passed`.
+   b) Only the prayer time tests (no database needed): `pytest -k "not health"`. You should see `233 passed, 2 deselected`.
+
+2. **In the browser**
+   a) Run `docker compose up --build`.
+   b) Open http://localhost:8000/prayer-times?latitude=45.4215&longitude=-75.6972&date=2026-10-24. Fajr should be `06:10`, Maghrib `18:03`.
+   c) Add `&asr_method=hanafi`. Asr moves later.
+   d) Try Edmonton in June: http://localhost:8000/prayer-times?latitude=53.5461&longitude=-113.4938&date=2026-06-21&timezone=America/Edmonton. Fajr and Isha show `"high_latitude_rule": "seventh_of_the_night"`.
+   e) Try a bad time zone, like `&timezone=Mars/Olympus_Mons`. You get a 422.
+   f) http://localhost:8000/docs shows the endpoint with every choice in a dropdown.
+
+3. **GitHub Actions**: the PR's "Tests" check runs all 235 tests.

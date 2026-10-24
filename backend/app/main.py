@@ -12,8 +12,10 @@ from sqlalchemy import Engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db import get_engine
+from app.routers import prayer_times
 
 app = FastAPI(title="Muslim Calendar API")
+app.include_router(prayer_times.router)
 
 
 @app.get("/health")

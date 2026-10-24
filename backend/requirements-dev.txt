@@ -2,3 +2,6 @@
 -r requirements.txt
 pytest==9.1.1
 httpx2==2.16.0  # FastAPI's TestClient needs this
+# Well-known prayer time libraries. Only the tests use them, to check our own maths.
+adhanpy==1.0.5  # Python version of the adhan library
+praytimes==2.3.2  # Python version of PrayTimes.org
