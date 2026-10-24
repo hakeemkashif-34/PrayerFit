@@ -19,11 +19,16 @@ os.environ["TOKEN_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
 os.environ["APP_ORIGIN"] = "http://testserver"
 # The test client uses plain http, and won't send Secure cookies over it.
 os.environ["COOKIE_SECURE"] = "false"
+# Nominatim and Overpass are faked too, at their normal URLs.
+os.environ["OSM_CONTACT_EMAIL"] = "tests@example.com"
+os.environ["NOMINATIM_URL"] = "https://nominatim.openstreetmap.org"
+os.environ["OVERPASS_URL"] = "https://overpass-api.de/api/interpreter"
 
 from datetime import datetime, time  # noqa: E402
 from urllib.parse import parse_qs, urlparse  # noqa: E402
 from zoneinfo import ZoneInfo  # noqa: E402
 
+import httpx2  # noqa: E402
 import pytest  # noqa: E402
 from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402
@@ -32,10 +37,12 @@ from sqlalchemy import text  # noqa: E402
 
 from app.clock import get_now  # noqa: E402
 from app.db import get_engine  # noqa: E402
-from app.google_http import get_google_http  # noqa: E402
+from app.http_client import get_http  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Base  # noqa: E402
+from app.geo import throttle  # noqa: E402
 from tests.fake_google import FakeGoogle  # noqa: E402
+from tests.fake_osm import FakeOsm  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -57,17 +64,41 @@ def db(migrated_engine):
 
 
 @pytest.fixture
-def fake_google():
-    """Point every Google call the app makes at a fresh fake Google."""
+def fake_osm():
+    return FakeOsm()
+
+
+def fake_http_client(google: FakeGoogle, osm: FakeOsm) -> httpx2.Client:
+    """An HTTP client that reaches only the fake Google and the fake OpenStreetMap."""
+
+    def route(request: httpx2.Request) -> httpx2.Response:
+        if osm.handles(request.url.host):
+            return osm.handle(request)
+        return google.handle(request)
+
+    return httpx2.Client(transport=httpx2.MockTransport(route))
+
+
+@pytest.fixture
+def fake_google(fake_osm):
+    """Point every outside call the app makes at fresh fakes."""
     fake = FakeGoogle()
 
     def fake_http():
-        with fake.client() as client:
+        with fake_http_client(fake, fake_osm) as client:
             yield client
 
-    app.dependency_overrides[get_google_http] = fake_http
+    app.dependency_overrides[get_http] = fake_http
     yield fake
-    app.dependency_overrides.pop(get_google_http, None)
+    app.dependency_overrides.pop(get_http, None)
+
+
+@pytest.fixture(autouse=True)
+def throttle_waits(monkeypatch):
+    """Record the rate limit's waits instead of really sleeping."""
+    waits: list[float] = []
+    monkeypatch.setattr(throttle, "sleep", waits.append)
+    return waits
 
 
 def new_client() -> TestClient:

@@ -38,6 +38,29 @@ def _required(name: str) -> str:
     return value
 
 
+@dataclass(frozen=True)
+class OsmSettings:
+    """OpenStreetMap's free services. Both ask apps to say who they are."""
+
+    contact_email: str
+    nominatim_url: str
+    overpass_url: str
+
+    @property
+    def user_agent(self) -> str:
+        # Nominatim's usage policy refuses stock library User-Agents.
+        return f"MuslimCalendar/0.4 (+mailto:{self.contact_email})"
+
+
+@lru_cache
+def get_osm_settings() -> OsmSettings:
+    return OsmSettings(
+        contact_email=_required("OSM_CONTACT_EMAIL"),
+        nominatim_url=_optional("NOMINATIM_URL", "https://nominatim.openstreetmap.org").rstrip("/"),
+        overpass_url=_optional("OVERPASS_URL", "https://overpass-api.de/api/interpreter"),
+    )
+
+
 @lru_cache
 def get_google_settings() -> GoogleSettings:
     return GoogleSettings(
