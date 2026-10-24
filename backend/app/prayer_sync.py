@@ -10,6 +10,8 @@ How duplicates are prevented:
    event, the retry can't make a copy. It gets a 409 and updates instead.
 """
 
+import hashlib
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -95,8 +97,9 @@ def google_event(row: PrayerEvent) -> dict:
     zone = ZoneInfo(row.time_zone)
     return {
         "id": google_event_id(row),
-        "summary": PRAYER_TITLES[row.prayer],
-        "description": row.source_description,
+        # Rows from before milestone 4 have no title or description saved.
+        "summary": row.summary or PRAYER_TITLES[row.prayer],
+        "description": row.description or row.source_description,
         "start": {"dateTime": row.starts_at.astimezone(zone).isoformat(), "timeZone": row.time_zone},
         "end": {"dateTime": row.ends_at.astimezone(zone).isoformat(), "timeZone": row.time_zone},
         # "confirmed" brings an event back if the user had deleted it.
@@ -105,6 +108,16 @@ def google_event(row: PrayerEvent) -> dict:
         # Google events back to rows even if the event ID ever differs.
         "extendedProperties": {"private": {"appEventId": str(row.id)}},
     }
+
+
+def event_hash(row: PrayerEvent) -> str:
+    """A fingerprint of exactly what Google would get for this row.
+
+    If it matches the hash saved when Google last confirmed the event,
+    nothing changed, so there's no need to send it again.
+    """
+    body = json.dumps(google_event(row), sort_keys=True)
+    return hashlib.sha256(body.encode()).hexdigest()
 
 
 @dataclass
@@ -153,6 +166,7 @@ def send_to_google(
                 waiting=[r.prayer for r in rows[index:]],
             ) from error
         row.google_calendar_id = calendar_id
+        row.synced_hash = event_hash(row)
         row.sync_status = "synced"
         row.synced_at = datetime.now(UTC)
         row.last_error = None
