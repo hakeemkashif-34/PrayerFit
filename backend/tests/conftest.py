@@ -109,3 +109,10 @@ def set_today():
 
     yield set_day
     app.dependency_overrides.pop(get_now, None)
+
+
+def pytest_collection_modifyitems(items):
+    """Mark every test that needs Postgres, so `pytest -m "not database"` skips them."""
+    for item in items:
+        if "db" in item.fixturenames or item.module.__name__ == "tests.test_health":
+            item.add_marker(pytest.mark.database)
