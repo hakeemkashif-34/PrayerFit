@@ -24,4 +24,6 @@ EXPOSE 8000
 
 # Bring the database up to date first, then start the server.
 # 0.0.0.0 so the server is reachable from outside the container.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# --root-path /api because nginx serves the API under /api, so /api/docs works.
+# The worker service uses this same image with its own command.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --root-path /api"]
