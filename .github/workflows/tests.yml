@@ -1,0 +1,27 @@
+# Runs the backend tests on every push and every pull request.
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"  # same as the Dockerfile
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install packages
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -v
