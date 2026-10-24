@@ -3,3 +3,4 @@ fastapi==0.162.0
 uvicorn[standard]==0.54.0
 sqlalchemy==2.1.6       # talks to the database
 psycopg[binary]==3.3.6  # the Postgres driver SQLAlchemy uses under the hood
+tzdata==2026.5          # time zone rules, for computers that don't have them (like Windows)
