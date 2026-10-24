@@ -8,6 +8,28 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+
+    # A real Postgres for the tests, started before the steps below.
+    # Throwaway test values only. This database is deleted when the job ends.
+    services:
+      postgres:
+        image: postgres:17  # same version as docker-compose.yml
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        # Don't start the steps until Postgres accepts connections.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/test
+
     defaults:
       run:
         working-directory: backend
