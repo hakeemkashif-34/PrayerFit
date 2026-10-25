@@ -634,3 +634,45 @@ ul.plain li {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* ---- Masjid search ---- */
+
+ul.suggestions .option {
+  display: flex;
+  flex-direction: column;
+}
+
+ul.suggestions .option small {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.small-line {
+  font-size: 0.8125rem;
+  margin: 8px 0 0;
+}
+
+.picked-masjid {
+  justify-content: space-between;
+}
+
+ul.picked-list {
+  margin: 16px 0 4px;
+}
+
+ul.picked-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+/* "Skip" is a quiet link at the end of the buttons. */
+.actions .skip {
+  align-self: center;
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 500;
+}

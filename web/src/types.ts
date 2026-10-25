@@ -9,8 +9,10 @@ export type Me = {
 
 export type Masjid = {
   id: string;
+  // Empty for a masjid picked by its address.
   name: string | null;
   address: string | null;
+  // "user" means picked by its address.
   source: "openstreetmap" | "user";
   distance_km: number | null;
   iqamah_status: string;
@@ -65,10 +67,11 @@ export type Suggestions = {
   credit_url: string;
 };
 
-export type Nearby = {
-  radius_km: number;
-  masjids: Masjid[];
-  typed_by_you: Masjid[];
-  credit: string;
-  credit_url: string;
+export type MasjidSuggestion = {
+  index: number;
+  // "masjid" is a place of worship on OpenStreetMap. "address" is for one that isn't.
+  kind: "masjid" | "address";
+  label: string;
+  detail: string | null;
+  distance_km: number;
 };

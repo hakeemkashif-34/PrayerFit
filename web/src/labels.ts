@@ -35,8 +35,13 @@ export function asrName(value: string): string {
   return ASR_METHODS.find((m) => m.value === value)?.name ?? value;
 }
 
+// A masjid picked by its address has no name, so its address is shown.
 export function masjidName(masjid: Masjid): string {
-  return masjid.name ?? "No name on OpenStreetMap";
+  return masjid.name ?? masjid.address ?? "Your masjid";
+}
+
+export function distanceText(km: number | null): string {
+  return km === null ? "" : `${km} km away`;
 }
 
 // Fixed messages for each sign-in error code from the backend.

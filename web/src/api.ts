@@ -2,7 +2,7 @@
 // The session cookie is HttpOnly, so this code never sees it. The browser
 // sends it because the website and the API are the same site.
 
-import type { CalendarUpdate, Me, Nearby, SaveResponse, Settings, Suggestions } from "./types";
+import type { CalendarUpdate, Masjid, MasjidSuggestion, Me, SaveResponse, Settings, Suggestions } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -58,14 +58,13 @@ export const api = {
     request<SaveResponse>("PUT", "/api/settings/location", { query, index }),
   saveMethods: (method: string, asr_method: string) =>
     request<SaveResponse>("PUT", "/api/settings/methods", { method, asr_method }),
-  nearbyMasjids: () => request<Nearby>("GET", "/api/masjids/nearby"),
-  saveMainMasjid: (body: {
-    choice: "masjid" | "custom" | "home";
-    masjid_id?: string;
-    name?: string;
-    address?: string;
-    short_name?: string;
-  }) => request<SaveResponse>("PUT", "/api/settings/main-masjid", body),
+  suggestMasjids: (query: string, signal?: AbortSignal) =>
+    request<{ suggestions: MasjidSuggestion[] }>("POST", "/api/setup/masjid/suggest", { query }, signal),
+  // Saves the picked suggestion as a masjid, so it can be the main or a Jumuah masjid.
+  masjidFromSuggestion: (query: string, index: number) =>
+    request<Masjid>("POST", "/api/masjids/from-suggestion", { query, index }),
+  saveMainMasjid: (body: { choice: "masjid" | "home"; masjid_id?: string; short_name?: string }) =>
+    request<SaveResponse>("PUT", "/api/settings/main-masjid", body),
   saveWeekly: (days: Settings["weekly"]) => request<SaveResponse>("PUT", "/api/settings/weekly", { days }),
   saveJumuah: (masjid_ids: string[]) => request<SaveResponse>("PUT", "/api/settings/jumuah", { masjid_ids }),
   finishSetup: () => request<SaveResponse>("POST", "/api/setup/finish"),
