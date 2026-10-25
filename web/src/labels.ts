@@ -69,6 +69,10 @@ export const GOOGLE_COLOURS: { id: string; name: string; hex: string }[] = [
   { id: "8", name: "Graphite", hex: "#616161" },
 ];
 export const CALENDAR_COLOUR = "Calendar colour";
+// The optional step's defaults, the same as the backend's: 5 minutes early,
+// and Basil (Google's green) for prayer and drive blocks.
+export const DEFAULT_ARRIVE_EARLY = 5;
+export const DEFAULT_COLOUR = "10";
 
 export function colourName(id: string | null): string {
   return GOOGLE_COLOURS.find((c) => c.id === id)?.name ?? CALENDAR_COLOUR;

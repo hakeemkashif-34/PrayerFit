@@ -112,29 +112,35 @@ test("the full setup: location, masjid, weekly grid, extras, then a filled calen
   await expect(page.getByRole("heading", { level: 1, name: OPTIONAL })).toBeVisible();
   await expectStep(page, 4);
   await expect(page.getByRole("button", { name: "Skip" })).toBeVisible();
+  // Nothing has gone to Google yet: the first calendar update comes after this step.
+  expect(api.calls("POST", "/api/setup/finish")).toHaveLength(0);
+  expect(api.googleVisits).toEqual([]);
+  // A number box, pre-filled with the default: 5 minutes.
   const early = page.getByLabel("How early do you want to arrive before iqamah?");
-  await expect(early).toHaveValue("0");
-  await expect(early.locator("option")).toHaveCount(31);
-  await early.selectOption("5");
+  await expect(early).toHaveAttribute("type", "number");
+  await expect(early).toHaveValue("5");
+  await early.fill("10");
   await page.getByLabel("Short name for Kanata Muslim Association (optional)").fill("KMA");
   await expect(page.getByText('Events will say "Dhuhr at KMA".')).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Prayer colour/ })).toContainText("Calendar colour");
+  // Both colours start as Basil, Google's green.
+  await expect(page.getByRole("button", { name: /^Prayer colour/ })).toContainText("Basil");
+  await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Basil");
   await page.getByRole("button", { name: /^Prayer colour/ }).click();
   // Every Google colour, by Google's name, after "Calendar colour".
   await expect(page.getByRole("listbox").getByRole("option")).toHaveText([
     "Calendar colour", "Tomato", "Flamingo", "Tangerine", "Banana", "Sage", "Basil",
     "Peacock", "Blueberry", "Lavender", "Grape", "Graphite",
   ]);
-  // Like Google's menu: a tick on the chosen one, "Calendar colour" by default.
-  await expect(page.getByRole("listbox").getByRole("option", { selected: true })).toHaveText("Calendar colour");
+  // Like Google's menu: a tick on the chosen one, Basil by default.
+  await expect(page.getByRole("listbox").getByRole("option", { selected: true })).toHaveText("Basil");
   await expect(page.locator(".colour-list .tick")).toHaveCount(1);
-  await expect(page.getByRole("option", { name: "Calendar colour" }).locator(".tick")).toBeVisible();
+  await expect(page.getByRole("option", { name: "Basil" }).locator(".tick")).toBeVisible();
   await page.getByRole("option", { name: "Peacock" }).click();
   await pickColour(page, "Drive colour", "Tomato");
   await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Tomato");
   await page.getByRole("button", { name: "Finish" }).click();
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({
-    arrive_early_minutes: 5, short_name: "KMA", prayer_color_id: "7", drive_color_id: "11",
+    arrive_early_minutes: 10, short_name: "KMA", prayer_color_id: "7", drive_color_id: "11",
   });
 
   // Finishing fills the calendar straight away, then opens Google Calendar
@@ -385,15 +391,17 @@ test("the optional step can be skipped, which saves the defaults", async ({ page
 
   await expect(page.getByRole("heading", { level: 1, name: OPTIONAL })).toBeVisible();
   // Something typed, then skipped: the defaults win.
-  await page.getByLabel("How early do you want to arrive before iqamah?").selectOption("10");
+  await page.getByLabel("How early do you want to arrive before iqamah?").fill("20");
+  expect(api.calls("POST", "/api/setup/finish")).toHaveLength(0);
   await page.getByRole("button", { name: "Skip" }).click();
 
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({
-    arrive_early_minutes: 0, prayer_color_id: null, drive_color_id: null,
+    arrive_early_minutes: 5, prayer_color_id: "10", drive_color_id: "10",
   });
   await expectGoogleCalendar(page, api);
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
-  expect(api.settings.arrive_early_minutes).toBe(0);
+  expect(api.settings.arrive_early_minutes).toBe(5);
+  expect([api.settings.prayer_color_id, api.settings.drive_color_id]).toEqual(["10", "10"]);
 });
 
 test("the colour dropdown works with the keyboard", async ({ page }) => {
@@ -409,16 +417,17 @@ test("the colour dropdown works with the keyboard", async ({ page }) => {
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
+  // From Basil, 2 down is Blueberry.
   await expect(page.getByRole("listbox")).toHaveCount(0);
-  await expect(button).toContainText("Flamingo");
+  await expect(button).toContainText("Blueberry");
   await expect(button).toBeFocused();
   await page.keyboard.press("ArrowDown");
   // The tick moved to the new choice.
-  await expect(page.getByRole("listbox").getByRole("option", { selected: true })).toHaveText("Flamingo");
-  await expect(page.getByRole("option", { name: "Flamingo" }).locator(".tick")).toBeVisible();
+  await expect(page.getByRole("listbox").getByRole("option", { selected: true })).toHaveText("Blueberry");
+  await expect(page.getByRole("option", { name: "Blueberry" }).locator(".tick")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("listbox")).toHaveCount(0);
-  await expect(button).toContainText("Flamingo");
+  await expect(button).toContainText("Blueberry");
 });
 
 test("finishing shows a message until the calendar is filled, then opens Google Calendar", async ({ page }) => {
@@ -469,5 +478,42 @@ test("if finishing setup fails, it stays on the setup page with the error", asyn
 
   // Try again works, and then it opens Google Calendar.
   await page.getByRole("button", { name: "Try again" }).click();
+  await expectGoogleCalendar(page, api);
+});
+
+test("how early takes whole numbers from 0 to 30 only", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  await api.install(page);
+  await page.goto("/");
+  await pickHome(page);
+  await page.getByRole("button", { name: "Skip" }).click();
+
+  const early = page.getByLabel("How early do you want to arrive before iqamah?");
+  for (const bad of ["31", "-1", "2.5", "", "100"]) {
+    await early.fill(bad);
+    await page.getByRole("button", { name: "Finish" }).click();
+    await expect(page.getByRole("alert")).toHaveText("Enter a whole number of minutes from 0 to 30.");
+    await expect(early).toHaveAttribute("aria-invalid", "true");
+  }
+  expect(api.calls("PUT", "/api/settings/optional")).toHaveLength(0);
+  expect(api.calls("POST", "/api/setup/finish")).toHaveLength(0);
+
+  // 30 is the most allowed. (0 is in the next test.)
+  await early.fill("30");
+  await page.getByRole("button", { name: "Finish" }).click();
+  expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toMatchObject({ arrive_early_minutes: 30 });
+  await expectGoogleCalendar(page, api);
+});
+
+test("0 minutes early is allowed", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  await api.install(page);
+  await page.goto("/");
+  await pickHome(page);
+  await page.getByRole("button", { name: "Skip" }).click();
+
+  await page.getByLabel("How early do you want to arrive before iqamah?").fill("0");
+  await page.getByRole("button", { name: "Finish" }).click();
+  expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toMatchObject({ arrive_early_minutes: 0 });
   await expectGoogleCalendar(page, api);
 });

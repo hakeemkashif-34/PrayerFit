@@ -148,8 +148,9 @@ test("editing the extras: how early, short name, and colours", async ({ page }) 
 
   await page.getByRole("button", { name: "Edit extras" }).click();
   const early = page.getByLabel("How early do you want to arrive before iqamah?");
+  // Answered before, so it shows what was saved, not the defaults.
   await expect(early).toHaveValue("5");
-  await early.selectOption("30");
+  await early.fill("30");
   const shortName = page.getByLabel("Short name for Kanata Muslim Association (optional)");
   await expect(shortName).toHaveValue("KMA");
   await shortName.fill("Kanata");
@@ -179,7 +180,7 @@ test("cancel leaves the extras as they were", async ({ page }) => {
   await page.goto("/");
 
   await page.getByRole("button", { name: "Edit extras" }).click();
-  await page.getByLabel("How early do you want to arrive before iqamah?").selectOption("0");
+  await page.getByLabel("How early do you want to arrive before iqamah?").fill("0");
   await page.getByRole("button", { name: "Cancel" }).click();
 
   await expect(page.getByRole("region", { name: "Extras" })).toContainText("Arrive 5 min before iqamah");
@@ -285,4 +286,31 @@ test("sign out calls the API and goes back to the sign-in screen", async ({ page
   // Reloading stays signed out.
   await page.reload();
   await expect(page.getByRole("link", { name: "Sign in with Google" })).toBeVisible();
+});
+
+test("existing users keep their own extras, not the new defaults", async ({ page }) => {
+  // Saved before the defaults changed: 0 minutes and the calendar's colour.
+  const api = new MockApi().signedIn({ ...finishedSettings(), arrive_early_minutes: 0, prayer_color_id: null, drive_color_id: null });
+  await api.install(page);
+  await page.goto("/");
+  const extras = page.getByRole("region", { name: "Extras" });
+  await expect(extras).toContainText("Arrive at iqamah time");
+  await expect(extras).toContainText("Prayer colour: Calendar colour");
+
+  await page.getByRole("button", { name: "Edit extras" }).click();
+  await expect(page.getByLabel("How early do you want to arrive before iqamah?")).toHaveValue("0");
+  await expect(page.getByRole("button", { name: /^Prayer colour/ })).toContainText("Calendar colour");
+  await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Calendar colour");
+});
+
+test("a bad how early number on the Settings page shows the error and saves nothing", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  await api.install(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Edit extras" }).click();
+  await page.getByLabel("How early do you want to arrive before iqamah?").fill("45");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("alert")).toHaveText("Enter a whole number of minutes from 0 to 30.");
+  expect(api.calls("PUT", "/api/settings/optional")).toHaveLength(0);
 });

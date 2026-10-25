@@ -341,6 +341,7 @@ label {
 }
 
 input[type="text"],
+input[type="number"],
 input:not([type]) {
   width: 100%;
   font-size: 1rem;
@@ -352,6 +353,7 @@ input:not([type]) {
 }
 
 input:not([type]):focus,
+input[type="number"]:focus,
 input[type="text"]:focus {
   outline: 2px solid var(--green);
   outline-offset: 1px;
@@ -830,4 +832,23 @@ ol.plain {
 
 ol.plain li {
   padding: 2px 0;
+}
+
+/* "How early": a short number box with "minutes" after it. */
+.minutes-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.minutes-field input[type="number"] {
+  width: 110px;
+}
+
+input[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+.field-error {
+  margin: 6px 0 0;
 }

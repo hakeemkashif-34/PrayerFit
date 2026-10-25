@@ -1,11 +1,13 @@
 // Question 4, which can be skipped: how early to arrive before iqamah, a
 // short name for the masjid in event titles, and colours for prayer and
-// drive blocks. Skip saves the defaults: 0 minutes, the full name, and the
-// calendar's own colour.
+// drive blocks. Skip saves the defaults: 5 minutes early, the full name,
+// and Basil for both colours. Nothing goes to Google Calendar until this
+// step is saved or skipped: setup's first calendar update comes after it.
 
 import { useState, type FormEvent } from "react";
 import { api, ApiError } from "../api";
 import { ColourPicker } from "../ColourPicker";
+import { DEFAULT_ARRIVE_EARLY, DEFAULT_COLOUR } from "../labels";
 import type { OptionalAnswers, SaveResponse, Settings } from "../types";
 
 type Props = {
@@ -19,14 +21,29 @@ type Props = {
   onCancel?: () => void;
 };
 
-const MINUTES = Array.from({ length: 31 }, (_, n) => n);
-const DEFAULTS: OptionalAnswers = { arrive_early_minutes: 0, prayer_color_id: null, drive_color_id: null };
+const MAX_EARLY = 30;
+const DEFAULTS: OptionalAnswers = {
+  arrive_early_minutes: DEFAULT_ARRIVE_EARLY,
+  prayer_color_id: DEFAULT_COLOUR,
+  drive_color_id: DEFAULT_COLOUR,
+};
+const EARLY_ERROR = `Enter a whole number of minutes from 0 to ${MAX_EARLY}.`;
+
+// "5" -> 5. Anything that isn't a whole number from 0 to 30 is null.
+function wholeMinutes(text: string): number | null {
+  if (!/^\d{1,2}$/.test(text.trim())) return null;
+  const minutes = Number(text.trim());
+  return minutes <= MAX_EARLY ? minutes : null;
+}
 
 export function OptionalStep({ settings, page = false, submitLabel = "Save", canSkip = false, onSaved, onCancel }: Props) {
-  const [early, setEarly] = useState(settings.arrive_early_minutes);
+  // Not answered yet: start from the defaults. Answered before: show what was saved.
+  const fresh = settings.missing.includes("optional");
+  const [early, setEarly] = useState(String(fresh ? DEFAULT_ARRIVE_EARLY : settings.arrive_early_minutes));
+  const [earlyError, setEarlyError] = useState("");
   const [shortName, setShortName] = useState(settings.main_masjid_short_name ?? "");
-  const [prayerColour, setPrayerColour] = useState(settings.prayer_color_id);
-  const [driveColour, setDriveColour] = useState(settings.drive_color_id);
+  const [prayerColour, setPrayerColour] = useState(fresh ? DEFAULT_COLOUR : settings.prayer_color_id);
+  const [driveColour, setDriveColour] = useState(fresh ? DEFAULT_COLOUR : settings.drive_color_id);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const Heading = page ? "h1" : "h2";
@@ -46,8 +63,14 @@ export function OptionalStep({ settings, page = false, submitLabel = "Save", can
 
   function save(event: FormEvent) {
     event.preventDefault();
+    const minutes = wholeMinutes(early);
+    if (minutes === null) {
+      setEarlyError(EARLY_ERROR);
+      return;
+    }
+    setEarlyError("");
     void run({
-      arrive_early_minutes: early,
+      arrive_early_minutes: minutes,
       short_name: masjid ? shortName.trim() || undefined : undefined,
       prayer_color_id: prayerColour,
       drive_color_id: driveColour,
@@ -55,19 +78,35 @@ export function OptionalStep({ settings, page = false, submitLabel = "Save", can
   }
 
   return (
-    <form onSubmit={save} aria-labelledby="optional-title">
+    // noValidate: the page shows its own message instead of the browser's bubble.
+    <form onSubmit={save} aria-labelledby="optional-title" noValidate>
       <Heading id="optional-title">A few extras</Heading>
       <p className="hint">All optional. You can change these later in Settings.</p>
 
       <label htmlFor="arrive-early">How early do you want to arrive before iqamah?</label>
-      <select id="arrive-early" value={early} onChange={(e) => setEarly(Number(e.target.value))}>
-        {MINUTES.map((n) => (
-          <option key={n} value={n}>
-            {n === 0 ? "On time (0 minutes)" : `${n} minute${n === 1 ? "" : "s"} early`}
-          </option>
-        ))}
-      </select>
-      <p className="hint small-line">The drive block before each masjid prayer ends this many minutes before iqamah.</p>
+      <div className="minutes-field">
+        <input
+          id="arrive-early"
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={MAX_EARLY}
+          step={1}
+          value={early}
+          onChange={(e) => setEarly(e.target.value)}
+          aria-invalid={earlyError ? true : undefined}
+          aria-describedby={earlyError ? "arrive-early-error arrive-early-hint" : "arrive-early-hint"}
+        />
+        <span aria-hidden="true">minutes</span>
+      </div>
+      {earlyError && (
+        <p className="error field-error" id="arrive-early-error" role="alert">
+          {earlyError}
+        </p>
+      )}
+      <p className="hint small-line" id="arrive-early-hint">
+        0 to {MAX_EARLY} minutes. The drive block before each masjid prayer ends this many minutes before iqamah.
+      </p>
 
       {masjid && (
         <>

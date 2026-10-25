@@ -1,6 +1,6 @@
 // A dropdown that looks like Google Calendar's colour menu: a round dot
 // for each colour with Google's name, and a tick on the chosen one.
-// "Calendar colour" comes first and is the default. A plain <select> can't
+// "Calendar colour" (the Prayers calendar's own colour) comes first. A plain <select> can't
 // show coloured dots, so this is a small listbox: a button that opens a list.
 // Keyboard: Enter, Space, or the arrow keys open it. Arrows move, Enter
 // picks, Escape closes.
