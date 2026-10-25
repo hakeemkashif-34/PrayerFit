@@ -12,7 +12,6 @@ SETUP_FINISHED_AT = datetime(2026, 1, 1, tzinfo=UTC)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.geo.nominatim import FoundPlace
 from app.models import Masjid, User, UserSettings, WeeklyMasjidPrayers
 from app.user_settings import PRAYERS, get_settings, save_location
 
@@ -39,7 +38,7 @@ def save_setup(
     with Session(engine) as db:
         user = db.scalars(select(User).where(User.google_sub == sub)).one()
         row = get_settings(db, user.id)
-        save_location(row, "1 Test Street", FoundPlace("1 Test Street, Ottawa", *location), time_zone)
+        save_location(row, "1 Test Street, Ottawa", *location, time_zone)
         row.method = method
         row.asr_method = asr_method
         row.jumuah_saved = True
@@ -79,9 +78,21 @@ def settings_row(engine, sub: str = "user-a") -> UserSettings:
 
 # ---- Going through setup the way the website does ----
 
-HOME_ADDRESS = "200 Kanata Ave, Ottawa"
-HOME_PLACE = "200, Kanata Avenue, Kanata, Ottawa, Ontario, K2T 1K8, Canada"
+HOME_QUERY = "200 Kanata Ave"
+HOME_PLACE = "200 Kanata Avenue, Ottawa, Ontario, K2T 1K8, Canada"
 HOME = (45.3088, -75.8987)  # a made-up point in Kanata
+
+
+def add_home(fake_osm) -> None:
+    """The home "on Photon", plus a place with the same street name in the US."""
+    fake_osm.add_place(
+        43.1, -77.6, countrycode="US", housenumber="200", street="Kanata Avenue",
+        city="Rochester", state="New York", country="United States",
+    )
+    fake_osm.add_place(
+        *HOME, housenumber="200", street="Kanata Avenue", city="Ottawa",
+        state="Ontario", postcode="K2T 1K8", country="Canada",
+    )
 
 
 def add_nearby_masjids(fake_osm) -> None:
@@ -101,15 +112,15 @@ def setup_through_api(
     at_masjid: dict[int, list[str]] | None = None,
     finish: bool = True,
 ):
-    """Answer every setup question through the API. Returns the finish response."""
+    """Answer the 3 setup questions through the API, then finish. Returns the finish response."""
     if not fake_osm.places:
-        fake_osm.add_place(HOME_ADDRESS, HOME_PLACE, *HOME)
+        add_home(fake_osm)
     if not fake_osm.elements:
         add_nearby_masjids(fake_osm)
 
-    assert client.post("/setup/address/search", json={"address": HOME_ADDRESS}).status_code == 200
-    assert client.put("/settings/address", json={"address": HOME_ADDRESS}).status_code == 200
-    assert client.put("/settings/methods", json={}).status_code == 200
+    suggestions = client.post("/setup/location/suggest", json={"query": HOME_QUERY}).json()["suggestions"]
+    index = next(s["index"] for s in suggestions if s["label"] == HOME_PLACE)
+    assert client.put("/settings/location", json={"query": HOME_QUERY, "index": index}).status_code == 200
 
     nearby = client.get("/masjids/nearby").json()["masjids"]
     by_name = {m["name"]: m["id"] for m in nearby}
@@ -129,8 +140,6 @@ def setup_through_api(
         ]
         assert client.put("/settings/weekly", json={"days": days}).status_code == 200
 
-    jumuah = [by_name["Kanata Muslim Association"], by_name["Stittsville Masjid"]]
-    assert client.put("/settings/jumuah", json={"masjid_ids": jumuah}).status_code == 200
     if finish:
         return client.post("/setup/finish")
     return None

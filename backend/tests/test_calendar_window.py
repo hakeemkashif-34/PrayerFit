@@ -187,9 +187,9 @@ def test_switching_to_home_renames_the_masjid_events(signed_in, fake_osm, fake_g
 
 def test_moving_updates_the_calendar_and_event_time_zones(signed_in, fake_osm, fake_google):
     setup_through_api(signed_in, fake_osm)
-    fake_osm.add_place("1 Robson St, Vancouver", "Robson Street, Vancouver, BC", 49.2827, -123.1207)
+    fake_osm.add_place(49.2827, -123.1207, name="Robson Street", city="Vancouver", country="Canada")
 
-    signed_in.put("/settings/address", json={"address": "1 Robson St, Vancouver"})
+    signed_in.put("/settings/location", json={"query": "Robson Street", "index": 0})
 
     calendar = fake_google.calendars_of("user-a")[0]
     assert calendar.time_zone == "America/Vancouver"

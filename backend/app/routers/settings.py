@@ -19,7 +19,7 @@ from app.auth.sessions import current_user
 from app.calendar_window import SetupIncomplete, refresh_calendar
 from app.clock import get_now
 from app.db import get_db
-from app.geo.nominatim import find_address
+from app.geo.photon import MAX_SUGGESTIONS, MIN_QUERY_LENGTH, suggest
 from app.geo.overpass import SEARCH_RADIUS_KM, nearby_masjids
 from app.geo.timezones import timezone_for
 from app.google_errors import CalendarAccessMissing, GoogleError, ReauthRequired
@@ -30,8 +30,10 @@ from app.prayer_times import AsrMethod, CalculationMethod
 from app.user_settings import (
     PRAYERS,
     find_settings,
+    asr_method_of,
     get_settings,
     jumuah_masjids,
+    method_of,
     missing_steps,
     read_address,
     read_location,
@@ -80,13 +82,14 @@ class WeekdayPrayers(BaseModel):
 
 class SettingsOut(BaseModel):
     setup_complete: bool
-    # Setup steps not answered yet, in order.
+    # Setup questions not answered yet, in order: address, masjid, weekly.
     missing: list[str]
     address: str | None
     place_name: str | None
     time_zone: str | None
-    method: CalculationMethod | None
-    asr_method: AsrMethod | None
+    # The defaults (ISNA, standard) until the user picks others.
+    method: CalculationMethod
+    asr_method: AsrMethod
     main_masjid_choice: Literal["masjid", "home"] | None
     main_masjid: MasjidOut | None
     main_masjid_short_name: str | None
@@ -128,8 +131,8 @@ def settings_out(db: Session, user_id: uuid.UUID) -> SettingsOut:
         address=read_address(row),
         place_name=read_place_name(row),
         time_zone=row.time_zone,
-        method=row.method,
-        asr_method=row.asr_method,
+        method=method_of(row),
+        asr_method=asr_method_of(row),
         main_masjid_choice=row.main_masjid_choice,
         main_masjid=_masjid_out(main) if main and row.main_masjid_choice == "masjid" else None,
         main_masjid_short_name=row.main_masjid_short_name,
@@ -200,66 +203,82 @@ def read_settings(user: UserDep, db: DbDep) -> SettingsOut:
     return settings_out(db, user.id)
 
 
-# ---- Step 1: address ----
+# ---- Question 1: location ----
 
 
-class AddressRequest(BaseModel):
+def _one_line(value: str) -> str:
+    return " ".join(value.split())
+
+
+class SuggestRequest(BaseModel):
     # In the body, never the URL, so it can't end up in access logs.
-    address: str = Field(min_length=3, max_length=300)
+    query: str = Field(max_length=200)
 
-    @field_validator("address")
+    @field_validator("query")
     @classmethod
     def strip(cls, value: str) -> str:
-        return " ".join(value.split())
+        return _one_line(value)
 
 
-class FoundAddress(BaseModel):
-    place_name: str
-    latitude: float
-    longitude: float
-    time_zone: str
+class LocationSuggestion(BaseModel):
+    # Its place in the list. The website sends it back to pick this one.
+    index: int
+    label: str
+
+
+class SuggestResponse(BaseModel):
+    suggestions: list[LocationSuggestion]
     credit: str = OSM_CREDIT
     credit_url: str = OSM_CREDIT_URL
 
 
-def _not_found() -> HTTPException:
-    return HTTPException(
-        status_code=404,
-        detail={"message": "No place found for that address. Try adding the city or postal code."},
-    )
+@router.post("/setup/location/suggest", response_model=SuggestResponse)
+def suggest_locations(request: SuggestRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> SuggestResponse:
+    """Up to 5 places for what the user has typed so far. Saves nothing.
 
-
-@router.post("/setup/address/search", response_model=FoundAddress)
-def search_address(request: AddressRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> FoundAddress:
-    """Look the address up so the user can check it. Saves nothing."""
-    found = find_address(db, http, request.address, now)
-    if found is None:
-        raise _not_found()
-    return FoundAddress(
-        place_name=found.place_name,
-        latitude=found.latitude,
-        longitude=found.longitude,
-        time_zone=timezone_for(found.latitude, found.longitude),
-    )
-
-
-@router.put("/settings/address", response_model=SaveResponse)
-def save_address(request: AddressRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> SaveResponse:
-    """Save the address the user confirmed.
-
-    The location comes from the same lookup the user just saw (it's cached),
-    not from the browser, so it always matches what they confirmed.
+    The website waits until the user stops typing for about 400 ms. Fewer
+    than 3 characters gets an empty list without calling Photon.
     """
-    found = find_address(db, http, request.address, now)
-    if found is None:
-        raise _not_found()
+    found = suggest(db, http, request.query, now)
+    return SuggestResponse(
+        suggestions=[LocationSuggestion(index=i, label=s.label) for i, s in enumerate(found)]
+    )
+
+
+class LocationRequest(BaseModel):
+    query: str = Field(min_length=MIN_QUERY_LENGTH, max_length=200)
+    index: int = Field(ge=0, lt=MAX_SUGGESTIONS)
+
+    @field_validator("query")
+    @classmethod
+    def strip(cls, value: str) -> str:
+        return _one_line(value)
+
+
+@router.put("/settings/location", response_model=SaveResponse)
+def save_location_choice(request: LocationRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> SaveResponse:
+    """Save the suggestion the user picked.
+
+    The location comes from the same search the user just saw (it's
+    cached), not from the browser, so it always matches what they picked.
+    """
+    found = suggest(db, http, request.query, now)
+    if request.index >= len(found):
+        raise HTTPException(
+            status_code=404, detail={"message": "That place isn't in the list any more. Search again."}
+        )
+    place = found[request.index]
     save_location(
-        get_settings(db, user.id), request.address, found, timezone_for(found.latitude, found.longitude)
+        get_settings(db, user.id),
+        place.label,
+        place.latitude,
+        place.longitude,
+        timezone_for(place.latitude, place.longitude),
     )
     return _saved(db, http, user, now)
 
 
-# ---- Step 2: calculation method and Asr method ----
+# ---- Calculation method and Asr method (settings page only, for now) ----
 
 
 class MethodsRequest(BaseModel):
@@ -275,7 +294,7 @@ def save_methods(request: MethodsRequest, user: UserDep, db: DbDep, http: HttpDe
     return _saved(db, http, user, now)
 
 
-# ---- Step 3: main masjid ----
+# ---- Question 2: main masjid ----
 
 
 class NearbyResponse(BaseModel):
@@ -351,7 +370,7 @@ def save_main_masjid(request: MainMasjidRequest, user: UserDep, db: DbDep, http:
     return _saved(db, http, user, now)
 
 
-# ---- Step 4: weekly grid ----
+# ---- Question 3: weekly grid ----
 
 
 class WeeklyRequest(BaseModel):
@@ -378,7 +397,7 @@ def save_weekly(request: WeeklyRequest, user: UserDep, db: DbDep, http: HttpDep,
     return _saved(db, http, user, now)
 
 
-# ---- Step 5: Jumuah masjids ----
+# ---- Jumuah masjids (settings page only, for now) ----
 
 
 class JumuahRequest(BaseModel):
@@ -403,7 +422,10 @@ def save_jumuah(request: JumuahRequest, user: UserDep, db: DbDep, http: HttpDep,
 
 @router.post("/setup/finish", response_model=SaveResponse)
 def finish_setup(user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> SaveResponse:
-    """Mark setup done and fill the Prayers calendar with the next 14 days."""
+    """Mark setup done and fill the Prayers calendar with the next 14 days.
+
+    The website calls this straight after the last question.
+    """
     row = get_settings(db, user.id)
     missing = missing_steps(db, row)
     if missing:

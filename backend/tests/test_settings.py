@@ -14,8 +14,9 @@ from app.models import Masjid, UserJumuahMasjid, UserSettings, WeeklyMasjidPraye
 from tests.conftest import new_client, sign_in
 from tests.setup_helpers import (
     HOME,
-    HOME_ADDRESS,
     HOME_PLACE,
+    HOME_QUERY,
+    add_home,
     add_nearby_masjids,
     setup_through_api,
 )
@@ -32,57 +33,78 @@ def signed_in(client, fake_google, set_today):
 
 @pytest.fixture
 def osm(fake_osm):
-    fake_osm.add_place(HOME_ADDRESS, HOME_PLACE, *HOME)
+    add_home(fake_osm)
     add_nearby_masjids(fake_osm)
     return fake_osm
+
+
+def save_home(client) -> None:
+    """Type the address and pick the Canadian suggestion, like the website does."""
+    suggestions = client.post("/setup/location/suggest", json={"query": HOME_QUERY}).json()["suggestions"]
+    index = next(s["index"] for s in suggestions if s["label"] == HOME_PLACE)
+    response = client.put("/settings/location", json={"query": HOME_QUERY, "index": index})
+    assert response.status_code == 200
 
 
 def _nearby_ids(client) -> dict[str, str]:
     return {m["name"]: m["id"] for m in client.get("/masjids/nearby").json()["masjids"]}
 
 
-# ---- Address ----
+# ---- Location ----
 
 
-def test_address_search_shows_the_place_and_time_zone(signed_in, osm):
-    response = signed_in.post("/setup/address/search", json={"address": HOME_ADDRESS})
+def test_suggestions_while_typing(signed_in, osm):
+    response = signed_in.post("/setup/location/suggest", json={"query": HOME_QUERY})
 
     assert response.status_code == 200
     assert response.json() == {
-        "place_name": HOME_PLACE,
-        "latitude": HOME[0],
-        "longitude": HOME[1],
-        "time_zone": "America/Toronto",
+        "suggestions": [
+            {"index": 0, "label": HOME_PLACE},  # Canada first
+            {"index": 1, "label": "200 Kanata Avenue, Rochester, New York, United States"},
+        ],
         "credit": "© OpenStreetMap contributors",
         "credit_url": "https://www.openstreetmap.org/copyright",
     }
-    # Searching saves nothing. Only confirming does.
+    # Suggesting saves nothing. Only picking does.
     assert signed_in.get("/settings").json()["address"] is None
 
 
-def test_confirming_saves_the_address_without_a_second_lookup(signed_in, osm):
-    signed_in.post("/setup/address/search", json={"address": HOME_ADDRESS})
-    response = signed_in.put("/settings/address", json={"address": HOME_ADDRESS})
+def test_short_text_gets_no_suggestions(signed_in, osm):
+    response = signed_in.post("/setup/location/suggest", json={"query": "20"})
+
+    assert response.json()["suggestions"] == []
+    assert osm.photon_requests == []
+
+
+def test_picking_a_suggestion_saves_it_without_a_second_lookup(signed_in, osm):
+    signed_in.post("/setup/location/suggest", json={"query": HOME_QUERY})
+    response = signed_in.put("/settings/location", json={"query": HOME_QUERY, "index": 0})
 
     assert response.status_code == 200
     settings = response.json()["settings"]
-    assert settings["address"] == HOME_ADDRESS
+    assert settings["address"] == HOME_PLACE
     assert settings["place_name"] == HOME_PLACE
     assert settings["time_zone"] == "America/Toronto"
-    assert len(osm.nominatim_requests) == 1  # the confirm used the cached answer
+    assert settings["missing"] == ["masjid", "weekly"]
+    assert len(osm.photon_requests) == 1  # picking used the cached answer
     assert response.json()["calendar"] is None  # nothing goes to Google during setup
 
 
-def test_time_zone_comes_from_the_location(signed_in, fake_osm):
-    fake_osm.add_place("1 Robson St, Vancouver", "Robson Street, Vancouver, BC", 49.2827, -123.1207)
+def test_picking_a_place_not_in_the_list_is_refused(signed_in, osm):
+    response = signed_in.put("/settings/location", json={"query": HOME_QUERY, "index": 4})
+    assert response.status_code == 404
 
-    response = signed_in.put("/settings/address", json={"address": "1 Robson St, Vancouver"})
+
+def test_time_zone_comes_from_the_location(signed_in, fake_osm):
+    fake_osm.add_place(49.2827, -123.1207, name="Robson Street", city="Vancouver", country="Canada")
+
+    response = signed_in.put("/settings/location", json={"query": "Robson Street", "index": 0})
 
     assert response.json()["settings"]["time_zone"] == "America/Vancouver"
 
 
 def test_address_is_stored_encrypted(signed_in, osm, db):
-    signed_in.put("/settings/address", json={"address": HOME_ADDRESS})
+    save_home(signed_in)
 
     with db.connect() as connection:
         raw = connection.execute(
@@ -103,30 +125,24 @@ def test_address_never_shows_up_in_logs(signed_in, osm, caplog):
     assert "45.3088" not in caplog.text
 
 
-def test_unknown_address_says_so(signed_in, fake_osm):
-    response = signed_in.post("/setup/address/search", json={"address": "nowhere at all"})
+def test_busy_photon_is_a_503_with_a_message(signed_in, fake_osm):
+    fake_osm.photon_failure = 429
 
-    assert response.status_code == 404
-    assert "No place found" in response.json()["detail"]["message"]
-
-
-def test_busy_nominatim_is_a_503_with_a_message(signed_in, fake_osm):
-    fake_osm.nominatim_failure = 429
-
-    response = signed_in.post("/setup/address/search", json={"address": HOME_ADDRESS})
+    response = signed_in.post("/setup/location/suggest", json={"query": HOME_QUERY})
 
     assert response.status_code == 503
-    assert response.json()["detail"]["message"] == (
-        "OpenStreetMap's address search is busy. Try again in a minute."
-    )
+    assert response.json()["detail"]["message"] == "The address search is busy. Try again in a minute."
 
 
 # ---- Methods ----
 
 
 def test_methods_default_to_isna_and_standard(signed_in):
-    response = signed_in.put("/settings/methods", json={})
+    # Not asked in setup, so the defaults apply until the user changes them.
+    settings = signed_in.get("/settings").json()
+    assert (settings["method"], settings["asr_method"]) == ("isna", "standard")
 
+    response = signed_in.put("/settings/methods", json={})
     settings = response.json()["settings"]
     assert (settings["method"], settings["asr_method"]) == ("isna", "standard")
 
@@ -146,7 +162,7 @@ def test_unknown_method_is_rejected(signed_in):
 
 
 def test_nearby_masjids_are_sorted_by_distance(signed_in, osm):
-    signed_in.put("/settings/address", json={"address": HOME_ADDRESS})
+    save_home(signed_in)
 
     response = signed_in.get("/masjids/nearby")
 
@@ -168,7 +184,7 @@ def test_nearby_needs_an_address_first(signed_in):
 
 
 def test_picking_a_masjid_with_a_short_name(signed_in, osm):
-    signed_in.put("/settings/address", json={"address": HOME_ADDRESS})
+    save_home(signed_in)
     kma = _nearby_ids(signed_in)["Kanata Muslim Association"]
 
     response = signed_in.put(
@@ -183,7 +199,7 @@ def test_picking_a_masjid_with_a_short_name(signed_in, osm):
 
 
 def test_typed_in_masjid_saves(signed_in, osm, db):
-    signed_in.put("/settings/address", json={"address": HOME_ADDRESS})
+    save_home(signed_in)
 
     response = signed_in.put(
         "/settings/main-masjid",
@@ -219,15 +235,14 @@ def test_typed_in_masjid_needs_a_name_and_address(signed_in):
 
 
 def test_praying_at_home_skips_the_weekly_grid(signed_in, osm):
-    signed_in.put("/settings/address", json={"address": HOME_ADDRESS})
-    signed_in.put("/settings/methods", json={})
+    save_home(signed_in)
 
     response = signed_in.put("/settings/main-masjid", json={"choice": "home"})
 
     settings = response.json()["settings"]
     assert settings["main_masjid_choice"] == "home"
     assert settings["main_masjid"] is None
-    assert settings["missing"] == ["jumuah"]  # no "weekly"
+    assert settings["missing"] == []  # no "weekly"
 
 
 def test_made_up_masjid_id_is_refused(signed_in):
@@ -279,7 +294,7 @@ def test_weekly_grid_needs_each_day_once(signed_in, weekdays):
 
 
 def test_more_than_one_jumuah_masjid(signed_in, osm):
-    signed_in.put("/settings/address", json={"address": HOME_ADDRESS})
+    save_home(signed_in)
     ids = _nearby_ids(signed_in)
 
     response = signed_in.put(
@@ -301,12 +316,27 @@ def test_no_jumuah_masjid_is_allowed(signed_in):
 
 
 def test_finish_needs_every_answer(signed_in, osm):
-    signed_in.put("/settings/address", json={"address": HOME_ADDRESS})
+    response = signed_in.post("/setup/finish")
+    assert response.json()["detail"]["missing"] == ["address", "masjid", "weekly"]
 
+    save_home(signed_in)
     response = signed_in.post("/setup/finish")
 
     assert response.status_code == 409
-    assert response.json()["detail"]["missing"] == ["methods", "masjid", "weekly", "jumuah"]
+    assert response.json()["detail"]["missing"] == ["masjid", "weekly"]
+
+
+def test_setup_is_only_3_questions(signed_in, osm, fake_google):
+    # No methods step and no Jumuah step: defaults are used.
+    response = setup_through_api(signed_in, osm)
+
+    settings = response.json()["settings"]
+    assert settings["setup_complete"] is True
+    assert (settings["method"], settings["asr_method"]) == ("isna", "standard")
+    assert settings["jumuah_masjids"] == []
+    assert osm.photon_requests  # the location came from Photon
+    events = fake_google.live_events(fake_google.calendars_of("user-a")[0].id)
+    assert events[0]["description"].startswith("Calculated (ISNA, standard Asr)")
 
 
 def test_full_setup_fills_the_calendar(signed_in, osm, fake_google):
@@ -378,7 +408,7 @@ def test_settings_belong_to_one_user(fake_google, osm, set_today, db):
         assert bob_settings["setup_complete"] is False
 
         # Bob can't see or pick Alice's typed-in masjid.
-        bob.put("/settings/address", json={"address": HOME_ADDRESS})
+        save_home(bob)
         assert bob.get("/masjids/nearby").json()["typed_by_you"] == []
         assert bob.put(
             "/settings/main-masjid", json={"choice": "masjid", "masjid_id": alice_masjid}
@@ -390,7 +420,7 @@ def test_settings_belong_to_one_user(fake_google, osm, set_today, db):
         assert {r.user_id for r in session.scalars(select(WeeklyMasjidPrayers))} == {
             session.scalars(select(UserSettings.user_id).where(UserSettings.setup_completed_at.isnot(None))).one()
         }
-        assert len(session.scalars(select(UserJumuahMasjid)).all()) == 2  # only Alice's
+        assert session.scalars(select(UserJumuahMasjid)).all() == []  # not part of setup any more
 
 
 def test_reading_settings_saves_nothing(signed_in, db):
@@ -402,4 +432,4 @@ def test_reading_settings_saves_nothing(signed_in, db):
 def test_settings_need_sign_in(client):
     assert client.get("/settings").status_code == 401
     assert client.put("/settings/methods", json={}).status_code == 401
-    assert client.post("/setup/address/search", json={"address": HOME_ADDRESS}).status_code == 401
+    assert client.post("/setup/location/suggest", json={"query": HOME_QUERY}).status_code == 401

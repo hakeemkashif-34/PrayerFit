@@ -11,13 +11,17 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.auth.crypto import decrypt, encrypt
-from app.geo.nominatim import FoundPlace
 from app.models import Masjid, UserJumuahMasjid, UserSettings, WeeklyMasjidPrayers
 from app.prayer_times import AsrMethod, CalculationMethod
 
 PRAYERS = ("fajr", "dhuhr", "asr", "maghrib", "isha")
-# The setup steps, in the order the website asks them.
-STEPS = ("address", "methods", "masjid", "weekly", "jumuah")
+# The setup questions, in the order the website asks them. The methods and
+# Jumuah steps are out of setup for now: methods use the defaults below,
+# and Jumuah starts with no masjid. Both can still be changed on the
+# settings page, and anything already saved for them is kept.
+STEPS = ("address", "masjid", "weekly")
+DEFAULT_METHOD = CalculationMethod.ISNA
+DEFAULT_ASR_METHOD = AsrMethod.STANDARD
 
 
 def get_settings(db: Session, user_id: uuid.UUID) -> UserSettings:
@@ -37,11 +41,20 @@ def find_settings(db: Session, user_id: uuid.UUID) -> UserSettings:
     return row if row is not None else UserSettings(user_id=user_id, jumuah_saved=False)
 
 
-def save_location(row: UserSettings, address: str, found: FoundPlace, time_zone: str) -> None:
-    row.address_encrypted = encrypt(address)
-    row.place_name_encrypted = encrypt(found.place_name)
-    row.location_encrypted = encrypt(f"{found.latitude},{found.longitude}")
+def save_location(row: UserSettings, label: str, latitude: float, longitude: float, time_zone: str) -> None:
+    """Save the place the user picked. All 3 parts point to a home, so all are encrypted."""
+    row.address_encrypted = encrypt(label)
+    row.place_name_encrypted = encrypt(label)
+    row.location_encrypted = encrypt(f"{latitude},{longitude}")
     row.time_zone = time_zone
+
+
+def method_of(row: UserSettings) -> CalculationMethod:
+    return CalculationMethod(row.method) if row.method else DEFAULT_METHOD
+
+
+def asr_method_of(row: UserSettings) -> AsrMethod:
+    return AsrMethod(row.asr_method) if row.asr_method else DEFAULT_ASR_METHOD
 
 
 def read_address(row: UserSettings) -> str | None:
@@ -94,8 +107,6 @@ def missing_steps(db: Session, row: UserSettings) -> list[str]:
     missing = []
     if row.location_encrypted is None or row.time_zone is None:
         missing.append("address")
-    if row.method is None or row.asr_method is None:
-        missing.append("methods")
     if row.main_masjid_choice is None or (
         row.main_masjid_choice == "masjid" and row.main_masjid_id is None
     ):
@@ -103,8 +114,6 @@ def missing_steps(db: Session, row: UserSettings) -> list[str]:
     # Someone who prays at home skips the grid.
     if row.main_masjid_choice != "home" and len(weekly_rows(db, row.user_id)) != 7:
         missing.append("weekly")
-    if not row.jumuah_saved:
-        missing.append("jumuah")
     return missing
 
 
@@ -151,8 +160,8 @@ def load_setup(db: Session, user_id: uuid.UUID) -> Setup | None:
         latitude=latitude,
         longitude=longitude,
         time_zone=row.time_zone,
-        method=CalculationMethod(row.method),
-        asr_method=AsrMethod(row.asr_method),
+        method=method_of(row),
+        asr_method=asr_method_of(row),
         masjid=masjid,
         masjid_label=masjid_label(masjid, row.main_masjid_short_name) if masjid else None,
         at_masjid=at_masjid,
