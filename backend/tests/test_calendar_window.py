@@ -15,7 +15,7 @@ from tests.setup_helpers import save_setup, setup_through_api
 
 DAY = date(2026, 10, 24)  # a Saturday
 TORONTO = ZoneInfo("America/Toronto")
-IQAMAH_NOTE = "Iqamah times not added yet, so this is the calculated prayer time."
+IQAMAH_NOTE = "KMA's iqamah time isn't available."
 
 
 @pytest.fixture
@@ -81,12 +81,12 @@ def test_masjid_events_say_the_time_is_calculated(signed_in, fake_photon, fake_g
     setup_through_api(signed_in, fake_photon)
 
     for event in _events(fake_google):
+        # Every event says where its time came from.
         if event["summary"].endswith("at KMA"):
-            assert IQAMAH_NOTE in event["description"]
+            assert event["description"].startswith(f"Calculated start time (ISNA, standard Asr). {IQAMAH_NOTE}")
         else:
             assert IQAMAH_NOTE not in event["description"]
-        # Every event says where its time came from.
-        assert event["description"].startswith("Calculated (ISNA, standard Asr)")
+            assert event["description"].startswith("Calculated (ISNA, standard Asr)")
 
 
 def test_dhuhr_description_explains_the_extra_minute(signed_in, fake_google, db):

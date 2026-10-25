@@ -35,3 +35,10 @@ def timezone_for(latitude: float, longitude: float) -> str:
         pass
     # Shouldn't happen on land. Fall back instead of failing setup.
     return os.environ.get("DEFAULT_TIMEZONE") or DEFAULT_TIMEZONE
+
+
+def masjid_time_zone(masjid) -> str:
+    """A masjid's own time zone. Times on its page are clock times there."""
+    if masjid.latitude is None or masjid.longitude is None:
+        return os.environ.get("DEFAULT_TIMEZONE") or DEFAULT_TIMEZONE
+    return timezone_for(masjid.latitude, masjid.longitude)

@@ -20,11 +20,10 @@ from sqlalchemy import Engine, exists, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.geo.timezones import timezone_for
+from app.geo.timezones import masjid_time_zone
 from app.masjid_times.source import SourceBlocked, SourceError, get_source
 from app.masjid_times.store import save_days
 from app.models import Masjid, MasjidFetchJob, MasjidSource, UserJumuahMasjid, UserSettings
-from app.prayer_times import DEFAULT_TIMEZONE
 from app.update_jobs import queue_update, users_of_masjid
 
 logger = logging.getLogger("app.masjid_times")
@@ -45,13 +44,6 @@ def block_start(now: datetime) -> datetime:
 
 def fetch_job_id(source: str, masjid_id: uuid.UUID, now: datetime) -> str:
     return f"{source}:{masjid_id}:{block_start(now):%Y-%m-%dT%H}"
-
-
-def masjid_time_zone(masjid: Masjid) -> str:
-    """Times on a masjid's page are in the masjid's own time zone."""
-    if masjid.latitude is None or masjid.longitude is None:
-        return DEFAULT_TIMEZONE
-    return timezone_for(masjid.latitude, masjid.longitude)
 
 
 @dataclass

@@ -83,12 +83,13 @@ def weekly_rows(db: Session, user_id: uuid.UUID) -> list[WeeklyMasjidPrayers]:
 
 
 def jumuah_masjids(db: Session, user_id: uuid.UUID) -> list[Masjid]:
+    """In the order the user listed them. The Jumuah picker uses it when drive times are unknown."""
     return list(
         db.scalars(
             select(Masjid)
             .join(UserJumuahMasjid, UserJumuahMasjid.masjid_id == Masjid.id)
             .where(UserJumuahMasjid.user_id == user_id)
-            .order_by(Masjid.name)
+            .order_by(UserJumuahMasjid.position, Masjid.name)
         )
     )
 
@@ -132,6 +133,19 @@ class Setup:
     masjid_label: str | None
     # weekday (0 is Monday) -> the prayers usually prayed at the masjid
     at_masjid: dict[int, frozenset[str]]
+    user_id: uuid.UUID | None = None
+    # In the order the user listed them. Empty means no Jumuah.
+    jumuah_masjids: tuple[Masjid, ...] = ()
+    arrive_early_minutes: int = 0
+    # Google event colours, "1" to "11". None uses the calendar's colour.
+    prayer_color_id: str | None = None
+    drive_color_id: str | None = None
+
+    def label_for(self, masjid: Masjid) -> str:
+        """The main masjid's short name if this is it, otherwise the masjid's name."""
+        if self.masjid is not None and masjid.id == self.masjid.id:
+            return self.masjid_label
+        return masjid_label(masjid, None)
 
     def place_for(self, weekday: int, prayer: str) -> str:
         if self.masjid is not None and prayer in self.at_masjid.get(weekday, frozenset()):
@@ -165,4 +179,9 @@ def load_setup(db: Session, user_id: uuid.UUID) -> Setup | None:
         masjid=masjid,
         masjid_label=masjid_label(masjid, row.main_masjid_short_name) if masjid else None,
         at_masjid=at_masjid,
+        user_id=user_id,
+        jumuah_masjids=tuple(jumuah_masjids(db, user_id)),
+        arrive_early_minutes=row.arrive_early_minutes or 0,
+        prayer_color_id=row.prayer_color_id,
+        drive_color_id=row.drive_color_id,
     )
