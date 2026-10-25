@@ -1,15 +1,10 @@
-// Question 1: "What's your location?"
-// Suggestions appear in a dropdown as the user types. To be fair to the
-// free Photon service, the website only asks once typing stops for 400 ms,
-// needs at least 3 characters, cancels a search that's no longer needed,
-// and shows at most 5 suggestions. Picking one saves it.
+// Question 1: "What's your location?" Suggestions come from Photon as the
+// user types (see SuggestBox). Picking one saves it.
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useState } from "react";
 import { api, ApiError } from "../api";
+import { SuggestBox } from "../SuggestBox";
 import type { LocationSuggestion, SaveResponse } from "../types";
-
-export const TYPING_PAUSE_MS = 400;
-const MIN_LENGTH = 3;
 
 type Props = {
   // The saved place, if there is one.
@@ -23,77 +18,20 @@ type Props = {
 };
 
 export function LocationStep({ current, page = false, onSaved, onKeep, keepLabel = "Keep this location" }: Props) {
-  const [query, setQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<LocationSuggestion[] | null>(null);
-  // The text the suggestions are for. Picking sends this back, not whatever is typed now.
-  const [resultsFor, setResultsFor] = useState("");
-  const [active, setActive] = useState(-1);
-  const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const listId = useId();
-  const inputRef = useRef<HTMLInputElement>(null);
   const Heading = page ? "h1" : "h2";
 
-  useEffect(() => {
-    const text = query.trim();
-    if (text.length < MIN_LENGTH) {
-      setSuggestions(null);
-      setSearching(false);
-      return;
-    }
-    const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      setSearching(true);
-      setError("");
-      try {
-        const result = await api.suggestLocations(text, controller.signal);
-        setSuggestions(result.suggestions);
-        setResultsFor(text);
-        setActive(-1);
-      } catch (e) {
-        if (controller.signal.aborted) return; // the user typed again
-        setSuggestions(null);
-        setError(e instanceof ApiError ? e.message : "Couldn't search. Try again.");
-      } finally {
-        if (!controller.signal.aborted) setSearching(false);
-      }
-    }, TYPING_PAUSE_MS);
-    // Typing again cancels the wait, and the search if it already started.
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [query]);
-
-  async function pick(suggestion: LocationSuggestion) {
+  async function pick(suggestion: LocationSuggestion, query: string) {
     setSaving(true);
     setError("");
     try {
-      onSaved(await api.saveLocation(resultsFor, suggestion.index));
+      onSaved(await api.saveLocation(query, suggestion.index));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't save. Try again.");
       setSaving(false);
     }
   }
-
-  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (!suggestions?.length) return;
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setActive((i) => (i + 1) % suggestions.length);
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setActive((i) => (i <= 0 ? suggestions.length - 1 : i - 1));
-    } else if (event.key === "Enter" && active >= 0) {
-      event.preventDefault();
-      void pick(suggestions[active]);
-    } else if (event.key === "Escape") {
-      setSuggestions(null);
-    }
-  }
-
-  const open = suggestions !== null && query.trim().length >= MIN_LENGTH;
 
   return (
     <section aria-labelledby="location-title">
@@ -110,47 +48,16 @@ export function LocationStep({ current, page = false, onSaved, onKeep, keepLabel
           )}
         </div>
       )}
-      <label htmlFor="location" className="visually-hidden">
-        Address
-      </label>
-      <div className="combobox">
-        <input
-          id="location"
-          ref={inputRef}
-          role="combobox"
-          aria-expanded={open}
-          aria-controls={listId}
-          aria-autocomplete="list"
-          aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
-          autoComplete="off"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={current ? "Search for a new address" : "Start typing your address"}
-          maxLength={200}
-          disabled={saving}
-        />
-        {open && (
-          <ul id={listId} role="listbox" className="suggestions" aria-label="Suggested places">
-            {suggestions.length === 0 && <li className="empty">No places found. Try adding the city.</li>}
-            {suggestions.map((s, i) => (
-              <li
-                key={s.index}
-                id={`${listId}-${i}`}
-                role="option"
-                aria-selected={i === active}
-                className={i === active ? "active" : undefined}
-                // mousedown, so the input doesn't lose focus first.
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => void pick(s)}
-              >
-                {s.label}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      {searching && <p className="hint">Searching…</p>}
+      <SuggestBox<LocationSuggestion>
+        label="Address"
+        placeholder={current ? "Search for a new address" : "Start typing your address"}
+        search={async (query, signal) => (await api.suggestLocations(query, signal)).suggestions}
+        renderOption={(s) => s.label}
+        optionName={(s) => s.label}
+        onPick={pick}
+        emptyText="No places found. Try adding the city."
+        disabled={saving}
+      />
       {saving && <p className="hint">Saving…</p>}
       {error && (
         <p className="error" role="alert">
