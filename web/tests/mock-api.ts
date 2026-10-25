@@ -3,7 +3,7 @@
 // records every request so tests can check what the website sent.
 
 import type { Page, Route } from "@playwright/test";
-import type { Masjid, Me, Nearby, Settings, Step } from "../src/types";
+import type { Masjid, MasjidSuggestion, Me, Settings, Step } from "../src/types";
 
 export const KMA: Masjid = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -13,8 +13,20 @@ export const KMA: Masjid = {
   distance_km: 1.1,
   iqamah_status: "Iqamah times not added yet",
 };
-export const STITTSVILLE: Masjid = { ...KMA, id: "22222222-2222-2222-2222-222222222222", name: "Stittsville Masjid", address: null, distance_km: 5.6 };
-export const UNNAMED: Masjid = { ...KMA, id: "33333333-3333-3333-3333-333333333333", name: null, address: null, distance_km: 12.4 };
+export const STITTSVILLE: Masjid = { ...KMA, id: "22222222-2222-2222-2222-222222222222", name: "Stittsville Masjid", address: "Stittsville Main Street, Ottawa", distance_km: 5.8 };
+export const TORONTO: Masjid = { ...KMA, id: "33333333-3333-3333-3333-333333333333", name: "Kanata Masjid Toronto", address: "Toronto", distance_km: 352.1 };
+
+// What the pretend Photon knows about masjids, as the backend would send them.
+// The street address one is for a masjid that isn't on the map.
+type PretendMasjid = { masjid: Masjid; kind: MasjidSuggestion["kind"] };
+const ON_THE_MAP: PretendMasjid[] = [KMA, STITTSVILLE, TORONTO].map((masjid) => ({ masjid, kind: "masjid" }));
+const BY_ADDRESS: PretendMasjid = {
+  kind: "address",
+  masjid: {
+    id: "44444444-4444-4444-4444-444444444444", name: null, address: "3500 Fallowfield Road, Ottawa, Ontario, Canada",
+    source: "user", distance_km: 7.2, iqamah_status: "Iqamah times not added yet",
+  },
+};
 
 export const HOME_PLACE = "200 Kanata Avenue, Ottawa, Ontario, Canada";
 // Every place the pretend Photon knows, Canada first like the backend sends them.
@@ -69,10 +81,9 @@ export type Recorded = { method: string; path: string; body: unknown };
 export class MockApi {
   me: Me | null = null; // null: not signed in
   settings: Settings = emptySettings();
-  nearby: Nearby = { radius_km: 15, masjids: [KMA, STITTSVILLE, UNNAMED], typed_by_you: [], ...CREDIT };
   requests: Recorded[] = [];
-  // How long the masjid search takes to answer, in milliseconds.
-  nearbyDelayMs = 0;
+  // Masjids saved through /masjids/from-suggestion, by ID.
+  savedMasjids = new Map<string, Masjid>([KMA, STITTSVILLE].map((m) => [m.id, m]));
   // Make the next call to this path answer with this error.
   failNext: Record<string, { status: number; detail: unknown }> = {};
 
@@ -143,18 +154,26 @@ export class MockApi {
       case "PUT /api/settings/methods":
         Object.assign(s, { method: body.method, asr_method: body.asr_method });
         return json(200, this.saved());
-      case "GET /api/masjids/nearby":
-        if (this.nearbyDelayMs) await new Promise((resolve) => setTimeout(resolve, this.nearbyDelayMs));
-        return json(200, this.nearby);
+      case "POST /api/setup/masjid/suggest":
+        if (!s.address) return json(409, { detail: { message: "Save your location first." } });
+        return json(200, {
+          suggestions: suggestMasjids(body.query).map(({ masjid, kind }, index) => ({
+            index, kind, label: kind === "masjid" ? masjid.name : masjid.address,
+            detail: kind === "masjid" ? masjid.address : null, distance_km: masjid.distance_km,
+          })),
+        });
+      case "POST /api/masjids/from-suggestion": {
+        const picked = suggestMasjids(body.query)[body.index];
+        if (!picked) return json(404, { detail: { message: "That masjid isn't in the list any more. Search again." } });
+        this.savedMasjids.set(picked.masjid.id, picked.masjid);
+        return json(200, picked.masjid);
+      }
       case "PUT /api/settings/main-masjid": {
         if (body.choice === "home") {
           Object.assign(s, { main_masjid_choice: "home", main_masjid: null, main_masjid_short_name: null });
         } else {
-          const masjid: Masjid =
-            body.choice === "custom"
-              ? { ...KMA, id: "44444444-4444-4444-4444-444444444444", name: body.name, address: body.address, source: "user", distance_km: null }
-              : [...this.nearby.masjids, ...this.nearby.typed_by_you].find((m) => m.id === body.masjid_id)!;
-          if (body.choice === "custom") this.nearby.typed_by_you = [masjid];
+          const masjid = this.savedMasjids.get(body.masjid_id);
+          if (!masjid) return json(404, { detail: { message: "Pick a masjid from the suggestions." } });
           Object.assign(s, { main_masjid_choice: "masjid", main_masjid: masjid, main_masjid_short_name: body.short_name ?? null });
         }
         return json(200, this.saved(updated(20)));
@@ -164,7 +183,7 @@ export class MockApi {
         return json(200, this.saved(updated(2)));
       case "PUT /api/settings/jumuah":
         s.jumuah_saved = true;
-        s.jumuah_masjids = [...this.nearby.masjids, ...this.nearby.typed_by_you].filter((m) => body.masjid_ids.includes(m.id));
+        s.jumuah_masjids = body.masjid_ids.map((id: string) => this.savedMasjids.get(id)!);
         return json(200, this.saved());
       case "POST /api/setup/finish":
         s.setup_complete = true;
@@ -186,6 +205,20 @@ function suggest(query: string): string[] {
     const parts = place.toLowerCase().replace(/,/g, " ").split(/\s+/);
     return words.every((w) => parts.some((p) => p.startsWith(w)));
   }).slice(0, 5);
+}
+
+// Masjids on the map whose words start with what was typed, closest first.
+// Text with a number in it, or no masjid match, also gets the address one.
+function suggestMasjids(query: string): PretendMasjid[] {
+  if (query.trim().length < 3) return [];
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (text: string) => {
+    const parts = text.toLowerCase().replace(/,/g, " ").split(/\s+/);
+    return words.every((w) => parts.some((p) => p.startsWith(w)));
+  };
+  const found = ON_THE_MAP.filter(({ masjid }) => matches(`${masjid.name} ${masjid.address}`));
+  if ((found.length === 0 || /\d/.test(query)) && matches(BY_ADDRESS.masjid.address!)) found.push(BY_ADDRESS);
+  return found.slice(0, 5);
 }
 
 function updated(sent: number) {

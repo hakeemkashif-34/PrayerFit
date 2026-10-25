@@ -84,7 +84,8 @@ test("picking a masjid after praying at home asks for the weekly grid", async ({
   await page.goto("/");
 
   await page.getByRole("button", { name: "Edit main masjid" }).click();
-  await page.getByRole("radio", { name: /Stittsville Masjid/ }).check();
+  await page.getByRole("combobox").pressSequentially("Stittsville", { delay: 30 });
+  await page.getByRole("option", { name: /^Stittsville Masjid/ }).click();
   await page.getByRole("button", { name: "Save" }).click();
 
   await expect(page.getByRole("heading", { name: "Which prayers do you usually pray at Stittsville Masjid?" })).toBeVisible();
@@ -99,13 +100,45 @@ test("picking a different masjid clears the old short name", async ({ page }) =>
   await page.getByRole("button", { name: "Edit main masjid" }).click();
   const shortName = page.getByLabel("Short name for your calendar (optional)");
   await expect(shortName).toHaveValue("KMA");
-  await page.getByRole("radio", { name: /Stittsville Masjid/ }).check();
+  await page.getByRole("button", { name: "Change" }).click();
+  await page.getByRole("combobox").pressSequentially("Stittsville", { delay: 30 });
+  await page.getByRole("option", { name: /^Stittsville Masjid/ }).click();
   await expect(shortName).toHaveValue("");
   await page.getByRole("button", { name: "Save" }).click();
 
   expect(api.calls("PUT", "/api/settings/main-masjid")[0].body).toEqual({
     choice: "masjid", masjid_id: "22222222-2222-2222-2222-222222222222",
   });
+});
+
+test("I pray at home on the settings page moves every prayer home", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  await api.install(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Edit main masjid" }).click();
+  await page.getByRole("button", { name: "I pray at home" }).click();
+
+  expect(api.calls("PUT", "/api/settings/main-masjid")[0].body).toEqual({ choice: "home" });
+  await expect(page.getByRole("region", { name: "Main masjid" })).toContainText("I pray at home");
+  await expect(page.getByRole("region", { name: "Prayers at the masjid" })).toHaveCount(0);
+});
+
+test("Jumuah masjids are added with the masjid search and can be removed", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  await api.install(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Edit jumuah masjids" }).click();
+  await page.getByRole("button", { name: "Remove Stittsville Masjid" }).click();
+  await page.getByRole("combobox").pressSequentially("Toronto", { delay: 30 });
+  await page.getByRole("option", { name: /^Kanata Masjid Toronto/ }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+
+  expect(api.calls("PUT", "/api/settings/jumuah")[0].body).toEqual({
+    masjid_ids: ["11111111-1111-1111-1111-111111111111", "33333333-3333-3333-3333-333333333333"],
+  });
+  await expect(page.getByRole("region", { name: "Jumuah masjids" })).toContainText("Kanata Masjid Toronto");
 });
 
 test("sign out calls the API and goes back to the sign-in screen", async ({ page }) => {

@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { HOME_PLACE, KMA, MockApi } from "./mock-api";
 
 const LOCATION = "What's your location?";
-const MASJID = "Here are the masjids closest to you. Which one do you go to?";
+const MASJID = "Which masjid do you usually go to?";
 const STEP_NAMES = ["Location", "Masjid", "Weekly prayers"];
 
 // The current step is highlighted in the list on a computer, and named in
@@ -12,6 +12,11 @@ async function expectStep(page: Page, number: number) {
   const phoneLine = page.getByText(`Setup · Step ${number} of 3`);
   if (test.info().project.name === "phone") await expect(phoneLine).toBeVisible();
   else await expect(page.getByRole("complementary", { name: "Setup steps" })).toBeVisible();
+}
+
+async function pickMasjid(page: Page, typed: string, name: string) {
+  await page.getByRole("combobox").pressSequentially(typed, { delay: 30 });
+  await page.getByRole("option", { name: new RegExp(`^${name}`) }).click();
 }
 
 async function pickHome(page: Page) {
@@ -49,20 +54,24 @@ test("the full setup: location, masjid, weekly grid, then a filled calendar", as
   await options.first().click();
   expect(api.calls("PUT", "/api/settings/location")[0].body).toEqual({ query: "200 Kanata", index: 0 });
 
-  // 2. Masjid: closest first and highlighted, with distances.
+  // 2. Masjid: a search box like the location step, closest first, with distances.
   await expect(page.getByRole("heading", { level: 1, name: MASJID })).toBeVisible();
   await expectStep(page, 2);
-  await expect(page.getByRole("main").getByText("OpenStreetMap contributors")).toHaveCount(0);
-  const names = page.locator("label.choice strong");
-  await expect(names).toHaveText([
-    "Kanata Muslim Association", "Stittsville Masjid", "No name on OpenStreetMap", "My masjid isn't listed", "I pray at home",
+  await expect(page.getByText("Can't find it? Type its address.")).toBeVisible();
+  await expect(page.getByRole("radio")).toHaveCount(0); // no list to choose from any more
+  await expect(page.getByRole("button", { name: "Skip" })).toBeVisible();
+  const masjidBox = page.getByRole("combobox");
+  await masjidBox.pressSequentially("Kanata", { delay: 30 });
+  await expect(page.getByRole("option")).toHaveText([
+    /^Kanata Muslim Association1\.1 km away · 351 Sandhill Rd/,
+    /^Kanata Masjid Toronto352\.1 km away/,
   ]);
-  await expect(page.locator("label.choice.closest")).toContainText("Closest");
-  await expect(page.locator("label.choice.closest")).toContainText("Kanata Muslim Association");
-  await expect(page.getByText("1.1 km away")).toBeVisible();
-  await expect(page.getByText("5.6 km away")).toBeVisible();
-  await page.getByRole("radio", { name: /Kanata Muslim Association/ }).check();
+  expect(api.calls("POST", "/api/setup/masjid/suggest").map((c) => c.body)).toEqual([{ query: "Kanata" }]);
+  await page.getByRole("option", { name: /^Kanata Muslim Association/ }).click();
+  expect(api.calls("POST", "/api/masjids/from-suggestion")[0].body).toEqual({ query: "Kanata", index: 0 });
+  await expect(page.locator(".picked-masjid")).toContainText("Kanata Muslim Association · 1.1 km away");
   await page.getByLabel("Short name for your calendar (optional)").fill("KMA");
+  await expect(page.getByText('Events will say "Dhuhr at KMA".')).toBeVisible();
   await page.getByRole("button", { name: "Next" }).click();
   expect(api.calls("PUT", "/api/settings/main-masjid")[0].body).toEqual({ choice: "masjid", masjid_id: KMA.id, short_name: "KMA" });
 
@@ -98,13 +107,13 @@ test("Back goes to the previous question with the answer kept", async ({ page })
   await page.goto("/");
 
   await pickHome(page);
-  await page.getByRole("radio", { name: /Stittsville Masjid/ }).check();
+  await pickMasjid(page, "Stittsville", "Stittsville Masjid");
   await page.getByRole("button", { name: "Next" }).click();
   await expectStep(page, 3);
 
   await page.getByRole("button", { name: "← Back" }).click();
   await expect(page.getByRole("heading", { level: 1, name: MASJID })).toBeVisible();
-  await expect(page.getByRole("radio", { name: /Stittsville Masjid/ })).toBeChecked();
+  await expect(page.locator(".picked-masjid")).toContainText("Stittsville Masjid");
 
   await page.getByRole("button", { name: "← Back" }).click();
   await expect(page.getByRole("heading", { level: 1, name: LOCATION })).toBeVisible();
@@ -139,38 +148,98 @@ test("no match says so", async ({ page }) => {
   await expect(page.getByText("No places found. Try adding the city.")).toBeVisible();
 });
 
-test("I pray at home skips the weekly grid", async ({ page }) => {
+test("Skip means every prayer at home, with no weekly grid", async ({ page }) => {
   const api = new MockApi().signedIn();
   await api.install(page);
   await page.goto("/");
 
   await pickHome(page);
-  await page.getByRole("radio", { name: "I pray at home" }).check();
-  await expect(page.getByLabel("Short name for your calendar (optional)")).toHaveCount(0);
-  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Skip" }).click();
 
   // Straight to the calendar, with no weekly grid.
   await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
   await expect(page.getByText("I pray at home")).toBeVisible();
+  expect(api.calls("PUT", "/api/settings/main-masjid")[0].body).toEqual({ choice: "home" });
   expect(api.calls("PUT", "/api/settings/weekly")).toHaveLength(0);
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
 });
 
-test("My masjid isn't listed saves a typed-in masjid", async ({ page }) => {
+test("a masjid that isn't on the map can be picked by typing its address", async ({ page }) => {
   const api = new MockApi().signedIn();
   await api.install(page);
   await page.goto("/");
 
   await pickHome(page);
-  await page.getByRole("radio", { name: "My masjid isn't listed" }).check();
-  await page.getByLabel("Masjid name").fill("Barrhaven Musalla");
-  await page.getByLabel("Masjid address").fill("3500 Fallowfield Rd");
+  await page.getByRole("combobox").pressSequentially("3500 Fallowfield", { delay: 30 });
+  await expect(page.getByRole("option")).toHaveText([/^3500 Fallowfield Road, Ottawa, Ontario, CanadaAddress · 7\.2 km away/]);
+  await page.getByRole("option").first().click();
+
+  // No name on the map, so it asks for one.
+  await expect(page.getByText("This masjid has no name on the map.")).toBeVisible();
+  await page.getByLabel("Short name for your calendar (optional)").fill("Barrhaven Musalla");
   await page.getByRole("button", { name: "Next" }).click();
 
   expect(api.calls("PUT", "/api/settings/main-masjid")[0].body).toEqual({
-    choice: "custom", name: "Barrhaven Musalla", address: "3500 Fallowfield Rd",
+    choice: "masjid", masjid_id: "44444444-4444-4444-4444-444444444444", short_name: "Barrhaven Musalla",
   });
   await expect(page.getByRole("heading", { level: 1, name: "Which prayers do you usually pray at Barrhaven Musalla?" })).toBeVisible();
+});
+
+test("the masjid search waits for a typing pause and 3 characters", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  await api.install(page);
+  await page.goto("/");
+  await pickHome(page);
+
+  const box = page.getByRole("combobox");
+  await box.pressSequentially("Ka", { delay: 30 });
+  await page.waitForTimeout(600);
+  expect(api.calls("POST", "/api/setup/masjid/suggest")).toHaveLength(0);
+
+  await box.pressSequentially("nata Muslim", { delay: 30 });
+  await expect(page.getByRole("option")).toHaveCount(1);
+  expect(api.calls("POST", "/api/setup/masjid/suggest").map((c) => c.body)).toEqual([{ query: "Kanata Muslim" }]);
+});
+
+test("Change goes back to the masjid search box", async ({ page }) => {
+  await new MockApi().signedIn().install(page);
+  await page.goto("/");
+  await pickHome(page);
+  await pickMasjid(page, "Kanata", "Kanata Muslim Association");
+
+  await page.getByRole("button", { name: "Change" }).click();
+  await pickMasjid(page, "Stittsville", "Stittsville Masjid");
+
+  await expect(page.locator(".picked-masjid")).toContainText("Stittsville Masjid · 5.8 km away");
+});
+
+test("a failed masjid search shows its message and Skip still works", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  api.failNext["/api/setup/masjid/suggest"] = { status: 503, detail: { message: "The search is busy. Try again in a minute." } };
+  await api.install(page);
+  await page.goto("/");
+  await pickHome(page);
+
+  await page.getByRole("combobox").pressSequentially("Kanata", { delay: 30 });
+  await expect(page.getByRole("alert")).toHaveText("The search is busy. Try again in a minute.");
+  await page.getByRole("button", { name: "Skip" }).click();
+
+  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
+});
+
+test("ticking nothing in the grid means every prayer at home", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  await api.install(page);
+  await page.goto("/");
+  await pickHome(page);
+  await pickMasjid(page, "Kanata", "Kanata Muslim Association");
+  await page.getByRole("button", { name: "Next" }).click();
+
+  await page.getByRole("button", { name: "Finish" }).click();
+
+  const days = (api.calls("PUT", "/api/settings/weekly")[0].body as { days: Record<string, boolean>[] }).days;
+  expect(days.every((d) => !d.fajr && !d.dhuhr && !d.asr && !d.maghrib && !d.isha)).toBe(true);
+  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
 });
 
 test("a busy address search shows its message", async ({ page }) => {
@@ -195,19 +264,6 @@ test("answers saved before but never finished fill the calendar on the next visi
 
   await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
-});
-
-test("a slow masjid search says it can take up to a minute", async ({ page }) => {
-  const api = new MockApi().signedIn();
-  api.nearbyDelayMs = 1500; // Overpass can take 40 seconds or more for real
-  await api.install(page);
-  await page.goto("/");
-
-  await pickHome(page);
-
-  await expect(page.getByText("Searching for masjids nearby. This can take up to a minute.")).toBeVisible();
-  await expect(page.getByText("1.1 km away")).toBeVisible();
-  await expect(page.getByText("Searching for masjids nearby. This can take up to a minute.")).toHaveCount(0);
 });
 
 test("setup looks like the landing page: steps on the left on a computer, one line on a phone", async ({ page }, info) => {
@@ -256,69 +312,4 @@ test("the page uses Plus Jakarta Sans from our own site", async ({ page }) => {
   expect(await page.evaluate(() => document.fonts.check('16px "Plus Jakarta Sans Variable"'))).toBe(true);
   expect(fontRequests.length).toBeGreaterThan(0);
   expect(fontRequests.every((url) => url.startsWith("http://localhost:4173/assets/"))).toBe(true);
-});
-
-test("a failed masjid search still shows the 2 fallback choices, so setup can carry on", async ({ page }) => {
-  const api = new MockApi().signedIn();
-  api.failNext["/api/masjids/nearby"] = {
-    status: 503,
-    detail: { message: "OpenStreetMap's masjid search is busy right now. Try again in a few minutes." },
-  };
-  await api.install(page);
-  await page.goto("/");
-
-  await pickHome(page);
-
-  await expect(page.getByRole("alert")).toContainText("busy right now");
-  await expect(page.getByRole("alert")).toContainText('You can still type your masjid in or choose "I pray at home".');
-  await expect(page.getByRole("radio")).toHaveCount(2);
-  await expect(page.getByRole("radio", { name: "My masjid isn't listed" })).toBeVisible();
-  await page.getByRole("radio", { name: "I pray at home" }).check();
-  await page.getByRole("button", { name: "Next" }).click();
-
-  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
-  expect(api.calls("PUT", "/api/settings/main-masjid")[0].body).toEqual({ choice: "home" });
-});
-
-test("a typed-in masjid works while the masjid search is down", async ({ page }) => {
-  const api = new MockApi().signedIn();
-  api.failNext["/api/masjids/nearby"] = { status: 503, detail: { message: "OpenStreetMap's masjid search is busy right now." } };
-  await api.install(page);
-  await page.goto("/");
-
-  await pickHome(page);
-  await page.getByRole("radio", { name: "My masjid isn't listed" }).check();
-  await page.getByLabel("Masjid name").fill("Kanata Muslim Association");
-  await page.getByLabel("Masjid address").fill("351 Sandhill Rd");
-  await page.getByRole("button", { name: "Next" }).click();
-
-  await expect(page.getByRole("heading", { level: 1, name: /Which prayers do you usually pray at/ })).toBeVisible();
-});
-
-test("Search again tries the masjid search one more time", async ({ page }) => {
-  const api = new MockApi().signedIn();
-  api.failNext["/api/masjids/nearby"] = { status: 503, detail: { message: "OpenStreetMap's masjid search is busy right now." } };
-  await api.install(page);
-  await page.goto("/");
-
-  await pickHome(page);
-  await page.getByRole("button", { name: "Search again" }).click();
-
-  await expect(page.getByText("1.1 km away")).toBeVisible();
-  await expect(page.getByRole("alert")).toHaveCount(0);
-  expect(api.calls("GET", "/api/masjids/nearby")).toHaveLength(2);
-});
-
-test("the fallback choices work before a slow masjid search finishes", async ({ page }) => {
-  const api = new MockApi().signedIn();
-  api.nearbyDelayMs = 10_000;
-  await api.install(page);
-  await page.goto("/");
-
-  await pickHome(page);
-  await expect(page.getByText("Searching for masjids nearby. This can take up to a minute.")).toBeVisible();
-  await page.getByRole("radio", { name: "I pray at home" }).check();
-  await page.getByRole("button", { name: "Next" }).click();
-
-  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
 });
