@@ -18,8 +18,9 @@ PRAYERS = ("fajr", "dhuhr", "asr", "maghrib", "isha")
 # The setup questions, in the order the website asks them. The methods and
 # Jumuah steps are out of setup for now: methods use the defaults below,
 # and Jumuah starts with no masjid. Both can still be changed on the
-# settings page, and anything already saved for them is kept.
-STEPS = ("address", "masjid", "weekly")
+# settings page, and anything already saved for them is kept. "optional"
+# can be skipped, but skipping counts as answering it (with the defaults).
+STEPS = ("address", "masjid", "weekly", "optional")
 DEFAULT_METHOD = CalculationMethod.ISNA
 DEFAULT_ASR_METHOD = AsrMethod.STANDARD
 
@@ -28,7 +29,7 @@ def get_settings(db: Session, user_id: uuid.UUID) -> UserSettings:
     """This user's settings row, made empty the first time."""
     row = db.scalars(select(UserSettings).where(UserSettings.user_id == user_id)).first()
     if row is None:
-        row = UserSettings(user_id=user_id, jumuah_saved=False)
+        row = UserSettings(user_id=user_id, jumuah_saved=False, optional_saved=False, arrive_early_minutes=0)
         db.add(row)
         db.flush()
     return row
@@ -38,7 +39,9 @@ def find_settings(db: Session, user_id: uuid.UUID) -> UserSettings:
     """This user's settings, or an unsaved empty row. For reading only:
     GET requests must never change data."""
     row = db.scalars(select(UserSettings).where(UserSettings.user_id == user_id)).first()
-    return row if row is not None else UserSettings(user_id=user_id, jumuah_saved=False)
+    return row if row is not None else UserSettings(
+        user_id=user_id, jumuah_saved=False, optional_saved=False, arrive_early_minutes=0
+    )
 
 
 def save_location(row: UserSettings, label: str, latitude: float, longitude: float, time_zone: str) -> None:
@@ -115,6 +118,8 @@ def missing_steps(db: Session, row: UserSettings) -> list[str]:
     # Someone who prays at home skips the grid.
     if row.main_masjid_choice != "home" and len(weekly_rows(db, row.user_id)) != 7:
         missing.append("weekly")
+    if not row.optional_saved:
+        missing.append("optional")
     return missing
 
 

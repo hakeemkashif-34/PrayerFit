@@ -17,7 +17,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.auth.sessions import current_user
-from app.calendar_window import SetupIncomplete, refresh_calendar
+from app.calendar_window import SetupIncomplete
 from app.clock import get_now
 from app.db import get_db
 from app.geo.distance import distance_km
@@ -25,9 +25,12 @@ from app.geo.photon import MAX_SUGGESTIONS, MIN_QUERY_LENGTH, Suggestion, sugges
 from app.geo.timezones import timezone_for
 from app.google_errors import CalendarAccessMissing, GoogleError, ReauthRequired
 from app.http_client import get_http
-from app.models import Masjid, PrayerEvent, User, UserJumuahMasjid, WeeklyMasjidPrayers
+from app.event_plan import date_text
+from app.masjid_times.freshness import Freshness, freshness
+from app.models import Masjid, MasjidSource, PrayerEvent, User, UserJumuahMasjid, WeeklyMasjidPrayers
 from app.prayer_sync import SyncIncomplete
-from app.prayer_times import AsrMethod, CalculationMethod
+from app.prayer_times import DEFAULT_TIMEZONE, AsrMethod, CalculationMethod
+from app.update_jobs import queue_update, run_update
 from app.user_settings import (
     PRAYERS,
     find_settings,
@@ -48,8 +51,8 @@ router = APIRouter(tags=["settings"])
 
 OSM_CREDIT = "© OpenStreetMap contributors"
 OSM_CREDIT_URL = "https://www.openstreetmap.org/copyright"
-# Iqamah times come in milestone 5.
-IQAMAH_STATUS = "Iqamah times not added yet"
+# Google Calendar's fixed event colours. The website shows their names and swatches.
+ColorId = Literal["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]
 
 UserDep = Annotated[User, Depends(current_user)]
 DbDep = Annotated[Session, Depends(get_db)]
@@ -68,7 +71,8 @@ class MasjidOut(BaseModel):
     # "openstreetmap", or "user" (picked by its address)
     source: str
     distance_km: float | None = None
-    iqamah_status: str = IQAMAH_STATUS
+    # Where this masjid's times come from, like "Times from MAWAQIT, updated Oct 25, 2026".
+    iqamah_status: str
 
 
 class WeekdayPrayers(BaseModel):
@@ -84,7 +88,7 @@ class WeekdayPrayers(BaseModel):
 
 class SettingsOut(BaseModel):
     setup_complete: bool
-    # Setup questions not answered yet, in order: address, masjid, weekly.
+    # Setup questions not answered yet, in order: address, masjid, weekly, optional.
     missing: list[str]
     address: str | None
     place_name: str | None
@@ -97,7 +101,12 @@ class SettingsOut(BaseModel):
     main_masjid_short_name: str | None
     weekly: list[WeekdayPrayers]
     jumuah_saved: bool
+    # In the order the user listed them.
     jumuah_masjids: list[MasjidOut]
+    # The optional step: minutes to arrive before iqamah, and Google colour IDs.
+    arrive_early_minutes: int
+    prayer_color_id: ColorId | None
+    drive_color_id: ColorId | None
 
 
 class CalendarUpdate(BaseModel):
@@ -113,18 +122,36 @@ class SaveResponse(BaseModel):
     calendar: CalendarUpdate | None = None
 
 
-def _masjid_out(masjid: Masjid, home: tuple[float, float] | None) -> MasjidOut:
+def times_status(db: Session, masjid: Masjid, now: datetime, time_zone: str) -> str:
+    """Where this masjid's times come from, in words."""
+    source = db.get(MasjidSource, masjid.id)
+    if source is None:
+        return "Not linked to MAWAQIT, so calculated times are used"
+    age = freshness(source.last_success_at, now)
+    if age is Freshness.NEVER:
+        return "Linked to MAWAQIT. Its times haven't been read yet"
+    if age is Freshness.TOO_OLD:
+        return "MAWAQIT times are more than 7 days old, so calculated times are used"
+    if age is Freshness.STALE:
+        return f"MAWAQIT times may be out of date (last updated {date_text(source.last_success_at, time_zone)})"
+    changed = source.last_changed_at or source.last_success_at
+    return f"Times from MAWAQIT, updated {date_text(changed, time_zone)}"
+
+
+def _masjid_out(db: Session, masjid: Masjid, home: tuple[float, float] | None, now: datetime, time_zone: str) -> MasjidOut:
     """A masjid, with its straight-line distance from home when both locations are known."""
     distance = None
     if home is not None and masjid.latitude is not None and masjid.longitude is not None:
         distance = round(distance_km(*home, masjid.latitude, masjid.longitude), 1)
     return MasjidOut(
-        id=masjid.id, name=masjid.name, address=masjid.address, source=masjid.source, distance_km=distance
+        id=masjid.id, name=masjid.name, address=masjid.address, source=masjid.source, distance_km=distance,
+        iqamah_status=times_status(db, masjid, now, time_zone),
     )
 
 
-def settings_out(db: Session, user_id: uuid.UUID) -> SettingsOut:
+def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
     row = find_settings(db, user_id)
+    zone = row.time_zone or DEFAULT_TIMEZONE
     home = read_location(row)
     main = db.get(Masjid, row.main_masjid_id) if row.main_masjid_id else None
     missing = missing_steps(db, row)
@@ -137,14 +164,17 @@ def settings_out(db: Session, user_id: uuid.UUID) -> SettingsOut:
         method=method_of(row),
         asr_method=asr_method_of(row),
         main_masjid_choice=row.main_masjid_choice,
-        main_masjid=_masjid_out(main, home) if main and row.main_masjid_choice == "masjid" else None,
+        main_masjid=_masjid_out(db, main, home, now, zone) if main and row.main_masjid_choice == "masjid" else None,
         main_masjid_short_name=row.main_masjid_short_name,
         weekly=[
             WeekdayPrayers(weekday=d.weekday, **{p: getattr(d, p) for p in PRAYERS})
             for d in weekly_rows(db, user_id)
         ],
         jumuah_saved=row.jumuah_saved,
-        jumuah_masjids=[_masjid_out(m, home) for m in jumuah_masjids(db, user_id)],
+        jumuah_masjids=[_masjid_out(db, m, home, now, zone) for m in jumuah_masjids(db, user_id)],
+        arrive_early_minutes=row.arrive_early_minutes or 0,
+        prayer_color_id=row.prayer_color_id,
+        drive_color_id=row.drive_color_id,
     )
 
 
@@ -158,10 +188,22 @@ def _pending_count(db: Session, user_id: uuid.UUID) -> int:
     )
 
 
-def update_calendar(db: Session, http: httpx2.Client, user_id: uuid.UUID, now: datetime) -> CalendarUpdate:
-    """Refresh the calendar and say how it went. Settings are already saved by now."""
+def update_calendar(db: Session, http: httpx2.Client, user_id: uuid.UUID, now: datetime, reason: str = "settings") -> CalendarUpdate:
+    """Queue an update job, run it straight away, and say how it went.
+
+    Settings are already saved by now. Going through the job (with its
+    stable ID "update:{user_id}") means a failure here is retried by the
+    worker, and two saves in a row can't run two updates at once.
+    """
+    queue_update(db, user_id, reason, now)
+    db.commit()
     try:
-        result = refresh_calendar(db, http, user_id, now)
+        result = run_update(db, http, user_id, now)
+        if result is None:
+            return CalendarUpdate(
+                status="waiting",
+                message="Saved. Your calendar is already updating, and it will include this change.",
+            )
     except SetupIncomplete:
         return CalendarUpdate(
             status="not_set_up", message="Saved. Answer the question below so your calendar can update."
@@ -189,21 +231,21 @@ def update_calendar(db: Session, http: httpx2.Client, user_id: uuid.UUID, now: d
     return CalendarUpdate(status="updated", sent=result.sent, message=f"Calendar updated. {changed} sent to Google.")
 
 
-def _saved(db: Session, http: httpx2.Client, user: User, now: datetime) -> SaveResponse:
+def _saved(db: Session, http: httpx2.Client, user: User, now: datetime, reason: str = "settings") -> SaveResponse:
     """Commit, then update the calendar if setup is already finished."""
     db.commit()
     row = get_settings(db, user.id)
-    calendar = update_calendar(db, http, user.id, now) if row.setup_completed_at else None
-    return SaveResponse(settings=settings_out(db, user.id), calendar=calendar)
+    calendar = update_calendar(db, http, user.id, now, reason) if row.setup_completed_at else None
+    return SaveResponse(settings=settings_out(db, user.id, now), calendar=calendar)
 
 
 # ---- Reading ----
 
 
 @router.get("/settings", response_model=SettingsOut)
-def read_settings(user: UserDep, db: DbDep) -> SettingsOut:
+def read_settings(user: UserDep, db: DbDep, now: NowDep) -> SettingsOut:
     """Your saved setup answers. Only ever your own."""
-    return settings_out(db, user.id)
+    return settings_out(db, user.id, now)
 
 
 # ---- Question 1: location ----
@@ -405,7 +447,8 @@ def masjid_from_suggestion(request: PickRequest, user: UserDep, db: DbDep, http:
         )
     masjid = _masjid_from(db, user.id, found[request.index])
     db.commit()
-    return _masjid_out(masjid, home)
+    zone = find_settings(db, user.id).time_zone or DEFAULT_TIMEZONE
+    return _masjid_out(db, masjid, home, now, zone)
 
 
 def _optional_text(value: str | None) -> str | None:
@@ -415,9 +458,9 @@ def _optional_text(value: str | None) -> str | None:
 
 class MainMasjidRequest(BaseModel):
     # masjid: one from POST /masjids/from-suggestion. home: "Skip", every prayer at home.
+    # The short name is saved in the optional step now (PUT /settings/optional).
     choice: Literal["masjid", "home"]
     masjid_id: uuid.UUID | None = None
-    short_name: str | None = Field(default=None, max_length=40, description='Like "KMA"')
 
 
 @router.put("/settings/main-masjid", response_model=SaveResponse)
@@ -432,9 +475,11 @@ def save_main_masjid(request: MainMasjidRequest, user: UserDep, db: DbDep, http:
     masjid = usable_masjid(db, user.id, request.masjid_id) if request.masjid_id else None
     if masjid is None:
         raise HTTPException(status_code=404, detail={"message": "Pick a masjid from the suggestions."})
+    if row.main_masjid_id != masjid.id:
+        # A short name belongs to one masjid. Picking the same one again keeps it.
+        row.main_masjid_short_name = None
     row.main_masjid_choice = "masjid"
     row.main_masjid_id = masjid.id
-    row.main_masjid_short_name = _optional_text(request.short_name)
     return _saved(db, http, user, now)
 
 
@@ -480,8 +525,38 @@ def save_jumuah(request: JumuahRequest, user: UserDep, db: DbDep, http: HttpDep,
         if usable_masjid(db, user.id, masjid_id) is None:
             raise HTTPException(status_code=404, detail={"message": "Pick Jumuah masjids from the suggestions."})
     db.execute(delete(UserJumuahMasjid).where(UserJumuahMasjid.user_id == user.id))
-    db.add_all(UserJumuahMasjid(user_id=user.id, masjid_id=masjid_id) for masjid_id in ids)
+    # The order matters: with no drive times, the Jumuah picker uses the first one.
+    db.add_all(
+        UserJumuahMasjid(user_id=user.id, masjid_id=masjid_id, position=position)
+        for position, masjid_id in enumerate(ids)
+    )
     get_settings(db, user.id).jumuah_saved = True
+    return _saved(db, http, user, now)
+
+
+# ---- Question 4: optional (can be skipped) ----
+
+
+class OptionalRequest(BaseModel):
+    """Skip sends the defaults: 0 minutes, no short name, and no colours."""
+
+    arrive_early_minutes: int = Field(default=0, ge=0, le=30)
+    # Like "KMA". Only kept when there's a main masjid.
+    short_name: str | None = Field(default=None, max_length=40)
+    # Empty uses the Prayers calendar's own colour.
+    prayer_color_id: ColorId | None = None
+    drive_color_id: ColorId | None = None
+
+
+@router.put("/settings/optional", response_model=SaveResponse)
+def save_optional(request: OptionalRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> SaveResponse:
+    row = get_settings(db, user.id)
+    row.arrive_early_minutes = request.arrive_early_minutes
+    has_masjid = row.main_masjid_choice == "masjid" and row.main_masjid_id is not None
+    row.main_masjid_short_name = _optional_text(request.short_name) if has_masjid else None
+    row.prayer_color_id = request.prayer_color_id
+    row.drive_color_id = request.drive_color_id
+    row.optional_saved = True
     return _saved(db, http, user, now)
 
 
@@ -502,10 +577,10 @@ def finish_setup(user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> SaveRe
         )
     if row.setup_completed_at is None:
         row.setup_completed_at = now
-    return _saved(db, http, user, now)
+    return _saved(db, http, user, now, reason="setup")
 
 
 @router.post("/calendar/sync", response_model=CalendarUpdate)
 def sync_calendar(user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> CalendarUpdate:
     """Send anything still waiting. Safe to press as often as you like."""
-    return update_calendar(db, http, user.id, now)
+    return update_calendar(db, http, user.id, now, reason="retry")
