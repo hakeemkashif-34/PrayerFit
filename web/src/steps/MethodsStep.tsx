@@ -1,4 +1,4 @@
-// Step 2: calculation method and Asr method. ISNA and standard by default.
+// Calculation method and Asr method. Only on the settings page for now.
 
 import { useState, type FormEvent } from "react";
 import { api, ApiError } from "../api";

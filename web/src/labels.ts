@@ -12,6 +12,7 @@ export const PRAYER_NAMES: Record<Prayer, string> = {
 };
 // 0 is Monday, the same as the backend.
 export const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+export const WEEKDAYS_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export const METHODS: { value: string; name: string; about: string }[] = [
   { value: "isna", name: "ISNA", about: "Fajr and Isha at 15°. Most masjids in North America use this." },
@@ -26,12 +27,12 @@ export const ASR_METHODS: { value: string; name: string; about: string }[] = [
   { value: "hanafi", name: "Hanafi", about: "A shadow twice as long as the object, so Asr starts later." },
 ];
 
-export function methodName(value: string | null): string {
-  return METHODS.find((m) => m.value === value)?.name ?? "Not set";
+export function methodName(value: string): string {
+  return METHODS.find((m) => m.value === value)?.name ?? value;
 }
 
-export function asrName(value: string | null): string {
-  return ASR_METHODS.find((m) => m.value === value)?.name ?? "Not set";
+export function asrName(value: string): string {
+  return ASR_METHODS.find((m) => m.value === value)?.name ?? value;
 }
 
 export function masjidName(masjid: Masjid): string {

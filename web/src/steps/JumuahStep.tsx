@@ -1,4 +1,4 @@
-// Step 5: the masjids they can go to for Jumuah, from the same nearby list.
+// Jumuah masjids, from the same nearby list. Only on the settings page for now.
 // They can pick more than one, or none.
 
 import { useState, type FormEvent } from "react";

@@ -5,12 +5,12 @@ import { useState, type ReactNode } from "react";
 import { api, ApiError, SIGN_IN_URL } from "./api";
 import { asrName, masjidName, methodName, PRAYER_NAMES, PRAYERS, WEEKDAYS } from "./labels";
 import { masjidLabel } from "./Setup";
-import { AddressStep } from "./steps/AddressStep";
 import { JumuahStep } from "./steps/JumuahStep";
+import { LocationStep } from "./steps/LocationStep";
 import { MasjidStep } from "./steps/MasjidStep";
 import { MethodsStep } from "./steps/MethodsStep";
 import { WeeklyStep } from "./steps/WeeklyStep";
-import type { CalendarUpdate, SaveResponse, Settings, Step } from "./types";
+import type { CalendarUpdate, Editable, SaveResponse, Settings } from "./types";
 
 type Props = {
   email: string;
@@ -23,7 +23,7 @@ export function SettingsPage({ email, initial, initialCalendar, onSignedOut }: P
   const [settings, setSettings] = useState(initial);
   const [calendar, setCalendar] = useState(initialCalendar);
   // A masjid picked after "I pray at home" still needs the weekly grid.
-  const [editing, setEditing] = useState<Step | null>(initial.missing[0] ?? null);
+  const [editing, setEditing] = useState<Editable | null>(initial.missing[0] ?? null);
   const [busy, setBusy] = useState(false);
 
   function saved(response: SaveResponse) {
@@ -74,8 +74,8 @@ export function SettingsPage({ email, initial, initialCalendar, onSignedOut }: P
         </p>
       )}
 
-      <Card title="Address" step="address" editing={editing} onEdit={setEditing}
-        edit={<AddressStep initial={settings.address} onSaved={saved} onCancel={cancel} />}>
+      <Card title="Location" step="address" editing={editing} onEdit={setEditing}
+        edit={<LocationStep current={settings.place_name} onSaved={saved} onKeep={cancel} keepLabel="Cancel" />}>
         <p>{settings.place_name}</p>
         <p className="hint">Time zone: {settings.time_zone}</p>
       </Card>
@@ -143,9 +143,9 @@ export function SettingsPage({ email, initial, initialCalendar, onSignedOut }: P
 
 type CardProps = {
   title: string;
-  step: Step;
-  editing: Step | null;
-  onEdit: (step: Step) => void;
+  step: Editable;
+  editing: Editable | null;
+  onEdit: (step: Editable) => void;
   edit: ReactNode;
   children: ReactNode;
 };

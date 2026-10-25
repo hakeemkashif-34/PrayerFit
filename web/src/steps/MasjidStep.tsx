@@ -1,5 +1,5 @@
-// Step 3: the main masjid, from OpenStreetMap masjids within 15 km,
-// "My masjid isn't listed", or "I pray at home".
+// Question 2: the main masjid, from OpenStreetMap masjids within 15 km
+// (closest first and highlighted), "My masjid isn't listed", or "I pray at home".
 
 import { useState, type FormEvent } from "react";
 import { api, ApiError } from "../api";
@@ -10,6 +10,9 @@ import { useNearby } from "./useNearby";
 
 type Props = {
   settings: Settings;
+  // Show the question as the page's main heading (setup) or a card heading (settings).
+  page?: boolean;
+  submitLabel?: string;
   onSaved: (response: SaveResponse) => void;
   onCancel?: () => void;
 };
@@ -17,7 +20,8 @@ type Props = {
 const CUSTOM = "custom";
 const HOME = "home";
 
-export function MasjidStep({ settings, onSaved, onCancel }: Props) {
+export function MasjidStep({ settings, page = false, submitLabel = "Save", onSaved, onCancel }: Props) {
+  const Heading = page ? "h1" : "h2";
   const { nearby, error: loadError, retry } = useNearby();
   const [choice, setChoice] = useState(
     settings.main_masjid_choice === "home" ? HOME : (settings.main_masjid?.id ?? ""),
@@ -57,7 +61,7 @@ export function MasjidStep({ settings, onSaved, onCancel }: Props) {
 
   return (
     <form onSubmit={save} aria-labelledby="masjid-title">
-      <h2 id="masjid-title">Your main masjid</h2>
+      <Heading id="masjid-title">Here are the masjids closest to you. Which one do you go to?</Heading>
       {loadError && (
         <p className="error" role="alert">
           {loadError}{" "}
@@ -69,12 +73,13 @@ export function MasjidStep({ settings, onSaved, onCancel }: Props) {
       {!nearby && !loadError && <p className="hint">Finding masjids near you…</p>}
       {nearby && (
         <fieldset>
-          <legend>Masjids within {nearby.radius_km} km, closest first</legend>
+          <legend className="hint">Within {nearby.radius_km} km, closest first</legend>
           {nearby.masjids.length === 0 && <p className="hint">No masjids found on OpenStreetMap near you.</p>}
-          {options.map((m) => (
-            <label key={m.id} className="choice">
+          {options.map((m, i) => (
+            <label key={m.id} className={i === 0 && m.distance_km !== null ? "choice closest" : "choice"}>
               <input type="radio" name="masjid" value={m.id} checked={choice === m.id} onChange={() => pick(m.id)} />
               <span>
+                {i === 0 && m.distance_km !== null && <span className="badge">Closest</span>}
                 <strong>{masjidName(m)}</strong>
                 <small>
                   {m.distance_km !== null ? `${m.distance_km} km away` : "Added by you"}
@@ -126,7 +131,7 @@ export function MasjidStep({ settings, onSaved, onCancel }: Props) {
       )}
       <div className="actions">
         <button type="submit" disabled={busy || choice === ""}>
-          {busy ? "Saving…" : "Save"}
+          {busy ? "Saving…" : submitLabel}
         </button>
         {onCancel && (
           <button type="button" className="secondary" onClick={onCancel}>
