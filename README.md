@@ -247,7 +247,7 @@ Use the same user, password, and database name as in your `.env`. You should see
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`352 passed, 258 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`351 passed, 259 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
