@@ -1,6 +1,6 @@
 """Tests for the setup questions and the settings endpoints.
 
-Google, Photon, and Overpass are all faked.
+Google and Photon are both faked.
 """
 
 import logging
@@ -17,7 +17,8 @@ from tests.setup_helpers import (
     HOME_PLACE,
     HOME_QUERY,
     add_home,
-    add_nearby_masjids,
+    add_masjids,
+    pick_masjid,
     setup_through_api,
 )
 
@@ -32,10 +33,11 @@ def signed_in(client, fake_google, set_today):
 
 
 @pytest.fixture
-def osm(fake_osm):
-    add_home(fake_osm)
-    add_nearby_masjids(fake_osm)
-    return fake_osm
+def osm(fake_photon):
+    """The fake Photon, with the home and some masjids on it."""
+    add_home(fake_photon)
+    add_masjids(fake_photon)
+    return fake_photon
 
 
 def save_home(client) -> None:
@@ -44,10 +46,6 @@ def save_home(client) -> None:
     index = next(s["index"] for s in suggestions if s["label"] == HOME_PLACE)
     response = client.put("/settings/location", json={"query": HOME_QUERY, "index": index})
     assert response.status_code == 200
-
-
-def _nearby_ids(client) -> dict[str, str]:
-    return {m["name"]: m["id"] for m in client.get("/masjids/nearby").json()["masjids"]}
 
 
 # ---- Location ----
@@ -73,7 +71,7 @@ def test_short_text_gets_no_suggestions(signed_in, osm):
     response = signed_in.post("/setup/location/suggest", json={"query": "20"})
 
     assert response.json()["suggestions"] == []
-    assert osm.photon_requests == []
+    assert osm.requests == []
 
 
 def test_picking_a_suggestion_saves_it_without_a_second_lookup(signed_in, osm):
@@ -86,7 +84,7 @@ def test_picking_a_suggestion_saves_it_without_a_second_lookup(signed_in, osm):
     assert settings["place_name"] == HOME_PLACE
     assert settings["time_zone"] == "America/Toronto"
     assert settings["missing"] == ["masjid", "weekly"]
-    assert len(osm.photon_requests) == 1  # picking used the cached answer
+    assert len(osm.requests) == 1  # picking used the cached answer
     assert response.json()["calendar"] is None  # nothing goes to Google during setup
 
 
@@ -103,8 +101,8 @@ def test_picking_a_place_not_in_the_list_is_refused(signed_in, osm):
     assert response.status_code == 404
 
 
-def test_time_zone_comes_from_the_location(signed_in, fake_osm):
-    fake_osm.add_place(49.2827, -123.1207, name="Robson Street", city="Vancouver", country="Canada")
+def test_time_zone_comes_from_the_location(signed_in, fake_photon):
+    fake_photon.add_place(49.2827, -123.1207, name="Robson Street", city="Vancouver", country="Canada")
 
     response = signed_in.put("/settings/location", json={"query": "Robson Street", "index": 0})
 
@@ -133,13 +131,13 @@ def test_address_never_shows_up_in_logs(signed_in, osm, caplog):
     assert "45.3088" not in caplog.text
 
 
-def test_busy_photon_is_a_503_with_a_message(signed_in, fake_osm):
-    fake_osm.photon_failure = 429
+def test_busy_photon_is_a_503_with_a_message(signed_in, fake_photon):
+    fake_photon.failure = 429
 
     response = signed_in.post("/setup/location/suggest", json={"query": HOME_QUERY})
 
     assert response.status_code == 503
-    assert response.json()["detail"]["message"] == "The address search is busy. Try again in a minute."
+    assert response.json()["detail"]["message"] == "The search is busy. Try again in a minute."
 
 
 # ---- Methods ----
@@ -169,107 +167,87 @@ def test_unknown_method_is_rejected(signed_in):
 # ---- Main masjid ----
 
 
-def test_nearby_masjids_are_sorted_by_distance(signed_in, osm):
+def test_masjid_suggestions_show_name_and_distance_closest_first(signed_in, osm):
     save_home(signed_in)
 
-    response = signed_in.get("/masjids/nearby")
-
-    body = response.json()
-    assert [m["name"] for m in body["masjids"]] == [
-        "Kanata Muslim Association", "Stittsville Masjid", "Jamia Omar"
-    ]
-    distances = [m["distance_km"] for m in body["masjids"]]
-    assert distances == sorted(distances)
-    assert distances[0] == 1.1
-    assert all(m["iqamah_status"] == "Iqamah times not added yet" for m in body["masjids"])
-    assert body["radius_km"] == 15
-    assert body["credit"] == "© OpenStreetMap contributors"
-
-
-def test_masjid_search_starts_as_soon_as_the_location_is_saved(signed_in, osm):
-    save_home(signed_in)
-
-    # The background search already asked Overpass, before the masjid page.
-    assert len(osm.overpass_requests) == 1
-
-    response = signed_in.get("/masjids/nearby")
-
-    assert [m["name"] for m in response.json()["masjids"]][0] == "Kanata Muslim Association"
-    assert len(osm.overpass_requests) == 1  # the page read the cache
-
-
-def test_a_failed_background_search_doesnt_stop_saving_the_location(signed_in, osm, caplog):
-    osm.overpass_failure = 502
-
-    suggestions = signed_in.post("/setup/location/suggest", json={"query": HOME_QUERY}).json()["suggestions"]
-    response = signed_in.put("/settings/location", json={"query": HOME_QUERY, "index": suggestions[0]["index"]})
+    response = signed_in.post("/setup/masjid/suggest", json={"query": "Kanata"})
 
     assert response.status_code == 200
-    assert response.json()["settings"]["missing"] == ["masjid", "weekly"]
-    assert "Overpass (overpass-api.de) failed: status 502" in caplog.text
-    # The masjid page asks again, and says so if it still fails.
-    nearby = signed_in.get("/masjids/nearby")
-    assert nearby.status_code == 503
-    assert "Try again in a few minutes" in nearby.json()["detail"]["message"]
+    suggestions = response.json()["suggestions"]
+    # The one in Kanata first, the Toronto one with a similar name last.
+    assert [s["label"] for s in suggestions] == ["Kanata Muslim Association", "Kanata Masjid Toronto"]
+    assert suggestions[0] == {
+        "index": 0, "kind": "masjid", "label": "Kanata Muslim Association",
+        "detail": "351 Sandhill Road, Ottawa", "distance_km": 1.1,
+    }
+    assert suggestions[1]["distance_km"] > 300
+    # Suggesting saves nothing.
+    assert signed_in.get("/settings").json()["main_masjid_choice"] is None
 
 
-def test_nearby_needs_an_address_first(signed_in):
-    response = signed_in.get("/masjids/nearby")
+def test_masjid_suggestions_need_a_saved_location(signed_in, osm):
+    response = signed_in.post("/setup/masjid/suggest", json={"query": "Kanata"})
     assert response.status_code == 409
+    assert osm.requests == []
 
 
-def test_picking_a_masjid_with_a_short_name(signed_in, osm):
+def test_picking_a_masjid_with_a_short_name(signed_in, osm, db):
     save_home(signed_in)
-    kma = _nearby_ids(signed_in)["Kanata Muslim Association"]
+    picked = pick_masjid(signed_in, "Kanata Muslim", "Kanata Muslim Association")
 
     response = signed_in.put(
-        "/settings/main-masjid", json={"choice": "masjid", "masjid_id": kma, "short_name": " KMA "}
+        "/settings/main-masjid", json={"choice": "masjid", "masjid_id": picked["id"], "short_name": " KMA "}
     )
 
     settings = response.json()["settings"]
     assert settings["main_masjid_choice"] == "masjid"
     assert settings["main_masjid"]["name"] == "Kanata Muslim Association"
+    assert settings["main_masjid"]["distance_km"] == 1.1
     assert settings["main_masjid"]["iqamah_status"] == "Iqamah times not added yet"
     assert settings["main_masjid_short_name"] == "KMA"
-
-
-def test_typed_in_masjid_saves(signed_in, osm, db):
-    save_home(signed_in)
-
-    response = signed_in.put(
-        "/settings/main-masjid",
-        json={"choice": "custom", "name": "Barrhaven Musalla", "address": "3500 Fallowfield Rd"},
-    )
-
-    assert response.status_code == 200
-    main = response.json()["settings"]["main_masjid"]
-    assert (main["name"], main["address"], main["source"]) == (
-        "Barrhaven Musalla", "3500 Fallowfield Rd", "user"
-    )
     with DbSession(db) as session:
-        masjid = session.scalars(select(Masjid).where(Masjid.source == "user")).one()
-        # Nothing made up: no location and no OpenStreetMap ID.
-        assert (masjid.latitude, masjid.osm_id) == (None, None)
-    # It's listed as one of "yours" from now on.
-    typed = signed_in.get("/masjids/nearby").json()["typed_by_you"]
-    assert [m["name"] for m in typed] == ["Barrhaven Musalla"]
+        masjid = session.scalars(select(Masjid)).one()
+        assert (masjid.source, masjid.osm_type, masjid.osm_id) == ("openstreetmap", "node", 101)
+        assert masjid.address == "351 Sandhill Road, Ottawa"
 
 
-def test_typing_the_same_masjid_again_reuses_it(signed_in, db):
-    body = {"choice": "custom", "name": "Barrhaven Musalla", "address": "3500 Fallowfield Rd"}
-    signed_in.put("/settings/main-masjid", json=body)
-    signed_in.put("/settings/main-masjid", json=body)
+def test_picking_the_same_masjid_twice_saves_it_once(signed_in, osm, db):
+    save_home(signed_in)
+    first = pick_masjid(signed_in, "Kanata Muslim", "Kanata Muslim Association")
+    second = pick_masjid(signed_in, "Kanata", "Kanata Muslim Association")
 
+    assert first["id"] == second["id"]
     with DbSession(db) as session:
         assert len(session.scalars(select(Masjid)).all()) == 1
 
 
-def test_typed_in_masjid_needs_a_name_and_address(signed_in):
-    response = signed_in.put("/settings/main-masjid", json={"choice": "custom", "name": "Only a name"})
-    assert response.status_code == 422
+def test_a_masjid_not_on_the_map_can_be_picked_by_its_address(signed_in, osm, db):
+    osm.add_place(HOME[0] + 0.05, HOME[1], housenumber="3500", street="Fallowfield Road", city="Ottawa", country="Canada")
+    save_home(signed_in)
+
+    suggestions = signed_in.post("/setup/masjid/suggest", json={"query": "3500 Fallowfield"}).json()["suggestions"]
+    assert [(s["kind"], s["label"]) for s in suggestions] == [("address", "3500 Fallowfield Road, Ottawa, Canada")]
+    picked = pick_masjid(signed_in, "3500 Fallowfield", "3500 Fallowfield Road, Ottawa, Canada")
+
+    # Nothing made up: no name, just the address the user picked.
+    assert (picked["name"], picked["address"], picked["source"]) == (None, "3500 Fallowfield Road, Ottawa, Canada", "user")
+    response = signed_in.put(
+        "/settings/main-masjid", json={"choice": "masjid", "masjid_id": picked["id"], "short_name": "Barrhaven Musalla"}
+    )
+    assert response.json()["settings"]["main_masjid_short_name"] == "Barrhaven Musalla"
+    with DbSession(db) as session:
+        masjid = session.scalars(select(Masjid)).one()
+        assert masjid.osm_id is None
+        assert masjid.created_by_user_id is not None
 
 
-def test_praying_at_home_skips_the_weekly_grid(signed_in, osm):
+def test_picking_a_masjid_not_in_the_list_is_refused(signed_in, osm):
+    save_home(signed_in)
+    response = signed_in.post("/masjids/from-suggestion", json={"query": "Kanata", "index": 4})
+    assert response.status_code == 404
+
+
+def test_skip_means_every_prayer_at_home_and_no_weekly_grid(signed_in, osm):
     save_home(signed_in)
 
     response = signed_in.put("/settings/main-masjid", json={"choice": "home"})
@@ -286,6 +264,11 @@ def test_made_up_masjid_id_is_refused(signed_in):
         json={"choice": "masjid", "masjid_id": "00000000-0000-0000-0000-000000000000"},
     )
     assert response.status_code == 404
+
+
+def test_the_old_typed_in_choice_is_gone(signed_in):
+    response = signed_in.put("/settings/main-masjid", json={"choice": "custom", "name": "A", "address": "B"})
+    assert response.status_code == 422
 
 
 # ---- Weekly grid ----
@@ -305,6 +288,16 @@ def test_weekly_grid_saves_all_7_days(signed_in, db):
     assert [r.weekday for r in rows] == list(range(7))
     assert [r.fajr for r in rows] == [False, False, False, False, True, False, False]
     assert [r.maghrib for r in rows] == [False, False, False, False, False, True, True]
+
+
+def test_ticking_nothing_means_every_prayer_at_home(signed_in, osm, fake_google):
+    response = setup_through_api(signed_in, osm, at_masjid={})
+
+    assert response.json()["settings"]["setup_complete"] is True
+    assert all(not any(d[p] for p in ("fajr", "dhuhr", "asr", "maghrib", "isha")) for d in response.json()["settings"]["weekly"])
+    events = fake_google.live_events(fake_google.calendars_of("user-a")[0].id)
+    assert len(events) == 70
+    assert all(e["summary"].endswith(" at home") for e in events)
 
 
 def test_saving_the_grid_again_replaces_it(signed_in, db):
@@ -330,11 +323,10 @@ def test_weekly_grid_needs_each_day_once(signed_in, weekdays):
 
 def test_more_than_one_jumuah_masjid(signed_in, osm):
     save_home(signed_in)
-    ids = _nearby_ids(signed_in)
+    stittsville = pick_masjid(signed_in, "Stittsville", "Stittsville Masjid")
+    jamia = pick_masjid(signed_in, "Jamia", "Jamia Omar")
 
-    response = signed_in.put(
-        "/settings/jumuah", json={"masjid_ids": [ids["Stittsville Masjid"], ids["Jamia Omar"]]}
-    )
+    response = signed_in.put("/settings/jumuah", json={"masjid_ids": [stittsville["id"], jamia["id"]]})
 
     settings = response.json()["settings"]
     assert sorted(m["name"] for m in settings["jumuah_masjids"]) == ["Jamia Omar", "Stittsville Masjid"]
@@ -369,7 +361,7 @@ def test_setup_is_only_3_questions(signed_in, osm, fake_google):
     assert settings["setup_complete"] is True
     assert (settings["method"], settings["asr_method"]) == ("isna", "standard")
     assert settings["jumuah_masjids"] == []
-    assert osm.photon_requests  # the location came from Photon
+    assert osm.requests  # the location came from Photon
     events = fake_google.live_events(fake_google.calendars_of("user-a")[0].id)
     assert events[0]["description"].startswith("Calculated (ISNA, standard Asr)")
 
@@ -429,12 +421,10 @@ def test_settings_belong_to_one_user(fake_google, osm, set_today, db):
     with new_client() as alice, new_client() as bob:
         sign_in(alice, fake_google, sub="alice", email="alice@example.com")
         sign_in(bob, fake_google, sub="bob", email="bob@example.com")
+        osm.add_place(HOME[0] + 0.05, HOME[1], housenumber="1", street="Private Road", city="Ottawa")
         setup_through_api(alice, osm)
-        alice.put(
-            "/settings/main-masjid",
-            json={"choice": "custom", "name": "Alice's Musalla", "address": "1 Private Rd"},
-        )
-        alice_masjid = alice.get("/settings").json()["main_masjid"]["id"]
+        # Alice picks a masjid by its address, so it's hers only.
+        alice_masjid = pick_masjid(alice, "1 Private", "1 Private Road, Ottawa")["id"]
 
         bob_settings = bob.get("/settings").json()
         assert bob_settings["address"] is None
@@ -442,9 +432,8 @@ def test_settings_belong_to_one_user(fake_google, osm, set_today, db):
         assert bob_settings["jumuah_masjids"] == []
         assert bob_settings["setup_complete"] is False
 
-        # Bob can't see or pick Alice's typed-in masjid.
+        # Bob can't pick Alice's masjid.
         save_home(bob)
-        assert bob.get("/masjids/nearby").json()["typed_by_you"] == []
         assert bob.put(
             "/settings/main-masjid", json={"choice": "masjid", "masjid_id": alice_masjid}
         ).status_code == 404

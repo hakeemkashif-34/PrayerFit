@@ -83,53 +83,70 @@ HOME_PLACE = "200 Kanata Avenue, Ottawa, Ontario, Canada"
 HOME = (45.3088, -75.8987)  # a made-up point in Kanata
 
 
-def add_home(fake_osm) -> None:
+def add_home(fake_photon) -> None:
     """The home "on Photon", plus a place with the same street name in the US."""
-    fake_osm.add_place(
+    fake_photon.add_place(
         43.1, -77.6, countrycode="US", housenumber="200", street="Kanata Avenue",
         city="Rochester", state="New York", country="United States",
     )
-    fake_osm.add_place(
+    fake_photon.add_place(
         *HOME, housenumber="200", street="Kanata Avenue", city="Ottawa",
         state="Ontario", postcode="K2T 1K8", country="Canada",
     )
 
 
-def add_nearby_masjids(fake_osm) -> None:
-    """3 masjids "on OpenStreetMap" near HOME, and 1 too far away."""
-    fake_osm.add_masjid(101, "Kanata Muslim Association", HOME[0] + 0.01, HOME[1])  # 1.1 km
-    fake_osm.add_masjid(102, "Stittsville Masjid", HOME[0] - 0.05, HOME[1] - 0.02, osm_type="way")
-    fake_osm.add_masjid(103, "Jamia Omar", HOME[0] + 0.08, HOME[1] + 0.09)
-    fake_osm.add_masjid(104, "Downtown Masjid", HOME[0] + 0.11, HOME[1] + 0.2)  # about 19 km
+def add_masjids(fake_photon) -> None:
+    """Masjids "on Photon": 3 near HOME, 1 in Toronto with a similar name, and a church."""
+    fake_photon.add_masjid(
+        101, "Kanata Muslim Association", HOME[0] + 0.01, HOME[1],  # 1.1 km
+        housenumber="351", street="Sandhill Road", city="Ottawa", state="Ontario", country="Canada",
+    )
+    fake_photon.add_masjid(
+        102, "Stittsville Masjid", HOME[0] - 0.05, HOME[1] - 0.02, osm_type="way",  # 5.8 km
+        city="Ottawa", state="Ontario", country="Canada",
+    )
+    fake_photon.add_masjid(103, "Jamia Omar", HOME[0] + 0.08, HOME[1] + 0.09, city="Ottawa", country="Canada")
+    fake_photon.add_masjid(104, "Kanata Masjid Toronto", 43.65, -79.38, city="Toronto", country="Canada")
+    fake_photon.add_masjid(105, "St. Paul's Church", HOME[0] + 0.02, HOME[1], city="Ottawa", country="Canada")
+
+
+def pick_masjid(client, query: str, label: str) -> dict:
+    """Type into the masjid box and pick a suggestion, like the website does. Returns the saved masjid."""
+    suggestions = client.post("/setup/masjid/suggest", json={"query": query}).json()["suggestions"]
+    index = next(s["index"] for s in suggestions if s["label"] == label)
+    response = client.post("/masjids/from-suggestion", json={"query": query, "index": index})
+    assert response.status_code == 200, response.text
+    return response.json()
 
 
 def setup_through_api(
     client,
-    fake_osm,
+    fake_photon,
     *,
     masjid: str | None = "Kanata Muslim Association",
     short_name: str | None = "KMA",
     at_masjid: dict[int, list[str]] | None = None,
     finish: bool = True,
 ):
-    """Answer the 3 setup questions through the API, then finish. Returns the finish response."""
-    if not fake_osm.places:
-        add_home(fake_osm)
-    if not fake_osm.elements:
-        add_nearby_masjids(fake_osm)
+    """Answer the 3 setup questions through the API, then finish. Returns the finish response.
+
+    masjid=None means the user pressed "Skip": every prayer at home, no weekly grid.
+    """
+    if not fake_photon.places:
+        add_home(fake_photon)
+        add_masjids(fake_photon)
 
     suggestions = client.post("/setup/location/suggest", json={"query": HOME_QUERY}).json()["suggestions"]
     index = next(s["index"] for s in suggestions if s["label"] == HOME_PLACE)
     assert client.put("/settings/location", json={"query": HOME_QUERY, "index": index}).status_code == 200
 
-    nearby = client.get("/masjids/nearby").json()["masjids"]
-    by_name = {m["name"]: m["id"] for m in nearby}
     if masjid is None:
         assert client.put("/settings/main-masjid", json={"choice": "home"}).status_code == 200
     else:
+        picked = pick_masjid(client, masjid, masjid)
         response = client.put(
             "/settings/main-masjid",
-            json={"choice": "masjid", "masjid_id": by_name[masjid], "short_name": short_name},
+            json={"choice": "masjid", "masjid_id": picked["id"], "short_name": short_name},
         )
         assert response.status_code == 200
         # Default: Dhuhr and Isha at the masjid on weekdays.

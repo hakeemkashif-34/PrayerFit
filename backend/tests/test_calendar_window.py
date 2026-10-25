@@ -41,8 +41,8 @@ def _rows(db) -> list[PrayerEvent]:
 # ---- The first fill ----
 
 
-def test_fill_makes_70_events_with_no_duplicates(signed_in, fake_osm, fake_google, db):
-    setup_through_api(signed_in, fake_osm)
+def test_fill_makes_70_events_with_no_duplicates(signed_in, fake_photon, fake_google, db):
+    setup_through_api(signed_in, fake_photon)
 
     events = _events(fake_google)
     assert len(events) == 70
@@ -56,9 +56,9 @@ def test_fill_makes_70_events_with_no_duplicates(signed_in, fake_osm, fake_googl
     assert all(r.sync_status == "synced" for r in rows)
 
 
-def test_titles_say_home_or_the_masjid(signed_in, fake_osm, fake_google):
+def test_titles_say_home_or_the_masjid(signed_in, fake_photon, fake_google):
     # Default in the helper: Dhuhr and Isha at the masjid, Monday to Friday.
-    setup_through_api(signed_in, fake_osm)
+    setup_through_api(signed_in, fake_photon)
 
     titles = {(_local_start(e).date(), e["summary"]) for e in _events(fake_google)}
     monday = date(2026, 10, 26)
@@ -70,15 +70,15 @@ def test_titles_say_home_or_the_masjid(signed_in, fake_osm, fake_google):
     assert sum(t.endswith("at KMA") for _, t in titles) == 20  # 10 weekdays x 2
 
 
-def test_without_a_short_name_the_title_uses_the_full_name(signed_in, fake_osm, fake_google):
-    setup_through_api(signed_in, fake_osm, short_name=None)
+def test_without_a_short_name_the_title_uses_the_full_name(signed_in, fake_photon, fake_google):
+    setup_through_api(signed_in, fake_photon, short_name=None)
 
     titles = {e["summary"] for e in _events(fake_google)}
     assert "Dhuhr at Kanata Muslim Association" in titles
 
 
-def test_masjid_events_say_the_time_is_calculated(signed_in, fake_osm, fake_google):
-    setup_through_api(signed_in, fake_osm)
+def test_masjid_events_say_the_time_is_calculated(signed_in, fake_photon, fake_google):
+    setup_through_api(signed_in, fake_photon)
 
     for event in _events(fake_google):
         if event["summary"].endswith("at KMA"):
@@ -121,8 +121,8 @@ def test_umm_al_qura_dhuhr_is_at_solar_noon(signed_in, fake_google, db):
 # ---- Changes after setup ----
 
 
-def test_a_change_only_sends_the_events_that_changed(signed_in, fake_osm, fake_google):
-    setup_through_api(signed_in, fake_osm)
+def test_a_change_only_sends_the_events_that_changed(signed_in, fake_photon, fake_google):
+    setup_through_api(signed_in, fake_photon)
     writes_before = len(fake_google.writes())
 
     # Tick Asr at the masjid on Tuesdays.
@@ -141,8 +141,8 @@ def test_a_change_only_sends_the_events_that_changed(signed_in, fake_osm, fake_g
     assert len(_events(fake_google)) == 70
 
 
-def test_past_events_are_left_alone(signed_in, fake_osm, fake_google, db):
-    setup_through_api(signed_in, fake_osm)
+def test_past_events_are_left_alone(signed_in, fake_photon, fake_google, db):
+    setup_through_api(signed_in, fake_photon)
     fajr_before = next(
         e for e in _events(fake_google) if _local_start(e).date() == DAY and e["summary"].startswith("Fajr")
     )
@@ -157,8 +157,8 @@ def test_past_events_are_left_alone(signed_in, fake_osm, fake_google, db):
     assert fajr_before["id"] not in sent_ids
 
 
-def test_nothing_changed_means_nothing_sent(signed_in, fake_osm, fake_google):
-    setup_through_api(signed_in, fake_osm)
+def test_nothing_changed_means_nothing_sent(signed_in, fake_photon, fake_google):
+    setup_through_api(signed_in, fake_photon)
     writes_before = len(fake_google.writes())
 
     response = signed_in.post("/calendar/sync")
@@ -169,8 +169,8 @@ def test_nothing_changed_means_nothing_sent(signed_in, fake_osm, fake_google):
     assert len(fake_google.writes()) == writes_before
 
 
-def test_saving_the_same_answer_sends_nothing(signed_in, fake_osm, fake_google):
-    setup_through_api(signed_in, fake_osm)
+def test_saving_the_same_answer_sends_nothing(signed_in, fake_photon, fake_google):
+    setup_through_api(signed_in, fake_photon)
     writes_before = len(fake_google.writes())
 
     signed_in.put("/settings/methods", json={})
@@ -178,8 +178,8 @@ def test_saving_the_same_answer_sends_nothing(signed_in, fake_osm, fake_google):
     assert len(fake_google.writes()) == writes_before
 
 
-def test_switching_to_home_renames_the_masjid_events(signed_in, fake_osm, fake_google):
-    setup_through_api(signed_in, fake_osm)
+def test_switching_to_home_renames_the_masjid_events(signed_in, fake_photon, fake_google):
+    setup_through_api(signed_in, fake_photon)
 
     response = signed_in.put("/settings/main-masjid", json={"choice": "home"})
 
@@ -187,9 +187,9 @@ def test_switching_to_home_renames_the_masjid_events(signed_in, fake_osm, fake_g
     assert all(e["summary"].endswith("at home") for e in _events(fake_google))
 
 
-def test_moving_updates_the_calendar_and_event_time_zones(signed_in, fake_osm, fake_google):
-    setup_through_api(signed_in, fake_osm)
-    fake_osm.add_place(49.2827, -123.1207, name="Robson Street", city="Vancouver", country="Canada")
+def test_moving_updates_the_calendar_and_event_time_zones(signed_in, fake_photon, fake_google):
+    setup_through_api(signed_in, fake_photon)
+    fake_photon.add_place(49.2827, -123.1207, name="Robson Street", city="Vancouver", country="Canada")
 
     signed_in.put("/settings/location", json={"query": "Robson Street", "index": 0})
 
@@ -202,10 +202,10 @@ def test_moving_updates_the_calendar_and_event_time_zones(signed_in, fake_osm, f
 # ---- Google failing ----
 
 
-def test_google_failing_partway_finishes_later_without_duplicates(signed_in, fake_osm, fake_google, db):
+def test_google_failing_partway_finishes_later_without_duplicates(signed_in, fake_photon, fake_google, db):
     fake_google.fail_event_write = {30: 503}
 
-    response = setup_through_api(signed_in, fake_osm)
+    response = setup_through_api(signed_in, fake_photon)
 
     calendar = response.json()["calendar"]
     assert calendar["status"] == "waiting"
@@ -220,11 +220,11 @@ def test_google_failing_partway_finishes_later_without_duplicates(signed_in, fak
     assert all(r.sync_status == "synced" for r in _rows(db))
 
 
-def test_google_failure_logs_the_reason_and_time_but_no_ids_or_address(signed_in, fake_osm, fake_google, caplog):
+def test_google_failure_logs_the_reason_and_time_but_no_ids_or_address(signed_in, fake_photon, fake_google, caplog):
     fake_google.fail_event_write = {3: 503, 4: "timeout"}
     caplog.set_level(logging.DEBUG)
 
-    setup_through_api(signed_in, fake_osm)  # stops at the 3rd write
+    setup_through_api(signed_in, fake_photon)  # stops at the 3rd write
     signed_in.post("/calendar/sync")  # the 1st write of this run times out
 
     assert re.search(r"Google Calendar (POST|PUT) failed: status 503 after \d+\.\d s", caplog.text)
@@ -233,10 +233,10 @@ def test_google_failure_logs_the_reason_and_time_but_no_ids_or_address(signed_in
     assert "Kanata" not in caplog.text
 
 
-def test_timeout_after_google_saved_it_makes_no_duplicate(signed_in, fake_osm, fake_google):
+def test_timeout_after_google_saved_it_makes_no_duplicate(signed_in, fake_photon, fake_google):
     fake_google.fail_event_write = {10: "timeout_after_write"}
 
-    setup_through_api(signed_in, fake_osm)
+    setup_through_api(signed_in, fake_photon)
     signed_in.post("/calendar/sync")
 
     events = _events(fake_google)
@@ -247,8 +247,8 @@ def test_timeout_after_google_saved_it_makes_no_duplicate(signed_in, fake_osm, f
 # ---- Rolling forward ----
 
 
-def test_next_day_adds_one_new_day_and_keeps_the_old_one(signed_in, fake_osm, fake_google, set_today):
-    setup_through_api(signed_in, fake_osm)
+def test_next_day_adds_one_new_day_and_keeps_the_old_one(signed_in, fake_photon, fake_google, set_today):
+    setup_through_api(signed_in, fake_photon)
 
     set_today(DAY + timedelta(days=1))
     response = signed_in.post("/calendar/sync")

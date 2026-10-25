@@ -23,8 +23,8 @@ def at(day: date, hour: int, minute: int = 0, zone=TORONTO) -> datetime:
 
 
 @pytest.fixture
-def http(fake_google, fake_osm):
-    with fake_http_client(fake_google, fake_osm) as client:
+def http(fake_google, fake_photon):
+    with fake_http_client(fake_google, fake_photon) as client:
         yield client
 
 
@@ -136,13 +136,13 @@ def test_runs_once_per_user_per_day_even_if_started_twice(fake_google, db, http)
     assert (job.status, job.attempts) == ("done", 1)
 
 
-def test_two_workers_at_the_same_moment_run_it_once(fake_google, fake_osm, db):
+def test_two_workers_at_the_same_moment_run_it_once(fake_google, fake_photon, db):
     add_user(fake_google, db, "alice")
     now = at(date(2026, 10, 24), 3, 0)
     results = []
 
     def worker():
-        with fake_http_client(fake_google, fake_osm) as client:
+        with fake_http_client(fake_google, fake_photon) as client:
             results.extend(run_due_jobs(db, client, now))
 
     threads = [threading.Thread(target=worker) for _ in range(2)]
@@ -367,11 +367,11 @@ def test_users_without_setup_are_left_out(fake_google, db, http):
     assert jobs(db) == []
 
 
-def test_run_now_command_prints_what_it_did(fake_google, fake_osm, db, monkeypatch, capsys):
+def test_run_now_command_prints_what_it_did(fake_google, fake_photon, db, monkeypatch, capsys):
     from app import worker
 
     add_user(fake_google, db, "alice")
-    monkeypatch.setattr(worker, "new_http_client", lambda: fake_http_client(fake_google, fake_osm))
+    monkeypatch.setattr(worker, "new_http_client", lambda: fake_http_client(fake_google, fake_photon))
 
     worker.main(["run-now", "--email", "alice@example.com"])
     worker.main(["run-now", "--email", "alice@example.com"])

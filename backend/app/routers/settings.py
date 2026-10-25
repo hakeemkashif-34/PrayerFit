@@ -5,28 +5,26 @@ goes to Google. Once setup is finished, every change updates the
 calendar straight away, but only the future events that changed.
 """
 
-import logging
 import uuid
-from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated, Literal
 
 import httpx2
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.auth.sessions import current_user
 from app.calendar_window import SetupIncomplete, refresh_calendar
 from app.clock import get_now
 from app.db import get_db
-from app.geo.photon import MAX_SUGGESTIONS, MIN_QUERY_LENGTH, suggest
-from app.geo.errors import OsmServiceError
-from app.geo.overpass import SEARCH_RADIUS_KM, nearby_masjids
+from app.geo.distance import distance_km
+from app.geo.photon import MAX_SUGGESTIONS, MIN_QUERY_LENGTH, Suggestion, suggest, suggest_masjids
 from app.geo.timezones import timezone_for
 from app.google_errors import CalendarAccessMissing, GoogleError, ReauthRequired
-from app.http_client import get_http, get_http_factory
+from app.http_client import get_http
 from app.models import Masjid, PrayerEvent, User, UserJumuahMasjid, WeeklyMasjidPrayers
 from app.prayer_sync import SyncIncomplete
 from app.prayer_times import AsrMethod, CalculationMethod
@@ -47,7 +45,6 @@ from app.user_settings import (
 )
 
 router = APIRouter(tags=["settings"])
-logger = logging.getLogger("app.settings")
 
 OSM_CREDIT = "© OpenStreetMap contributors"
 OSM_CREDIT_URL = "https://www.openstreetmap.org/copyright"
@@ -65,9 +62,10 @@ NowDep = Annotated[datetime, Depends(get_now)]
 
 class MasjidOut(BaseModel):
     id: uuid.UUID
+    # Empty for a masjid picked by its address.
     name: str | None
     address: str | None
-    # "openstreetmap" or "user" (typed in by this user)
+    # "openstreetmap", or "user" (picked by its address)
     source: str
     distance_km: float | None = None
     iqamah_status: str = IQAMAH_STATUS
@@ -115,18 +113,19 @@ class SaveResponse(BaseModel):
     calendar: CalendarUpdate | None = None
 
 
-def _masjid_out(masjid: Masjid, distance: float | None = None) -> MasjidOut:
+def _masjid_out(masjid: Masjid, home: tuple[float, float] | None) -> MasjidOut:
+    """A masjid, with its straight-line distance from home when both locations are known."""
+    distance = None
+    if home is not None and masjid.latitude is not None and masjid.longitude is not None:
+        distance = round(distance_km(*home, masjid.latitude, masjid.longitude), 1)
     return MasjidOut(
-        id=masjid.id,
-        name=masjid.name,
-        address=masjid.address,
-        source=masjid.source,
-        distance_km=None if distance is None else round(distance, 1),
+        id=masjid.id, name=masjid.name, address=masjid.address, source=masjid.source, distance_km=distance
     )
 
 
 def settings_out(db: Session, user_id: uuid.UUID) -> SettingsOut:
     row = find_settings(db, user_id)
+    home = read_location(row)
     main = db.get(Masjid, row.main_masjid_id) if row.main_masjid_id else None
     missing = missing_steps(db, row)
     return SettingsOut(
@@ -138,14 +137,14 @@ def settings_out(db: Session, user_id: uuid.UUID) -> SettingsOut:
         method=method_of(row),
         asr_method=asr_method_of(row),
         main_masjid_choice=row.main_masjid_choice,
-        main_masjid=_masjid_out(main) if main and row.main_masjid_choice == "masjid" else None,
+        main_masjid=_masjid_out(main, home) if main and row.main_masjid_choice == "masjid" else None,
         main_masjid_short_name=row.main_masjid_short_name,
         weekly=[
             WeekdayPrayers(weekday=d.weekday, **{p: getattr(d, p) for p in PRAYERS})
             for d in weekly_rows(db, user_id)
         ],
         jumuah_saved=row.jumuah_saved,
-        jumuah_masjids=[_masjid_out(m) for m in jumuah_masjids(db, user_id)],
+        jumuah_masjids=[_masjid_out(m, home) for m in jumuah_masjids(db, user_id)],
     )
 
 
@@ -259,39 +258,9 @@ class LocationRequest(BaseModel):
         return _one_line(value)
 
 
-def search_masjids_in_background(
-    db: Session, make_http: Callable[[], httpx2.Client], user_id: uuid.UUID, now: datetime
-) -> None:
-    """Fill the masjid cache for the user's location, after the response is sent.
-
-    Overpass can take a minute, so starting now means the masjid page is
-    usually ready by the time the user gets there. A failure here is only
-    logged: the masjid page tries again, and never blocks setup.
-    """
-    try:
-        location = read_location(find_settings(db, user_id))
-        if location is not None:
-            with make_http() as http:
-                nearby_masjids(db, http, *location, now)
-    except OsmServiceError:
-        pass  # each server's failure is already logged
-    except Exception:  # noqa: BLE001 - a background job must never crash the server
-        logger.exception("The background masjid search failed")
-    finally:
-        db.close()
-
-
 @router.put("/settings/location", response_model=SaveResponse)
-def save_location_choice(
-    request: LocationRequest,
-    user: UserDep,
-    db: DbDep,
-    http: HttpDep,
-    now: NowDep,
-    background: BackgroundTasks,
-    make_http: Annotated[Callable[[], httpx2.Client], Depends(get_http_factory)],
-) -> SaveResponse:
-    """Save the suggestion the user picked, then start the masjid search.
+def save_location_choice(request: LocationRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> SaveResponse:
+    """Save the suggestion the user picked.
 
     The location comes from the same search the user just saw (it's
     cached), not from the browser, so it always matches what they picked.
@@ -309,12 +278,7 @@ def save_location_choice(
         place.longitude,
         timezone_for(place.latitude, place.longitude),
     )
-    response = _saved(db, http, user, now)
-    # Its own database session: the request's one is closed by the time this runs.
-    background.add_task(
-        search_masjids_in_background, Session(db.get_bind(), expire_on_commit=False), make_http, user.id, now
-    )
-    return response
+    return _saved(db, http, user, now)
 
 
 # ---- Calculation method and Asr method (settings page only, for now) ----
@@ -336,29 +300,112 @@ def save_methods(request: MethodsRequest, user: UserDep, db: DbDep, http: HttpDe
 # ---- Question 2: main masjid ----
 
 
-class NearbyResponse(BaseModel):
-    radius_km: int = SEARCH_RADIUS_KM
-    # From OpenStreetMap, closest first.
-    masjids: list[MasjidOut]
-    # Masjids this user typed in. They have no location, so no distance.
-    typed_by_you: list[MasjidOut]
-    credit: str = OSM_CREDIT
-    credit_url: str = OSM_CREDIT_URL
+def _home(db: Session, user_id: uuid.UUID) -> tuple[float, float]:
+    home = read_location(find_settings(db, user_id))
+    if home is None:
+        raise HTTPException(status_code=409, detail={"message": "Save your location first."})
+    return home
 
 
-@router.get("/masjids/nearby", response_model=NearbyResponse)
-def list_nearby_masjids(user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> NearbyResponse:
-    location = read_location(find_settings(db, user.id))
-    if location is None:
-        raise HTTPException(status_code=409, detail={"message": "Save your address first."})
-    nearby = nearby_masjids(db, http, *location, now)
-    typed = db.scalars(
-        select(Masjid).where(Masjid.created_by_user_id == user.id).order_by(Masjid.name)
-    ).all()
-    return NearbyResponse(
-        masjids=[_masjid_out(n.masjid, n.distance_km) for n in nearby],
-        typed_by_you=[_masjid_out(m) for m in typed],
+class MasjidSuggestion(BaseModel):
+    # Its place in the list. The website sends it back to pick this one.
+    index: int
+    # "masjid" (a place of worship on OpenStreetMap) or "address"
+    kind: str
+    label: str
+    # The address part for a masjid, like "351 Sandhill Road, Ottawa".
+    detail: str | None
+    distance_km: float
+
+
+class MasjidSuggestResponse(BaseModel):
+    suggestions: list[MasjidSuggestion]
+
+
+@router.post("/setup/masjid/suggest", response_model=MasjidSuggestResponse)
+def suggest_masjid(request: SuggestRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> MasjidSuggestResponse:
+    """Up to 5 masjids for what the user has typed, closest to home first. Saves nothing.
+
+    If no masjid matches, or the text looks like an address, addresses
+    near home are included, so a masjid that isn't on the map can still be picked.
+    """
+    home = _home(db, user.id)
+    found = suggest_masjids(db, http, request.query, home, now)
+    return MasjidSuggestResponse(
+        suggestions=[
+            MasjidSuggestion(
+                index=i,
+                kind=s.kind,
+                label=s.label,
+                detail=s.street_address if s.kind == "masjid" else None,
+                distance_km=round(distance_km(*home, s.latitude, s.longitude), 1),
+            )
+            for i, s in enumerate(found)
+        ]
     )
+
+
+class PickRequest(BaseModel):
+    query: str = Field(min_length=MIN_QUERY_LENGTH, max_length=200)
+    index: int = Field(ge=0, lt=MAX_SUGGESTIONS)
+
+    @field_validator("query")
+    @classmethod
+    def strip(cls, value: str) -> str:
+        return _one_line(value)
+
+
+def _masjid_from(db: Session, user_id: uuid.UUID, picked: Suggestion) -> Masjid:
+    """Find or add the masjid for a picked suggestion. Nothing is made up."""
+    if picked.kind == "masjid" and picked.osm_type and picked.osm_id is not None:
+        values = {
+            "name": picked.name,
+            "latitude": picked.latitude,
+            "longitude": picked.longitude,
+            "address": picked.street_address,
+            "updated_at": func.now(),
+        }
+        masjid_id = db.execute(
+            insert(Masjid)
+            .values(id=uuid.uuid4(), source="openstreetmap", osm_type=picked.osm_type, osm_id=picked.osm_id, **values)
+            .on_conflict_do_update(index_elements=["osm_type", "osm_id"], set_=values)
+            .returning(Masjid.id)
+        ).scalar_one()
+        return db.get(Masjid, masjid_id, populate_existing=True)
+    # Picked by its address: private to this user, with no name. Picking
+    # the same address again reuses it instead of adding a copy.
+    masjid = db.scalars(
+        select(Masjid).where(Masjid.created_by_user_id == user_id, Masjid.address == picked.label)
+    ).first()
+    if masjid is None:
+        masjid = Masjid(
+            source="user",
+            address=picked.label,
+            latitude=picked.latitude,
+            longitude=picked.longitude,
+            created_by_user_id=user_id,
+        )
+        db.add(masjid)
+        db.flush()
+    return masjid
+
+
+@router.post("/masjids/from-suggestion", response_model=MasjidOut)
+def masjid_from_suggestion(request: PickRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> MasjidOut:
+    """Turn a picked suggestion into a saved masjid, so it can be the main masjid or a Jumuah masjid.
+
+    The masjid comes from the same search the user just saw (it's cached),
+    not from the browser, so it always matches what they picked.
+    """
+    home = _home(db, user.id)
+    found = suggest_masjids(db, http, request.query, home, now)
+    if request.index >= len(found):
+        raise HTTPException(
+            status_code=404, detail={"message": "That masjid isn't in the list any more. Search again."}
+        )
+    masjid = _masjid_from(db, user.id, found[request.index])
+    db.commit()
+    return _masjid_out(masjid, home)
 
 
 def _optional_text(value: str | None) -> str | None:
@@ -367,11 +414,9 @@ def _optional_text(value: str | None) -> str | None:
 
 
 class MainMasjidRequest(BaseModel):
-    # masjid: picked from the list. custom: "My masjid isn't listed". home: "I pray at home".
-    choice: Literal["masjid", "custom", "home"]
+    # masjid: one from POST /masjids/from-suggestion. home: "Skip", every prayer at home.
+    choice: Literal["masjid", "home"]
     masjid_id: uuid.UUID | None = None
-    name: str | None = Field(default=None, max_length=200)
-    address: str | None = Field(default=None, max_length=300)
     short_name: str | None = Field(default=None, max_length=40, description='Like "KMA"')
 
 
@@ -384,25 +429,9 @@ def save_main_masjid(request: MainMasjidRequest, user: UserDep, db: DbDep, http:
         row.main_masjid_short_name = None
         return _saved(db, http, user, now)
 
-    if request.choice == "masjid":
-        masjid = usable_masjid(db, user.id, request.masjid_id) if request.masjid_id else None
-        if masjid is None:
-            raise HTTPException(status_code=404, detail={"message": "Pick a masjid from the list."})
-    else:
-        name, address = _optional_text(request.name), _optional_text(request.address)
-        if not name or not address:
-            raise HTTPException(status_code=422, detail={"message": "Type the masjid's name and address."})
-        # Typing the same masjid again reuses it instead of adding a copy.
-        masjid = db.scalars(
-            select(Masjid).where(
-                Masjid.created_by_user_id == user.id, Masjid.name == name, Masjid.address == address
-            )
-        ).first()
-        if masjid is None:
-            masjid = Masjid(source="user", name=name, address=address, created_by_user_id=user.id)
-            db.add(masjid)
-            db.flush()
-
+    masjid = usable_masjid(db, user.id, request.masjid_id) if request.masjid_id else None
+    if masjid is None:
+        raise HTTPException(status_code=404, detail={"message": "Pick a masjid from the suggestions."})
     row.main_masjid_choice = "masjid"
     row.main_masjid_id = masjid.id
     row.main_masjid_short_name = _optional_text(request.short_name)
@@ -449,7 +478,7 @@ def save_jumuah(request: JumuahRequest, user: UserDep, db: DbDep, http: HttpDep,
     ids = list(dict.fromkeys(request.masjid_ids))  # drop repeats, keep order
     for masjid_id in ids:
         if usable_masjid(db, user.id, masjid_id) is None:
-            raise HTTPException(status_code=404, detail={"message": "Pick Jumuah masjids from the list."})
+            raise HTTPException(status_code=404, detail={"message": "Pick Jumuah masjids from the suggestions."})
     db.execute(delete(UserJumuahMasjid).where(UserJumuahMasjid.user_id == user.id))
     db.add_all(UserJumuahMasjid(user_id=user.id, masjid_id=masjid_id) for masjid_id in ids)
     get_settings(db, user.id).jumuah_saved = True

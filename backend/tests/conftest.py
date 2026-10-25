@@ -19,11 +19,9 @@ os.environ["TOKEN_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
 os.environ["APP_ORIGIN"] = "http://testserver"
 # The test client uses plain http, and won't send Secure cookies over it.
 os.environ["COOKIE_SECURE"] = "false"
-# Photon and Overpass are faked too, at their normal URLs.
+# Photon is faked too, at its normal URL.
 os.environ["OSM_CONTACT_EMAIL"] = "tests@example.com"
 os.environ["PHOTON_URL"] = "https://photon.komoot.io"
-# 2 Overpass servers, so tests can make the first one fail.
-os.environ["OVERPASS_URLS"] = "https://overpass-api.de/api/interpreter,https://overpass.backup.example/api/interpreter"
 
 from datetime import datetime, time  # noqa: E402
 from urllib.parse import parse_qs, urlparse  # noqa: E402
@@ -38,12 +36,12 @@ from sqlalchemy import text  # noqa: E402
 
 from app.clock import get_now  # noqa: E402
 from app.db import get_engine  # noqa: E402
-from app.http_client import get_http, get_http_factory  # noqa: E402
+from app.http_client import get_http  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Base  # noqa: E402
 from app.geo import throttle  # noqa: E402
 from tests.fake_google import FakeGoogle  # noqa: E402
-from tests.fake_osm import FakeOsm  # noqa: E402
+from tests.fake_photon import FakePhoton  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -65,36 +63,33 @@ def db(migrated_engine):
 
 
 @pytest.fixture
-def fake_osm():
-    return FakeOsm()
+def fake_photon():
+    return FakePhoton()
 
 
-def fake_http_client(google: FakeGoogle, osm: FakeOsm) -> httpx2.Client:
-    """An HTTP client that reaches only the fake Google and the fake OpenStreetMap."""
+def fake_http_client(google: FakeGoogle, photon: FakePhoton) -> httpx2.Client:
+    """An HTTP client that reaches only the fake Google and the fake Photon."""
 
     def route(request: httpx2.Request) -> httpx2.Response:
-        if osm.handles(request.url.host):
-            return osm.handle(request)
+        if photon.handles(request.url.host):
+            return photon.handle(request)
         return google.handle(request)
 
     return httpx2.Client(transport=httpx2.MockTransport(route))
 
 
 @pytest.fixture
-def fake_google(fake_osm):
+def fake_google(fake_photon):
     """Point every outside call the app makes at fresh fakes."""
     fake = FakeGoogle()
 
     def fake_http():
-        with fake_http_client(fake, fake_osm) as client:
+        with fake_http_client(fake, fake_photon) as client:
             yield client
 
     app.dependency_overrides[get_http] = fake_http
-    # Background work makes its own clients. They reach the fakes too.
-    app.dependency_overrides[get_http_factory] = lambda: lambda: fake_http_client(fake, fake_osm)
     yield fake
     app.dependency_overrides.pop(get_http, None)
-    app.dependency_overrides.pop(get_http_factory, None)
 
 
 @pytest.fixture(autouse=True)
