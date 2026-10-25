@@ -40,12 +40,10 @@ def _required(name: str) -> str:
 
 @dataclass(frozen=True)
 class OsmSettings:
-    """Free services built on OpenStreetMap data. Both ask apps to say who they are."""
+    """Photon, a free search built on OpenStreetMap data. It asks apps to say who they are."""
 
     contact_email: str
     photon_url: str
-    # Tried in order. If one is down or busy, the next one is asked.
-    overpass_urls: tuple[str, ...]
 
     @property
     def user_agent(self) -> str:
@@ -53,22 +51,11 @@ class OsmSettings:
         return f"MuslimCalendar/0.4 (+mailto:{self.contact_email})"
 
 
-# Public Overpass servers from the OpenStreetMap wiki (wiki.openstreetmap.org/wiki/Overpass_API).
-PUBLIC_OVERPASS_SERVERS = (
-    "https://overpass-api.de/api/interpreter",  # the main one, run by FOSSGIS
-    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",  # VK Maps
-    "https://overpass.private.coffee/api/interpreter",  # Private.coffee (was Kumi Systems)
-)
-
-
 @lru_cache
 def get_osm_settings() -> OsmSettings:
     return OsmSettings(
         contact_email=_required("OSM_CONTACT_EMAIL"),
         photon_url=_optional("PHOTON_URL", "https://photon.komoot.io").rstrip("/"),
-        overpass_urls=tuple(
-            url.strip() for url in _optional("OVERPASS_URLS", ",".join(PUBLIC_OVERPASS_SERVERS)).split(",") if url.strip()
-        ),
     )
 
 

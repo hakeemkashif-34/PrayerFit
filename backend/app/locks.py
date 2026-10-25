@@ -13,23 +13,18 @@ from sqlalchemy.orm import Session
 
 
 def lock_key(name: str) -> int:
-    """Turn a name like "overpass:45.31,-75.90" into the 64-bit number Postgres locks on."""
+    """Turn a name like "calendar:<user id>" into the 64-bit number Postgres locks on."""
     return int.from_bytes(hashlib.sha256(name.encode()).digest()[:8], "big", signed=True)
 
 
 @contextmanager
-def advisory_lock(db: Session, name: str) -> Iterator[bool]:
-    """Wait until no one else holds the lock for `name`, then hold it until the block ends.
-
-    Gives True if it had to wait, meaning someone else just did the same work.
-    """
+def advisory_lock(db: Session, name: str) -> Iterator[None]:
+    """Wait until no one else holds the lock for `name`, then hold it until the block ends."""
     key = lock_key(name)
     with db.get_bind().connect() as lock_connection:
-        got_it = lock_connection.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": key}).scalar()
-        if not got_it:
-            lock_connection.execute(text("SELECT pg_advisory_lock(:key)"), {"key": key})
+        lock_connection.execute(text("SELECT pg_advisory_lock(:key)"), {"key": key})
         try:
-            yield not got_it
+            yield
         finally:
             lock_connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
             lock_connection.commit()

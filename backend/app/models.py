@@ -161,11 +161,11 @@ class UserSettings(Base):
 
 
 class Masjid(Base):
-    """A masjid from OpenStreetMap, or one a user typed in.
+    """A masjid a user picked: one Photon found on OpenStreetMap, or an address.
 
-    OpenStreetMap masjids are public, so every user can see them. Typed-in
-    masjids have created_by_user_id and only that user sees them. Nothing
-    here is made up: no guessed address and no times.
+    OpenStreetMap masjids are public, so every user can pick them. A masjid
+    picked by its address has created_by_user_id, and only that user sees
+    it. Nothing here is made up: no guessed name or address, and no times.
     """
 
     __tablename__ = "masjids"
@@ -182,7 +182,7 @@ class Masjid(Base):
     name: Mapped[str | None] = mapped_column(Text)
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
-    # Only what OpenStreetMap has in its addr:* tags, or what the user typed.
+    # Only what OpenStreetMap has, like "351 Sandhill Road, Ottawa", or the address the user picked.
     address: Mapped[str | None] = mapped_column(Text)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
@@ -222,20 +222,8 @@ class UserJumuahMasjid(Base):
     )
 
 
-class OverpassCache(Base):
-    """Which masjids Overpass found around one grid cell, and when."""
-
-    __tablename__ = "overpass_cache"
-
-    # Like "45.35,-75.91". About 1 km across, so it never pins down a home.
-    cell: Mapped[str] = mapped_column(String(32), primary_key=True)
-    # Masjid IDs (as strings) from the masjids table.
-    masjid_ids: Mapped[list[str]] = mapped_column(JSON)
-    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-
-
 class GeocodeCache(Base):
-    """Photon answers, so the same text is never looked up twice.
+    """Photon answers, so the same search is never sent twice.
 
     The key is an HMAC of the address, so the table can't be searched for
     an address without the secret key. The answer is encrypted.

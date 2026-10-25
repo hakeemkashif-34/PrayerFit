@@ -1,18 +1,17 @@
-"""The HTTP client used for every call to Google and OpenStreetMap.
+"""The HTTP client used for every call to Google and Photon.
 
 It comes in through a FastAPI dependency, so tests can swap in fakes and
-no test ever reaches the real Google, Photon, or Overpass.
+no test ever reaches the real Google or Photon.
 """
 
 import logging
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 
 import httpx2
 
 # Seconds to wait before giving up, for Google and Photon. A timeout is
 # treated like any other temporary error: stop, and finish on the next run.
-# Overpass is much slower, so it sets its own (see geo/overpass.py).
 HTTP_TIMEOUT = 10
 
 logger = logging.getLogger("app.outside_services")
@@ -30,14 +29,6 @@ def new_http_client() -> httpx2.Client:
 def get_http() -> Iterator[httpx2.Client]:
     with new_http_client() as client:
         yield client
-
-
-def get_http_factory() -> Callable[[], httpx2.Client]:
-    """For background work that outlives the request (its client is closed by then).
-
-    A dependency, so tests can swap in the fakes here too.
-    """
-    return new_http_client
 
 
 def transport_reason(error: httpx2.TransportError) -> str:
