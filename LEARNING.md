@@ -573,7 +573,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 3. **Privacy and caching with a grid**:
    a) The location is rounded to 2 decimal places (about 1 km). Overpass only ever gets that rounded point, never the home.
    b) The query radius is 17 km around the cell's centre. Any point in a cell is under 0.8 km from the centre, so every home in the cell gets its full 15 km.
-   c) Each cell's results are cached for 7 days. Neighbours in the same cell share one Overpass call.
+   c) Each cell's results are cached for 30 days, since masjids rarely change. Neighbours in the same cell share one Overpass call.
    d) The exact distance is worked out on the server from the real location, kept if 15 km or less, and sorted closest first.
 4. **Distance** is the haversine formula: the straight-line distance over the Earth's curve. Ottawa to Toronto comes out at about 352 km, which the tests check. No ratings, just name and distance.
 5. If Overpass is busy (429 or 504), the user sees "OpenStreetMap's masjid search is busy. Try again in a minute."
@@ -581,6 +581,13 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    a) The chain has to wait longest at the front: the browser waits forever, nginx waits 120 seconds for `/api/`, and the backend gives Overpass 60. If nginx waited less than the backend, the user would get nginx's error even though the backend was about to answer.
    b) While it waits, the masjid step says "Searching for masjids nearby. This can take up to a minute."
    c) `test_overpass_call_uses_a_60_second_timeout` reads the timeout httpx2 put on the actual request. I checked it fails when the `timeout=60` is taken out.
+
+7. **Setup never waits on Overpass**: on my laptop, overpass-api.de answered 502 in 0.4 s and overpass.private.coffee didn't answer within 60 s. Public servers go down, so:
+   a) **Backup servers**: `OVERPASS_URLS` in `.env` is a list, tried in order. A 429, a 5xx, a timeout, or a connection error moves on to the next server. A 400 doesn't, because it means our query is wrong and every server would say the same. The default list is the public servers on the OpenStreetMap wiki: overpass-api.de (FOSSGIS), maps.mail.ru (VK Maps), and overpass.private.coffee.
+   b) **A time budget**: each server gets up to 60 seconds, but all of them together get at most 100, so the backend always answers before nginx's 120. A server isn't asked with under 5 seconds left.
+   c) **Started early**: saving the location adds a FastAPI background task that runs the masjid search after the response is sent. By the time the user has read the masjid question, it's usually cached. The task gets its own database session and HTTP client, because the request's are closed by then. A failure is only logged.
+   d) **One search per cell**: a Postgres advisory lock on the cell (`app/locks.py`, the same helper the calendar uses per user). If the masjid page asks while the background search is running, it waits and then reads the cache instead of asking Overpass again. If the search it waited for failed, it says so straight away instead of starting another one that could outlast nginx.
+   e) **The fallback choices always show**: "My masjid isn't listed" and "I pray at home" are on the page while it searches and after a failure, with a "Search again" button. Setup can always carry on.
 
 ### 6. The 14-day window
 
@@ -691,7 +698,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 
 ### 10. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`435 passed`) and `npx playwright test` in `web` (`50 passed`).
+1. **Tests**: `pytest` in `backend` (`450 passed`) and `npx playwright test` in `web` (`58 passed`).
 2. **For real**: follow "Go through setup" in the README with your test Google account. The Prayers calendar should have 70 events.
 3. **Change a setting**: tick one more prayer on one weekday. The message should say 2 events were sent, and only those 2 change in Google Calendar.
 4. **Nightly job**: `docker compose exec worker python -m app.worker run-now --email you@gmail.com`, then again, then with `--force`. Still 70 events.
