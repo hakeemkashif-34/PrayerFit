@@ -4,7 +4,6 @@
 import { useState, type FormEvent } from "react";
 import { api, ApiError } from "../api";
 import { masjidName } from "../labels";
-import { OsmCredit } from "../OsmCredit";
 import type { SaveResponse, Settings } from "../types";
 import { useNearby } from "./useNearby";
 
@@ -143,7 +142,6 @@ export function MasjidStep({ settings, page = false, submitLabel = "Save", onSav
           </button>
         )}
       </div>
-      <OsmCredit />
     </form>
   );
 }

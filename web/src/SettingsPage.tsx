@@ -4,6 +4,7 @@
 import { useState, type ReactNode } from "react";
 import { api, ApiError, SIGN_IN_URL } from "./api";
 import { asrName, masjidName, methodName, PRAYER_NAMES, PRAYERS, WEEKDAYS } from "./labels";
+import { OsmFooter } from "./OsmFooter";
 import { masjidLabel } from "./Setup";
 import { JumuahStep } from "./steps/JumuahStep";
 import { LocationStep } from "./steps/LocationStep";
@@ -56,88 +57,91 @@ export function SettingsPage({ email, initial, initialCalendar, onSignedOut }: P
   const atHome = settings.main_masjid_choice === "home";
 
   return (
-    <main className="page">
-      <header className="top">
-        <h1>Your prayers</h1>
-        <p className="hint">Signed in as {email}</p>
-      </header>
+    <div className="page-with-footer">
+      <main className="page">
+        <header className="top">
+          <h1>Your prayers</h1>
+          <p className="hint">Signed in as {email}</p>
+        </header>
 
-      {calendar && (
-        <p className={calendar.status === "updated" ? "notice" : "notice warning"} role="status">
-          {calendar.message}{" "}
-          {calendar.status === "waiting" && (
-            <button type="button" className="link" onClick={retry} disabled={busy}>
-              Try again
-            </button>
-          )}
-          {calendar.status === "sign_in_needed" && <a href={SIGN_IN_URL}>Sign in again</a>}
-        </p>
-      )}
-
-      <Card title="Location" step="address" editing={editing} onEdit={setEditing}
-        edit={<LocationStep current={settings.place_name} onSaved={saved} onKeep={cancel} keepLabel="Cancel" />}>
-        <p>{settings.place_name}</p>
-        <p className="hint">Time zone: {settings.time_zone}</p>
-      </Card>
-
-      <Card title="Prayer time method" step="methods" editing={editing} onEdit={setEditing}
-        edit={<MethodsStep initialMethod={settings.method} initialAsr={settings.asr_method} onSaved={saved} onCancel={cancel} />}>
-        <p>{methodName(settings.method)}, {asrName(settings.asr_method)} Asr</p>
-      </Card>
-
-      <Card title="Main masjid" step="masjid" editing={editing} onEdit={setEditing}
-        edit={<MasjidStep settings={settings} onSaved={saved} onCancel={cancel} />}>
-        {atHome || !settings.main_masjid ? (
-          <p>I pray at home</p>
-        ) : (
-          <>
-            <p>
-              {masjidName(settings.main_masjid)}
-              {settings.main_masjid_short_name && ` (${settings.main_masjid_short_name})`}
-            </p>
-            <p className="hint">{settings.main_masjid.iqamah_status}</p>
-          </>
+        {calendar && (
+          <p className={calendar.status === "updated" ? "notice" : "notice warning"} role="status">
+            {calendar.message}{" "}
+            {calendar.status === "waiting" && (
+              <button type="button" className="link" onClick={retry} disabled={busy}>
+                Try again
+              </button>
+            )}
+            {calendar.status === "sign_in_needed" && <a href={SIGN_IN_URL}>Sign in again</a>}
+          </p>
         )}
-      </Card>
 
-      {!atHome && (
-        <Card title="Prayers at the masjid" step="weekly" editing={editing} onEdit={setEditing}
-          edit={<WeeklyStep initial={settings.weekly} masjidLabel={masjidLabel(settings)} onSaved={saved}
-            onCancel={settings.missing.includes("weekly") ? undefined : cancel} />}>
-          <ul className="plain">
-            {settings.weekly.map((day) => {
-              const names = PRAYERS.filter((p) => day[p]).map((p) => PRAYER_NAMES[p]);
-              return (
-                <li key={day.weekday}>
-                  <strong>{WEEKDAYS[day.weekday]}:</strong> {names.length ? names.join(", ") : "all at home"}
-                </li>
-              );
-            })}
-          </ul>
+        <Card title="Location" step="address" editing={editing} onEdit={setEditing}
+          edit={<LocationStep current={settings.place_name} onSaved={saved} onKeep={cancel} keepLabel="Cancel" />}>
+          <p>{settings.place_name}</p>
+          <p className="hint">Time zone: {settings.time_zone}</p>
         </Card>
-      )}
 
-      <Card title="Jumuah masjids" step="jumuah" editing={editing} onEdit={setEditing}
-        edit={<JumuahStep settings={settings} onSaved={saved} onCancel={cancel} />}>
-        {settings.jumuah_masjids.length === 0 ? (
-          <p>None picked</p>
-        ) : (
-          <ul className="plain">
-            {settings.jumuah_masjids.map((m) => (
-              <li key={m.id}>
-                {masjidName(m)} <span className="hint">· {m.iqamah_status}</span>
-              </li>
-            ))}
-          </ul>
+        <Card title="Prayer time method" step="methods" editing={editing} onEdit={setEditing}
+          edit={<MethodsStep initialMethod={settings.method} initialAsr={settings.asr_method} onSaved={saved} onCancel={cancel} />}>
+          <p>{methodName(settings.method)}, {asrName(settings.asr_method)} Asr</p>
+        </Card>
+
+        <Card title="Main masjid" step="masjid" editing={editing} onEdit={setEditing}
+          edit={<MasjidStep settings={settings} onSaved={saved} onCancel={cancel} />}>
+          {atHome || !settings.main_masjid ? (
+            <p>I pray at home</p>
+          ) : (
+            <>
+              <p>
+                {masjidName(settings.main_masjid)}
+                {settings.main_masjid_short_name && ` (${settings.main_masjid_short_name})`}
+              </p>
+              <p className="hint">{settings.main_masjid.iqamah_status}</p>
+            </>
+          )}
+        </Card>
+
+        {!atHome && (
+          <Card title="Prayers at the masjid" step="weekly" editing={editing} onEdit={setEditing}
+            edit={<WeeklyStep initial={settings.weekly} masjidLabel={masjidLabel(settings)} onSaved={saved}
+              onCancel={settings.missing.includes("weekly") ? undefined : cancel} />}>
+            <ul className="plain">
+              {settings.weekly.map((day) => {
+                const names = PRAYERS.filter((p) => day[p]).map((p) => PRAYER_NAMES[p]);
+                return (
+                  <li key={day.weekday}>
+                    <strong>{WEEKDAYS[day.weekday]}:</strong> {names.length ? names.join(", ") : "all at home"}
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
         )}
-      </Card>
 
-      <div className="actions">
-        <button type="button" className="secondary" onClick={signOut} disabled={busy}>
-          Sign out
-        </button>
-      </div>
-    </main>
+        <Card title="Jumuah masjids" step="jumuah" editing={editing} onEdit={setEditing}
+          edit={<JumuahStep settings={settings} onSaved={saved} onCancel={cancel} />}>
+          {settings.jumuah_masjids.length === 0 ? (
+            <p>None picked</p>
+          ) : (
+            <ul className="plain">
+              {settings.jumuah_masjids.map((m) => (
+                <li key={m.id}>
+                  {masjidName(m)} <span className="hint">· {m.iqamah_status}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <div className="actions">
+          <button type="button" className="secondary" onClick={signOut} disabled={busy}>
+            Sign out
+          </button>
+        </div>
+      </main>
+      <OsmFooter />
+    </div>
   );
 }
 

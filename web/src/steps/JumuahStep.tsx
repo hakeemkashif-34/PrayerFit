@@ -4,7 +4,6 @@
 import { useState, type FormEvent } from "react";
 import { api, ApiError } from "../api";
 import { masjidName } from "../labels";
-import { OsmCredit } from "../OsmCredit";
 import type { SaveResponse, Settings } from "../types";
 import { useNearby } from "./useNearby";
 
@@ -86,7 +85,6 @@ export function JumuahStep({ settings, onSaved, onCancel }: Props) {
           </button>
         )}
       </div>
-      <OsmCredit />
     </form>
   );
 }
