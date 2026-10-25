@@ -754,8 +754,6 @@ ul.colour-list {
   left: 0;
   right: 0;
   z-index: 10;
-  max-height: 320px;
-  overflow-y: auto;
 }
 
 ul.colour-list:focus {
