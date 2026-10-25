@@ -12,6 +12,8 @@ class FakeOrs:
     def __init__(self) -> None:
         # Seconds for every route, unless a test changes it.
         self.seconds: float = 14 * 60
+        # Seconds to one destination, by its (latitude, longitude) rounded to 3 places.
+        self.seconds_to: dict[tuple[float, float], float] = {}
         self.requests: list[httpx2.Request] = []
         self.bodies: list[dict] = []
         # A status code (429, 500), "timeout", or "no_route".
@@ -34,6 +36,8 @@ class FakeOrs:
             )
         if self.failure is not None:
             return httpx2.Response(int(self.failure), json={"error": "Fake failure"})
+        end_lon, end_lat = body["coordinates"][1]
+        seconds = self.seconds_to.get((end_lat, end_lon), self.seconds)
         return httpx2.Response(
-            200, json={"routes": [{"summary": {"distance": 9000.0, "duration": self.seconds}}]}
+            200, json={"routes": [{"summary": {"distance": 9000.0, "duration": seconds}}]}
         )
