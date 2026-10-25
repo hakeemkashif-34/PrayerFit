@@ -74,7 +74,7 @@ def test_existing_answers_arent_changed_by_the_new_defaults(set_up, db):
 @pytest.mark.parametrize(
     "body",
     [
-        {"arrive_early_minutes": 31},
+        {"arrive_early_minutes": 61},
         {"arrive_early_minutes": -1},
         {"arrive_early_minutes": 2.5},
         {"arrive_early_minutes": 5.0},
@@ -204,3 +204,11 @@ def test_finish_is_refused_before_the_optional_step(signed_in, fake_photon, fake
     assert response.status_code == 409
     assert response.json()["detail"]["missing"] == ["optional"]
     assert fake_google.requests == []
+
+
+@pytest.mark.parametrize("minutes", [0, 31, 60])
+def test_how_early_takes_0_to_60(signed_in, fake_photon, minutes):
+    setup_through_api(signed_in, fake_photon, finish=False)
+    response = signed_in.put("/settings/optional", json={"arrive_early_minutes": minutes})
+    assert response.status_code == 200
+    assert response.json()["settings"]["arrive_early_minutes"] == minutes

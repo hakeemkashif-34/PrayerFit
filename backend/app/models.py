@@ -165,7 +165,7 @@ class UserSettings(Base):
     jumuah_saved: Mapped[bool] = mapped_column(default=False)
     # The optional setup step. True once it's saved or skipped.
     optional_saved: Mapped[bool] = mapped_column(default=False, server_default="false")
-    # How many minutes before iqamah the user wants to arrive, 0 to 30.
+    # How many minutes before iqamah the user wants to arrive, 0 to 60.
     arrive_early_minutes: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
     # Google event colours, "1" to "11". Empty uses the calendar's colour.
     prayer_color_id: Mapped[str | None] = mapped_column(String(2))

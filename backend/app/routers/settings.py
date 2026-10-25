@@ -547,7 +547,7 @@ class OptionalRequest(BaseModel):
     """A field left out gets its default: 5 minutes early, no short name, and Basil."""
 
     # strict: a whole number only. 2.5 or "5" is refused, not rounded.
-    arrive_early_minutes: int = Field(default=DEFAULT_ARRIVE_EARLY_MINUTES, ge=0, le=30, strict=True)
+    arrive_early_minutes: int = Field(default=DEFAULT_ARRIVE_EARLY_MINUTES, ge=0, le=60, strict=True)
     # Like "KMA". Only kept when there's a main masjid.
     short_name: str | None = Field(default=None, max_length=40)
     # null uses the Prayers calendar's own colour.

@@ -150,7 +150,7 @@ test("editing the extras: how early, short name, and colours", async ({ page }) 
   const early = page.getByLabel("How early do you want to arrive before iqamah?");
   // Answered before, so it shows what was saved, not the defaults.
   await expect(early).toHaveValue("5");
-  await early.fill("30");
+  await early.fill("45");
   const shortName = page.getByLabel("Short name for Kanata Muslim Association");
   await expect(shortName).toHaveValue("KMA");
   await shortName.fill("Kanata");
@@ -164,10 +164,10 @@ test("editing the extras: how early, short name, and colours", async ({ page }) 
   await page.getByRole("button", { name: "Save" }).click();
 
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({
-    arrive_early_minutes: 30, short_name: "Kanata", prayer_color_id: null, drive_color_id: "5",
+    arrive_early_minutes: 45, short_name: "Kanata", prayer_color_id: null, drive_color_id: "5",
   });
   const extras = page.getByRole("region", { name: "Extras" });
-  await expect(extras).toContainText("Arrive 30 min before iqamah");
+  await expect(extras).toContainText("Arrive 45 min before iqamah");
   await expect(extras).toContainText("Prayer colour: Calendar colour");
   await expect(extras).toContainText("Drive colour: Banana");
   await expect(page.getByRole("region", { name: "Main masjid" })).toContainText("(Kanata)");
@@ -309,8 +309,8 @@ test("a bad how early number on the Settings page shows the error and saves noth
   await page.goto("/");
 
   await page.getByRole("button", { name: "Edit extras" }).click();
-  await page.getByLabel("How early do you want to arrive before iqamah?").fill("45");
+  await page.getByLabel("How early do you want to arrive before iqamah?").fill("61");
   await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByRole("alert")).toHaveText("Enter a whole number of minutes from 0 to 30.");
+  await expect(page.getByRole("alert")).toHaveText("Enter a whole number of minutes from 0 to 60.");
   expect(api.calls("PUT", "/api/settings/optional")).toHaveLength(0);
 });

@@ -21,7 +21,7 @@ type Props = {
   onCancel?: () => void;
 };
 
-const MAX_EARLY = 30;
+const MAX_EARLY = 60;
 const DEFAULTS: OptionalAnswers = {
   arrive_early_minutes: DEFAULT_ARRIVE_EARLY,
   prayer_color_id: DEFAULT_COLOUR,
@@ -29,7 +29,7 @@ const DEFAULTS: OptionalAnswers = {
 };
 const EARLY_ERROR = `Enter a whole number of minutes from 0 to ${MAX_EARLY}.`;
 
-// "5" -> 5. Anything that isn't a whole number from 0 to 30 is null.
+// "5" -> 5. Anything that isn't a whole number from 0 to 60 is null.
 function wholeMinutes(text: string): number | null {
   if (!/^\d{1,2}$/.test(text.trim())) return null;
   const minutes = Number(text.trim());

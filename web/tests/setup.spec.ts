@@ -481,7 +481,7 @@ test("if finishing setup fails, it stays on the setup page with the error", asyn
   await expectGoogleCalendar(page, api);
 });
 
-test("how early takes whole numbers from 0 to 30 only", async ({ page }) => {
+test("how early takes whole numbers from 0 to 60 only", async ({ page }) => {
   const api = new MockApi().signedIn();
   await api.install(page);
   await page.goto("/");
@@ -489,19 +489,19 @@ test("how early takes whole numbers from 0 to 30 only", async ({ page }) => {
   await page.getByRole("button", { name: "Skip" }).click();
 
   const early = page.getByLabel("How early do you want to arrive before iqamah?");
-  for (const bad of ["31", "-1", "2.5", "", "100"]) {
+  for (const bad of ["61", "-1", "2.5", "", "100"]) {
     await early.fill(bad);
     await page.getByRole("button", { name: "Finish" }).click();
-    await expect(page.getByRole("alert")).toHaveText("Enter a whole number of minutes from 0 to 30.");
+    await expect(page.getByRole("alert")).toHaveText("Enter a whole number of minutes from 0 to 60.");
     await expect(early).toHaveAttribute("aria-invalid", "true");
   }
   expect(api.calls("PUT", "/api/settings/optional")).toHaveLength(0);
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(0);
 
-  // 30 is the most allowed. (0 is in the next test.)
-  await early.fill("30");
+  // 60 is the most allowed. (0 is in the next test.)
+  await early.fill("60");
   await page.getByRole("button", { name: "Finish" }).click();
-  expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toMatchObject({ arrive_early_minutes: 30 });
+  expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toMatchObject({ arrive_early_minutes: 60 });
   await expectGoogleCalendar(page, api);
 });
 
@@ -529,7 +529,7 @@ test("the extras step: short text, Commute colour, and Skip in the top-right cor
   const heading = page.getByRole("heading", { level: 1, name: OPTIONAL });
   await expect(heading).toBeVisible();
   // The removed lines stay gone. The error message for a wrong number stays (tested above).
-  for (const gone of ["All optional", "0 to 30 minutes", "Google Calendar's own colours", "(optional)"]) {
+  for (const gone of ["All optional", "The drive block before each masjid prayer", "Google Calendar's own colours", "(optional)"]) {
     await expect(page.getByText(gone)).toHaveCount(0);
   }
   await expect(page.getByLabel("Short name for Kanata Muslim Association", { exact: true })).toBeVisible();
