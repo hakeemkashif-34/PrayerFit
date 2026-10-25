@@ -20,10 +20,23 @@ def test_success_sends_rounded_coordinates_and_the_key_in_a_header(db, http, fak
     with Session(db) as session:
         assert drive_time(session, http, HOME, MASJID) == Route(seconds=840)
     request = fake_ors.requests[0]
+    assert str(request.url) == "https://api.heigit.org/openrouteservice/v2/directions/driving-car"
     assert fake_ors.bodies[0] == {"coordinates": [[-75.899, 45.309], [-75.887, 45.319]]}
     assert request.headers["authorization"] == ors_key
     assert ors_key not in str(request.url)
     assert "45.3088" not in request.content.decode()
+
+
+def test_the_old_address_is_never_used(db, http, fake_ors, ors_key, monkeypatch):
+    from app.config import get_ors_settings
+
+    # A trailing slash on ORS_URL doesn't make a double slash.
+    monkeypatch.setenv("ORS_URL", "https://api.heigit.org/openrouteservice/")
+    get_ors_settings.cache_clear()
+    with Session(db) as session:
+        drive_time(session, http, HOME, MASJID)
+    assert str(fake_ors.requests[0].url) == "https://api.heigit.org/openrouteservice/v2/directions/driving-car"
+    assert "openrouteservice.org" not in get_ors_settings().url
 
 
 def test_an_empty_key_skips_quietly(db, http, fake_ors):

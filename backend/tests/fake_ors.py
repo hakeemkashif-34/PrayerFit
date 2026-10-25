@@ -5,7 +5,8 @@ import json
 
 import httpx2
 
-ORS_HOST = "api.openrouteservice.org"
+ORS_HOST = "api.heigit.org"
+DIRECTIONS_PATH = "/openrouteservice/v2/directions/driving-car"
 
 
 class FakeOrs:
@@ -23,7 +24,7 @@ class FakeOrs:
         return host == ORS_HOST
 
     def handle(self, request: httpx2.Request) -> httpx2.Response:
-        if request.method != "POST" or request.url.path != "/v2/directions/driving-car":
+        if request.method != "POST" or request.url.path != DIRECTIONS_PATH:
             raise AssertionError(f"The app called an OpenRouteService URL the fake doesn't know: {request.url}")
         self.requests.append(request)
         body = json.loads(request.content)

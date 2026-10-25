@@ -71,7 +71,8 @@ class OrsSettings:
 def get_ors_settings() -> OrsSettings:
     return OrsSettings(
         api_key=os.environ.get("ORS_API_KEY", "").strip(),
-        url=_optional("ORS_URL", "https://api.openrouteservice.org").rstrip("/"),
+        # HeiGIT shut off api.openrouteservice.org on September 28, 2026.
+        url=_optional("ORS_URL", "https://api.heigit.org/openrouteservice").rstrip("/"),
     )
 
 

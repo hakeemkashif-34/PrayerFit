@@ -3,6 +3,9 @@
 ORS is built on OpenStreetMap data. It gives a typical drive time with no
 live traffic, so the drive block is a fair estimate, not a promise.
 
+The address is https://api.heigit.org/openrouteservice/v2/directions/driving-car.
+HeiGIT shut off the old one, api.openrouteservice.org, on September 28, 2026.
+
 Privacy and limits:
 1. Only coordinates are sent, rounded to 3 decimal places (about 100 m).
    Never an address.

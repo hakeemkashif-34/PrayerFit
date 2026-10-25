@@ -169,7 +169,7 @@ MAWAQIT can block this at any time. After a 403, a 429, or 3 failed reads in a r
 
 ## Drive times
 
-Each masjid prayer gets a **Drive to <masjid>** block before it, from when to leave until you arrive, with a popup reminder when it starts. Drive times come from [OpenRouteService](https://openrouteservice.org), which has a free plan. They're typical drive times with no live traffic.
+Each masjid prayer gets a **Drive to <masjid>** block before it, from when to leave until you arrive, with a popup reminder when it starts. Drive times come from [OpenRouteService](https://openrouteservice.org), which has a free plan. They're typical drive times with no live traffic. The app calls `https://api.heigit.org/openrouteservice/v2/directions/driving-car`. HeiGIT shut off the old address, `api.openrouteservice.org`, on September 28, 2026.
 
 1. Sign up at https://openrouteservice.org/dev/#/signup and copy your API key.
 2. Put it in `.env` as `ORS_API_KEY=...` and restart: `docker compose up -d`.
@@ -243,11 +243,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `610 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `611 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`351 passed, 259 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`351 passed, 260 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 

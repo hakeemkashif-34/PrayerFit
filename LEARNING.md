@@ -770,10 +770,11 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 ### 8. Drive time
 
 1. **OpenRouteService** (ORS) is built on OpenStreetMap data and has a free plan (2,000 directions a day, 40 a minute). It gives typical drive times with no live traffic, and the drive block's description says so.
-2. **Its own adapter**, like Photon: a 10 second timeout, calls spaced 1.6 seconds apart across the app, and every problem (no key, a timeout, a 429, a server error) returns "don't know". The calendar update carries on without a drive block. "No route found" is a real answer, so it's saved.
-3. **The key** goes in the `Authorization` header, never the URL, so it can't end up in a log. It's `ORS_API_KEY` in `.env`. Empty means drive times are off.
-4. **Privacy**: only coordinates, rounded to 3 decimal places (about 100 m), are sent. Never an address. The log line only has the service, the reason, and the time it took.
-5. **Saved per user and masjid** in `user_drive_times`, with a `route_key`: a keyed hash of the rounded home and masjid points. The points themselves aren't saved again. A drive time is only asked again when there isn't one, the key changed (the user moved, or picked another masjid), or it's over 30 days old. A nightly run for an unchanged user makes no ORS calls.
+2. **The address**: `https://api.heigit.org/openrouteservice/v2/directions/driving-car`. HeiGIT shut off the old one, `api.openrouteservice.org`, on September 28, 2026. The base URL (`https://api.heigit.org/openrouteservice`) is the default for `ORS_URL` in `config.py`, with no trailing slash, and the adapter adds `/v2/directions/driving-car`. The request itself didn't change: the same POST body and `Authorization` header.
+3. **Its own adapter**, like Photon: a 10 second timeout, calls spaced 1.6 seconds apart across the app, and every problem (no key, a timeout, a 429, a server error) returns "don't know". The calendar update carries on without a drive block. "No route found" is a real answer, so it's saved.
+4. **The key** goes in the `Authorization` header, never the URL, so it can't end up in a log. It's `ORS_API_KEY` in `.env`. Empty means drive times are off.
+5. **Privacy**: only coordinates, rounded to 3 decimal places (about 100 m), are sent. Never an address. The log line only has the service, the reason, and the time it took.
+6. **Saved per user and masjid** in `user_drive_times`, with a `route_key`: a keyed hash of the rounded home and masjid points. The points themselves aren't saved again. A drive time is only asked again when there isn't one, the key changed (the user moved, or picked another masjid), or it's over 30 days old. A nightly run for an unchanged user makes no ORS calls.
 
 ### 9. Two blocks for each masjid prayer
 
@@ -833,6 +834,6 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 
 ### 15. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`610 passed`) and `npx playwright test` in `web` (`78 passed`).
+1. **Tests**: `pytest` in `backend` (`611 passed`) and `npx playwright test` in `web` (`78 passed`).
 2. **For real**: get a free ORS key and put it in `.env`. Then follow "Masjid times from MAWAQIT" in the README to link KMA, and run `run-now --force`. In Google Calendar: masjid prayers at KMA's iqamah, home prayers at KMA's adhan, each with its source, a drive block with a reminder before each masjid prayer, Jumuah on Friday if KMA is a Jumuah masjid, and the colours picked in Extras.
 3. **Checks I couldn't do here**: reading KMA's live MAWAQIT page (only the saved copy), a real ORS key, and `authuser` with an email on the real Google Calendar. All 3 hosts were blocked where I built this.
