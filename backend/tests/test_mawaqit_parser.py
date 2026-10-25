@@ -138,11 +138,37 @@ def test_the_page_script_is_only_read_as_data():
     assert conf_data(html)["name"] == "Test Masjid"
 
 
-def test_plus_zero_means_no_iqamah_was_published():
+def test_plus_zero_is_iqamah_at_the_adhan_time():
     data = set_day(conf(), 10, 25, iqamah=["+15", "13:00", "+0", "+5", "+0"])
     first = read(data)[0]
-    assert first.iqamah["asr"] is None and first.iqamah["isha"] is None
+    assert first.iqamah["asr"] == first.adhan["asr"] == time(15, 30)
+    assert first.iqamah["isha"] == first.adhan["isha"] == time(19, 30)
     assert first.iqamah["maghrib"] == time(18, 5)
+
+
+@pytest.mark.parametrize("value", [0, 15, "15", True])
+def test_fajr_tied_to_sunrise_means_no_fajr_iqamah(value):
+    days = read(conf(fajrFixationComparedToShuruq=value))
+    assert all(d.iqamah["fajr"] is None for d in days)
+    # The other prayers keep their iqamah.
+    assert days[0].iqamah["isha"] == time(20, 15)
+
+
+@pytest.mark.parametrize("value", [None, "", False])
+def test_fajr_tied_to_sunrise_off_keeps_fajr_iqamah(value):
+    assert read(conf(fajrFixationComparedToShuruq=value))[0].iqamah["fajr"] == time(5, 50)
+
+
+def test_fajr_tied_to_sunrise_is_logged(http, fake_mawaqit, caplog):
+    import logging
+
+    from app.masjid_times.mawaqit import MawaqitSource
+
+    fake_mawaqit.pages["test-masjid"] = page(conf(fajrFixationComparedToShuruq=20))
+    with caplog.at_level(logging.WARNING):
+        days = MawaqitSource().fetch(http, "test-masjid", date(2026, 10, 25), 3)
+    assert days[0].iqamah["fajr"] is None
+    assert "MAWAQIT page test-masjid sets fajrFixationComparedToShuruq, so its Fajr iqamah isn't used" in caplog.text
 
 
 def test_jumuah_at_dhuhr_time_has_no_set_slots():

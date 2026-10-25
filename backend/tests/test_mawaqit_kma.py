@@ -49,10 +49,28 @@ def test_the_page_already_has_the_clocks_going_back():
     assert day(date(2026, 3, 8)).adhan["dhuhr"] == time(13, 14)
 
 
-def test_plus_zero_months_have_no_iqamah():
+def test_plus_zero_days_are_iqamah_at_the_adhan_time():
+    # KMA's page has "+0" for Asr and Isha on the days its set time would
+    # come before the adhan. On those days the iqamah is at the adhan.
     march = day(date(2026, 3, 8))
-    assert march.iqamah["asr"] is None and march.iqamah["isha"] is None
+    assert march.iqamah["asr"] == march.adhan["asr"]
+    assert march.iqamah["isha"] == march.adhan["isha"]
     assert march.iqamah["dhuhr"] == time(13, 30)
+    # Isha switches from "+0" to the set time, 7:40 pm, on October 15.
+    october_14, october_15 = day(date(2026, 10, 14)), day(date(2026, 10, 15))
+    assert october_14.iqamah["isha"] == october_14.adhan["isha"]
+    assert october_14.adhan["isha"] > time(19, 40)
+    assert october_15.iqamah["isha"] == time(19, 40)
+    # Asr does the same on September 27, at 4:15 pm.
+    assert day(date(2026, 9, 26)).iqamah["asr"] == day(date(2026, 9, 26)).adhan["asr"]
+    assert day(date(2026, 9, 27)).iqamah["asr"] == time(16, 15)
+
+
+def test_kmas_fajr_isnt_tied_to_sunrise():
+    from app.masjid_times.mawaqit import fajr_tied_to_sunrise
+
+    assert not fajr_tied_to_sunrise(DATA)
+    assert day(date(2026, 10, 25)).iqamah["fajr"] == time(6, 26)
 
 
 def test_every_day_of_the_year_passes_the_checks():
@@ -76,5 +94,21 @@ def test_kma_in_the_calendar(db, http, fake_google, fake_mawaqit):
     assert clock(isha) == day(monday).iqamah["isha"].strftime("%H:%M")
     assert isha["description"] == "KMA iqamah (MAWAQIT, updated Oct 25, 2026)"
     fajr = titled(events, monday, "Fajr at home")
+    assert fajr["start"]["dateTime"].startswith("2026-10-26T06:13")
     assert clock(fajr) == day(monday).adhan["fajr"].strftime("%H:%M")
     assert fajr["description"] == "KMA adhan time (MAWAQIT)"
+
+
+def test_a_plus_zero_day_is_labelled_as_kmas_iqamah(db, http, fake_google, fake_mawaqit):
+    # October 13: Isha is "+0" on KMA's page, so the iqamah is at the adhan.
+    now = datetime(2026, 10, 13, 8, 0, tzinfo=ZoneInfo("America/Toronto"))
+    uid = add_user(fake_google, db, "user-a", masjid_name="Kanata Muslim Association", short_name="KMA",
+                   at_masjid={d: {"isha"} for d in range(5)})
+    link(db, masjid_id(db, "Kanata Muslim Association"), "kma-masjid-ottawa")
+    fake_mawaqit.pages["kma-masjid-ottawa"] = PAGE
+    fetch(db, http, now)
+    refresh(db, http, uid, now)
+    tuesday = date(2026, 10, 13)
+    isha = titled(google_events(fake_google), tuesday, "Isha at KMA")
+    assert clock(isha) == day(tuesday).adhan["isha"].strftime("%H:%M")
+    assert isha["description"] == "KMA iqamah (MAWAQIT, updated Oct 13, 2026)"

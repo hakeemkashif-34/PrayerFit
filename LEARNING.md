@@ -742,8 +742,9 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 7. **One bad value rejects the whole page.** A wrong time means a missed prayer, so I'd rather keep yesterday's good times than save half a broken page. The failure is logged as `MAWAQIT fetch for masjid <id> failed: <reason>`, with the masjid's ID and nothing about any user.
 8. **Time zones**: times on the page are clock times in the masjid's time zone, so the database stores them as plain clock times (`time`, not a timestamp). The offset is only added when an event is built, for that exact date. On November 1, 05:30 is 10:30 UTC. On October 31 it's 09:30 UTC.
 9. **KMA's real page**: mawaqit.net was blocked in the cloud environment I built this in, so I saved KMA's page (`https://mawaqit.net/en/kma-masjid-ottawa`) from my laptop. Only a trimmed copy is in the repo, `backend/tests/fixtures/mawaqit/kma_page.html`: the `confData` script with just the adhan and iqamah tables, the Jumuah times, and a few labels. The full page stayed out of git, since git keeps deleted files in its history and the repo is public. `test_mawaqit_kma.py` checks times I read off the page by hand, and that all 365 days of 2026 pass the checks.
-10. **`+0` means no iqamah**: KMA's page has `+0` for Asr and Isha from February to mid-October, and real times in the other months. That looks like "not set yet", not "iqamah at the adhan". Reading it as an iqamah would make one up, so `+0` counts as no iqamah, and those prayers use the calculated time with the "isn't available" note. If a masjid really prays at the adhan, it can publish that time as a clock time.
-11. **`jumuaAsDuhr`**: when it's true the page has no set Jumuah times, so no slots are read from it.
+10. **`+0` means iqamah at the adhan**: KMA's page has `+0` for Asr from Feb 27 to Sep 26 and for Isha from Feb 5 to Oct 14. At first I read it as "not set yet". Then I noticed the dates line up exactly: Isha is `+0` on October 14, when the adhan is after 7:40 pm, and switches to 7:40 pm on October 15, when the adhan is 7:39 pm. Asr does the same at 4:15 pm on September 27. So on those days KMA prays at the adhan. I checked this against KMA's MAWAQIT screen before changing it. Those days are labelled "KMA iqamah (MAWAQIT, ...)" like any other.
+11. **`fajrFixationComparedToShuruq`**: the only other setting that could change an iqamah. It ties Fajr to sunrise, but I don't know its format, and KMA leaves it empty. So if a page ever sets it, Fajr's iqamah is treated as not available (Fajr uses the calculated time with the usual note), and the worker logs the page name. Only `null`, empty, and `false` count as off. A `0` counts as set, which needed `value is False` instead of `value in (None, "", False)`, because `0 == False` in Python.
+12. **`jumuaAsDuhr`**: when it's true the page has no set Jumuah times, so no slots are read from it.
 
 ### 5. Reading each masjid every 6 hours
 
@@ -832,6 +833,6 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 
 ### 15. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`600 passed`) and `npx playwright test` in `web` (`78 passed`).
+1. **Tests**: `pytest` in `backend` (`610 passed`) and `npx playwright test` in `web` (`78 passed`).
 2. **For real**: get a free ORS key and put it in `.env`. Then follow "Masjid times from MAWAQIT" in the README to link KMA, and run `run-now --force`. In Google Calendar: masjid prayers at KMA's iqamah, home prayers at KMA's adhan, each with its source, a drive block with a reminder before each masjid prayer, Jumuah on Friday if KMA is a Jumuah masjid, and the colours picked in Extras.
 3. **Checks I couldn't do here**: reading KMA's live MAWAQIT page (only the saved copy), a real ORS key, and `authuser` with an email on the real Google Calendar. All 3 hosts were blocked where I built this.

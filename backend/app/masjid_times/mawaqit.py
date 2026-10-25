@@ -14,14 +14,18 @@ What confData holds (only these parts are used):
 - jumua, jumua2, jumua3: Friday prayer times, empty when not used.
 - jumuaAsDuhr: true when Jumuah is at Dhuhr time instead of set times.
 - iqamaEnabled: false when the masjid publishes no iqamah times.
+- fajrFixationComparedToShuruq: a Fajr setting tied to sunrise. Its
+  format isn't known (KMA leaves it empty), so when it's set, Fajr's
+  iqamah is treated as not available instead of guessed.
 
-"+0" in iqamaCalendar is read as "no iqamah published" (see validate.py).
+"+0" in iqamaCalendar is iqamah at the adhan time (see validate.py).
 
 MAWAQIT can block this at any time. When it does, the app keeps the last
 good times for up to 7 days, then falls back to calculated times.
 """
 
 import json
+import logging
 import re
 import time as clock
 from datetime import date, time, timedelta
@@ -33,6 +37,8 @@ from app.config import get_osm_settings
 from app.http_client import log_failure, transport_reason
 from app.masjid_times.source import PRAYERS, DayTimes, SourceBlocked, SourceFailed, SourceInvalid
 from app.masjid_times.validate import check_day, clock_time, iqamah_time
+
+logger = logging.getLogger("app.masjid_times")
 
 MAX_PAGE_BYTES = 3 * 1024 * 1024
 TIMEOUT_SECONDS = 10
@@ -145,10 +151,22 @@ def jumuah_slots(data: dict) -> tuple[time, ...]:
     return tuple(sorted(set(slots)))
 
 
+def fajr_tied_to_sunrise(data: dict) -> bool:
+    """True when the page sets fajrFixationComparedToShuruq.
+
+    It could change Fajr's iqamah in a way the iqamah table doesn't show,
+    so Fajr's iqamah isn't used. Empty, null, and false mean it's off.
+    """
+    value = data.get("fajrFixationComparedToShuruq")
+    # "is False", not "in (..., False)": 0 == False in Python, and 0 is a real setting.
+    return not (value is None or value is False or value == "")
+
+
 def days_from(data: dict, today: date, days: int) -> list[DayTimes]:
     """One DayTimes per local date, from today. Each date is today plus n
     days, so a daylight saving change can't skip or repeat one."""
     iqamah_published = data.get("iqamaEnabled", True) is not False
+    skip_fajr_iqamah = fajr_tied_to_sunrise(data)
     slots = jumuah_slots(data)
     found = []
     for n in range(days):
@@ -171,6 +189,8 @@ def days_from(data: dict, today: date, days: int) -> list[DayTimes]:
                 }
             elif values is not None:
                 raise SourceInvalid(f"MAWAQIT iqamah for {local_date} isn't 5 values")
+        if skip_fajr_iqamah:
+            iqamah["fajr"] = None
         day = DayTimes(
             local_date=local_date,
             adhan=adhan,
@@ -187,4 +207,10 @@ class MawaqitSource:
     label = "MAWAQIT"
 
     def fetch(self, http: httpx2.Client, external_id: str, today: date, days: int) -> list[DayTimes]:
-        return days_from(conf_data(download(http, external_id)), today, days)
+        data = conf_data(download(http, external_id))
+        if fajr_tied_to_sunrise(data):
+            # The page name is public, so it's safe to log. Nothing about any user is.
+            logger.warning(
+                "MAWAQIT page %s sets fajrFixationComparedToShuruq, so its Fajr iqamah isn't used", external_id
+            )
+        return days_from(data, today, days)
