@@ -560,6 +560,10 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    c) Error messages never include it. A timeout error from httpx can include the URL, so the app shows its own message instead.
    d) The cache key is an **HMAC** of the text (a hash mixed with the secret key), and the cached answer is encrypted. Without the key, someone can't check a guess like "is 123 Main St in here?" Partly typed addresses are cached too, so this matters even more than before.
    e) `test_address_never_shows_up_in_logs` captures every log line during a full setup and checks the address isn't there. I checked the test works by turning the httpx2 logger back on: it failed.
+7. **Failure logs**: when Google, Photon, or Overpass fails, `log_failure` in `http_client.py` writes one line like `Overpass failed: status 504 after 41.2 s` or `Photon failed: timeout after 10.0 s`.
+   a) The reason is only the status code, "timeout", or "connection error". Never the error's own text, because httpx2 puts the URL in it, and the URL holds the address or location.
+   b) Google's 404 and 409 answers aren't logged. The code expects them (a deleted calendar, an event that already exists).
+   c) Tests check each kind of failure is logged with its time, and that no address, coordinates, or calendar ID is in the log.
 
 ### 5. Time zone and nearby masjids
 
@@ -572,6 +576,10 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    d) The exact distance is worked out on the server from the real location, kept if 15 km or less, and sorted closest first.
 4. **Distance** is the haversine formula: the straight-line distance over the Earth's curve. Ottawa to Toronto comes out at about 352 km, which the tests check. No ratings, just name and distance.
 5. If Overpass is busy (429 or 504), the user sees "OpenStreetMap's masjid search is busy. Try again in a minute."
+6. **Overpass gets 60 seconds**: on my laptop, a real Overpass query for Kanata took 40.5 seconds and still worked. Google and Photon keep the usual 10 seconds, so Overpass passes its own `timeout=60` on that one request.
+   a) The chain has to wait longest at the front: the browser waits forever, nginx waits 120 seconds for `/api/`, and the backend gives Overpass 60. If nginx waited less than the backend, the user would get nginx's error even though the backend was about to answer.
+   b) While it waits, the masjid step says "Searching for masjids nearby. This can take up to a minute."
+   c) `test_overpass_call_uses_a_60_second_timeout` reads the timeout httpx2 put on the actual request. I checked it fails when the `timeout=60` is taken out.
 
 ### 6. The 14-day window
 
@@ -680,7 +688,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 
 ### 10. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`421 passed`) and `npx playwright test` in `web` (`42 passed`).
+1. **Tests**: `pytest` in `backend` (`433 passed`) and `npx playwright test` in `web` (`44 passed`).
 2. **For real**: follow "Go through setup" in the README with your test Google account. The Prayers calendar should have 70 events.
 3. **Change a setting**: tick one more prayer on one weekday. The message should say 2 events were sent, and only those 2 change in Google Calendar.
 4. **Nightly job**: `docker compose exec worker python -m app.worker run-now --email you@gmail.com`, then again, then with `--force`. Still 70 events.

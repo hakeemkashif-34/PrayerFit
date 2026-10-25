@@ -190,11 +190,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `421 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `433 passed`.
 
 The tests never call the real Google, Photon, or Overpass. They use fakes (`tests/fake_google.py` and `tests/fake_osm.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`265 passed, 156 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`265 passed, 168 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
@@ -207,4 +207,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `42 passed`: 21 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `44 passed`: 22 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
