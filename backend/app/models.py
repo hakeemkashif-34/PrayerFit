@@ -301,7 +301,8 @@ class MasjidDayTimes(Base):
     asr_iqamah: Mapped[time | None] = mapped_column(Time)
     maghrib_iqamah: Mapped[time | None] = mapped_column(Time)
     isha_iqamah: Mapped[time | None] = mapped_column(Time)
-    # Jumuah slots as "HH:MM", earliest first. Empty when there's no Jumuah.
+    # Jumuah slots like {"order": 1, "time": "12:45"}, in MAWAQIT's order.
+    # Only on the coming Friday, since later ones aren't published yet.
     jumuah: Mapped[list] = mapped_column(JSON, default=list)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

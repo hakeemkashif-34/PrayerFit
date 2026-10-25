@@ -35,7 +35,15 @@ import httpx2
 
 from app.config import get_osm_settings
 from app.http_client import log_failure, transport_reason
-from app.masjid_times.source import PRAYERS, DayTimes, SourceBlocked, SourceFailed, SourceInvalid
+from app.masjid_times.source import (
+    PRAYERS,
+    DayTimes,
+    JumuahTime,
+    SourceBlocked,
+    SourceFailed,
+    SourceInvalid,
+    next_friday,
+)
 from app.masjid_times.validate import check_day, clock_time, iqamah_time
 
 logger = logging.getLogger("app.masjid_times")
@@ -52,7 +60,6 @@ SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 LANGUAGE = re.compile(r"^[a-z]{2}$")
 VIEW_PREFIXES = {"m", "w"}
 CONF_DATA = re.compile(r"\bconfData\s*=\s*")
-FRIDAY = 4
 
 
 class BadLink(ValueError):
@@ -138,17 +145,19 @@ def _month_table(data: dict, key: str, month: int) -> dict:
     return table[month - 1]
 
 
-def jumuah_slots(data: dict) -> tuple[time, ...]:
+def jumuah_slots(data: dict) -> tuple[JumuahTime, ...]:
+    """jumua is the 1st Jumuah, jumua2 the 2nd, and jumua3 the 3rd. An empty one is skipped,
+    but the others keep their number, so a pick of "3rd Jumuah" still means jumua3."""
     if data.get("jumuaAsDuhr") is True:
         # No set Jumuah times on the page, so none are made up.
         return ()
     slots = []
-    for key in ("jumua", "jumua2", "jumua3"):
+    for order, key in enumerate(("jumua", "jumua2", "jumua3"), start=1):
         value = data.get(key)
         if value in (None, ""):
             continue
-        slots.append(clock_time(value, f"MAWAQIT {key}"))
-    return tuple(sorted(set(slots)))
+        slots.append(JumuahTime(order, clock_time(value, f"MAWAQIT {key}")))
+    return tuple(slots)
 
 
 def fajr_tied_to_sunrise(data: dict) -> bool:
@@ -195,7 +204,8 @@ def days_from(data: dict, today: date, days: int) -> list[DayTimes]:
             local_date=local_date,
             adhan=adhan,
             iqamah=iqamah,
-            jumuah=slots if local_date.weekday() == FRIDAY else (),
+            # MAWAQIT only holds this week's Jumuah times.
+            jumuah=slots if local_date == next_friday(today) else (),
         )
         check_day(day)
         found.append(day)

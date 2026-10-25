@@ -38,7 +38,11 @@ def test_adhan_and_iqamah_on_october_25():
 
 
 def test_jumuah_on_friday():
-    assert day(date(2026, 10, 30)).jumuah == (time(12, 45), time(14, 0), time(14, 50))
+    from app.masjid_times.source import JumuahTime
+
+    assert day(date(2026, 10, 30)).jumuah == (
+        JumuahTime(1, time(12, 45)), JumuahTime(2, time(14, 0)), JumuahTime(3, time(14, 50)),
+    )
 
 
 def test_the_page_already_has_the_clocks_going_back():
@@ -76,7 +80,8 @@ def test_kmas_fajr_isnt_tied_to_sunrise():
 def test_every_day_of_the_year_passes_the_checks():
     days = days_from(DATA, date(2026, 1, 1), 365)
     assert days[-1].local_date == date(2026, 12, 31)
-    assert sum(1 for d in days if d.jumuah) == 52
+    # MAWAQIT only holds one week's Jumuah times, so only the first Friday has them.
+    assert [d.local_date for d in days if d.jumuah] == [date(2026, 1, 2)]
 
 
 def test_kma_in_the_calendar(db, http, fake_google, fake_mawaqit):

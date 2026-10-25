@@ -7,12 +7,29 @@ masjids linked to it fall back to calculated times.
 """
 
 from dataclasses import dataclass, field
-from datetime import date, time
+from datetime import date, time, timedelta
 from typing import Protocol
 
 import httpx2
 
 PRAYERS = ("fajr", "dhuhr", "asr", "maghrib", "isha")
+
+
+@dataclass(frozen=True)
+class JumuahTime:
+    """One Jumuah slot. order is 1, 2, or 3: MAWAQIT's jumua, jumua2, and jumua3.
+
+    A user's pick is saved as the masjid and this order, not the clock
+    time, since a masjid can move its 3rd Jumuah every week.
+    """
+
+    order: int
+    time: time
+
+
+def next_friday(today: date) -> date:
+    """Today if it's a Friday, otherwise the coming one."""
+    return today + timedelta(days=(4 - today.weekday()) % 7)
 
 
 @dataclass(frozen=True)
@@ -23,8 +40,9 @@ class DayTimes:
     adhan: dict[str, time]
     # None when the masjid didn't publish an iqamah for that prayer. Never made up.
     iqamah: dict[str, time | None]
-    # Earliest first. Empty when there's no Jumuah, or it isn't a Friday.
-    jumuah: tuple[time, ...] = field(default_factory=tuple)
+    # In MAWAQIT's order. Only on the coming Friday: masjids update their
+    # Jumuah times each week, so a later Friday's aren't published yet.
+    jumuah: tuple[JumuahTime, ...] = field(default_factory=tuple)
 
 
 class SourceError(Exception):

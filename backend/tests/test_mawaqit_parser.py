@@ -8,7 +8,7 @@ from datetime import date, time
 import pytest
 
 from app.masjid_times.mawaqit import conf_data, days_from
-from app.masjid_times.source import SourceInvalid
+from app.masjid_times.source import JumuahTime, SourceInvalid, next_friday
 from tests.mawaqit_pages import conf, page, set_day
 
 FRIDAY = date(2026, 10, 30)
@@ -32,7 +32,7 @@ def test_reads_adhan_iqamah_and_jumuah():
     assert first.iqamah["dhuhr"] == time(13, 0)
     assert first.jumuah == ()  # Sunday
     friday = next(d for d in days if d.local_date == FRIDAY)
-    assert friday.jumuah == (time(13, 30), time(14, 30))
+    assert friday.jumuah == (JumuahTime(1, time(13, 30)), JumuahTime(2, time(14, 30)))
 
 
 def test_iqamah_as_minutes_after_adhan_uses_that_days_adhan():
@@ -174,3 +174,21 @@ def test_fajr_tied_to_sunrise_is_logged(http, fake_mawaqit, caplog):
 def test_jumuah_at_dhuhr_time_has_no_set_slots():
     days = read(conf(jumuaAsDuhr=True))
     assert all(d.jumuah == () for d in days)
+
+
+def test_jumuah_times_are_only_for_the_coming_friday():
+    days = read(conf(), today=date(2026, 10, 25), days=14)
+    assert [d.local_date for d in days if d.jumuah] == [FRIDAY]  # not Nov 6
+    # Read on a Friday, they're for that same day.
+    assert [d.local_date for d in read(conf(), today=FRIDAY, days=8) if d.jumuah] == [FRIDAY]
+
+
+def test_jumuah_slots_keep_mawaqits_order_even_with_a_gap():
+    days = read(conf(jumua="12:45", jumua2=None, jumua3="14:50"), today=FRIDAY, days=1)
+    assert days[0].jumuah == (JumuahTime(1, time(12, 45)), JumuahTime(3, time(14, 50)))
+
+
+def test_next_friday():
+    assert next_friday(date(2026, 10, 25)) == FRIDAY  # Sunday
+    assert next_friday(FRIDAY) == FRIDAY
+    assert next_friday(SATURDAY) == date(2026, 11, 6)

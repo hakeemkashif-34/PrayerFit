@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.masjid_times.freshness import Freshness, freshness
-from app.masjid_times.source import PRAYERS, DayTimes, get_source
+from app.masjid_times.source import PRAYERS, DayTimes, JumuahTime, get_source
 from app.models import MasjidDayTimes, MasjidSource
 
 
@@ -18,8 +18,16 @@ def _values(day: DayTimes) -> dict:
     for prayer in PRAYERS:
         values[f"{prayer}_adhan"] = day.adhan[prayer]
         values[f"{prayer}_iqamah"] = day.iqamah.get(prayer)
-    values["jumuah"] = [slot.strftime("%H:%M") for slot in day.jumuah]
+    values["jumuah"] = [{"order": slot.order, "time": slot.time.strftime("%H:%M")} for slot in day.jumuah]
     return values
+
+
+def _jumuah_time(saved, position: int) -> JumuahTime:
+    """{"order": 2, "time": "14:00"}. Rows saved before slots had an order
+    are just "14:00", numbered by position. The next read replaces them."""
+    if isinstance(saved, str):
+        return JumuahTime(position, datetime.strptime(saved, "%H:%M").time())
+    return JumuahTime(int(saved["order"]), datetime.strptime(saved["time"], "%H:%M").time())
 
 
 def _day(row: MasjidDayTimes) -> DayTimes:
@@ -27,7 +35,7 @@ def _day(row: MasjidDayTimes) -> DayTimes:
         local_date=row.local_date,
         adhan={p: getattr(row, f"{p}_adhan") for p in PRAYERS},
         iqamah={p: getattr(row, f"{p}_iqamah") for p in PRAYERS},
-        jumuah=tuple(datetime.strptime(slot, "%H:%M").time() for slot in row.jumuah or []),
+        jumuah=tuple(_jumuah_time(slot, n) for n, slot in enumerate(row.jumuah or [], start=1)),
     )
 
 

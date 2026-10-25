@@ -169,8 +169,9 @@ def test_the_masjid_shows_where_its_times_come_from(set_up, db, http, fake_mawaq
     assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == (
         "MAWAQIT times may be out of date (last updated Oct 22, 2026)"
     )
+    # Read again 2 days later, the page now covers Friday Oct 30's Jumuah, which is a change.
     fetch(db, http, NOW)
-    assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == "Times from MAWAQIT, updated Oct 22, 2026"
+    assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == "Times from MAWAQIT, updated Oct 24, 2026"
     with Session(db) as session:
         session.get(MasjidSource, kma).last_success_at = NOW - timedelta(days=8)
         session.commit()
