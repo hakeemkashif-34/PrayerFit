@@ -191,3 +191,14 @@ def test_the_job_id_is_stable(db, http, kma):
     with Session(db) as session:
         ids = [j.id for j in session.scalars(select(MasjidFetchJob))]
     assert ids == [f"mawaqit:{kma}:2026-10-25T12"]
+
+
+def test_a_new_day_at_the_end_isnt_a_change(db, http, kma):
+    run_due_fetches(db, http, NOW)
+    with Session(db) as session:
+        session.execute(UpdateJob.__table__.delete())
+        session.commit()
+    # A day later the page covers one more date, but no saved time changed.
+    assert run_due_fetches(db, http, NOW + timedelta(days=1))[0].changed is False
+    assert queued(db) == set()
+    assert source(db, kma).last_changed_at == NOW

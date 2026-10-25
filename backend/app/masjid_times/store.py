@@ -32,7 +32,12 @@ def _day(row: MasjidDayTimes) -> DayTimes:
 
 
 def save_days(db: Session, masjid_id: uuid.UUID, source: str, days: list[DayTimes], now: datetime) -> bool:
-    """Save every day. True if any of them is new or different. Doesn't commit."""
+    """Save every day. Doesn't commit.
+
+    True when a saved day's times changed, or on the first fetch. A new date
+    at the far end isn't a change: each fetch adds one as the days go by,
+    and counting it would rewrite every user's events daily.
+    """
     dates = [d.local_date for d in days]
     saved = {
         row.local_date: _values(_day(row))
@@ -44,10 +49,14 @@ def save_days(db: Session, masjid_id: uuid.UUID, source: str, days: list[DayTime
             )
         )
     }
-    changed = False
+    first_fetch = not db.scalars(
+        select(MasjidDayTimes.id).where(MasjidDayTimes.masjid_id == masjid_id, MasjidDayTimes.source == source).limit(1)
+    ).first()
+    changed = first_fetch
     for day in days:
         values = _values(day)
-        changed = changed or saved.get(day.local_date) != values
+        if day.local_date in saved and saved[day.local_date] != values:
+            changed = True
         db.execute(
             insert(MasjidDayTimes)
             .values(id=uuid.uuid4(), masjid_id=masjid_id, local_date=day.local_date, source=source, fetched_at=now, **values)
