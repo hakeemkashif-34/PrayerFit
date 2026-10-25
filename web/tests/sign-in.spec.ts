@@ -1,14 +1,29 @@
 import { expect, test } from "@playwright/test";
 import { finishedSettings, MockApi } from "./mock-api";
 
-test("signed-out users see Sign in with Google", async ({ page }) => {
+test("signed-out users see the welcome and a Sign in with Google card", async ({ page }) => {
   await new MockApi().install(page);
   await page.goto("/");
 
+  await expect(page.getByRole("heading", { name: "Welcome to Muslim Calendar" })).toBeVisible();
+  await expect(page.getByText("It keeps your daily prayer times up to date in your Google Calendar")).toBeVisible();
   const button = page.getByRole("link", { name: "Sign in with Google" });
   await expect(button).toBeVisible();
   await expect(button).toHaveAttribute("href", "/auth/google/login");
   await expect(page.getByText("Never Gmail")).toBeVisible();
+});
+
+test("the welcome is on the left on a computer, and on top on a phone", async ({ page }, info) => {
+  await new MockApi().install(page);
+  await page.goto("/");
+
+  const welcome = await page.getByRole("heading", { name: "Welcome to Muslim Calendar" }).boundingBox();
+  const card = await page.getByRole("region", { name: "Sign in" }).boundingBox();
+  if (info.project.name === "phone") {
+    expect(card!.y).toBeGreaterThan(welcome!.y + welcome!.height); // stacked
+  } else {
+    expect(card!.x).toBeGreaterThan(welcome!.x + welcome!.width - 1); // side by side
+  }
 });
 
 test("a cancelled sign-in shows a fixed message", async ({ page }) => {

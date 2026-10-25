@@ -7,7 +7,7 @@ test("the settings page shows every saved setting with an Edit button", async ({
 
   await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
   await expect(page.getByText("Signed in as hakeem@example.com")).toBeVisible();
-  for (const name of ["address", "prayer time method", "main masjid", "prayers at the masjid", "jumuah masjids"]) {
+  for (const name of ["location", "prayer time method", "main masjid", "prayers at the masjid", "jumuah masjids"]) {
     await expect(page.getByRole("button", { name: `Edit ${name}` })).toBeVisible();
   }
   await expect(page.getByText("ISNA, Standard Asr")).toBeVisible();
@@ -47,6 +47,19 @@ test("a save that can't reach Google offers Sign in again", async ({ page }) => 
 
   await expect(page.getByRole("status")).toContainText("Saved. Sign in again so your calendar can update.");
   await expect(page.getByRole("link", { name: "Sign in again" })).toHaveAttribute("href", "/auth/google/login");
+});
+
+test("editing the location picks a new place from the suggestions", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  await api.install(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Edit location" }).click();
+  await page.getByRole("combobox").pressSequentially("Robson", { delay: 30 });
+  await page.getByRole("option", { name: "1 Robson Street, Vancouver, British Columbia, Canada" }).click();
+
+  expect(api.calls("PUT", "/api/settings/location")[0].body).toEqual({ query: "Robson", index: 0 });
+  await expect(page.getByText("1 Robson Street, Vancouver, British Columbia, Canada")).toBeVisible();
 });
 
 test("cancel leaves the setting as it was", async ({ page }) => {

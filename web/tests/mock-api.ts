@@ -3,7 +3,7 @@
 // records every request so tests can check what the website sent.
 
 import type { Page, Route } from "@playwright/test";
-import type { FoundAddress, Masjid, Me, Nearby, Settings, Step } from "../src/types";
+import type { Masjid, Me, Nearby, Settings, Step } from "../src/types";
 
 export const KMA: Masjid = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -16,24 +16,25 @@ export const KMA: Masjid = {
 export const STITTSVILLE: Masjid = { ...KMA, id: "22222222-2222-2222-2222-222222222222", name: "Stittsville Masjid", address: null, distance_km: 5.6 };
 export const UNNAMED: Masjid = { ...KMA, id: "33333333-3333-3333-3333-333333333333", name: null, address: null, distance_km: 12.4 };
 
-export const FOUND: FoundAddress = {
-  place_name: "200, Kanata Avenue, Kanata, Ottawa, Ontario, Canada",
-  latitude: 45.3088,
-  longitude: -75.8987,
-  time_zone: "America/Toronto",
-  credit: "© OpenStreetMap contributors",
-  credit_url: "https://www.openstreetmap.org/copyright",
-};
+export const HOME_PLACE = "200 Kanata Avenue, Ottawa, Ontario, K2T 1K8, Canada";
+// Every place the pretend Photon knows, Canada first like the backend sends them.
+export const PLACES = [
+  HOME_PLACE,
+  "200 Kanata Avenue, Rochester, New York, United States",
+  "Kanata Centrum, Ottawa, Ontario, Canada",
+  "1 Robson Street, Vancouver, British Columbia, Canada",
+];
+const CREDIT = { credit: "© OpenStreetMap contributors", credit_url: "https://www.openstreetmap.org/copyright" };
 
 export function emptySettings(): Settings {
   return {
     setup_complete: false,
-    missing: ["address", "methods", "masjid", "weekly", "jumuah"],
+    missing: ["address", "masjid", "weekly"],
     address: null,
     place_name: null,
     time_zone: null,
-    method: null,
-    asr_method: null,
+    method: "isna",
+    asr_method: "standard",
     main_masjid_choice: null,
     main_masjid: null,
     main_masjid_short_name: null,
@@ -47,8 +48,8 @@ export function finishedSettings(): Settings {
   return {
     setup_complete: true,
     missing: [],
-    address: "200 Kanata Ave, Ottawa",
-    place_name: FOUND.place_name,
+    address: HOME_PLACE,
+    place_name: HOME_PLACE,
     time_zone: "America/Toronto",
     method: "isna",
     asr_method: "standard",
@@ -68,7 +69,7 @@ export type Recorded = { method: string; path: string; body: unknown };
 export class MockApi {
   me: Me | null = null; // null: not signed in
   settings: Settings = emptySettings();
-  nearby: Nearby = { radius_km: 15, masjids: [KMA, STITTSVILLE, UNNAMED], typed_by_you: [], credit: FOUND.credit, credit_url: FOUND.credit_url };
+  nearby: Nearby = { radius_km: 15, masjids: [KMA, STITTSVILLE, UNNAMED], typed_by_you: [], ...CREDIT };
   requests: Recorded[] = [];
   // Make the next call to this path answer with this error.
   failNext: Record<string, { status: number; detail: unknown }> = {};
@@ -87,10 +88,8 @@ export class MockApi {
     const s = this.settings;
     const missing: Step[] = [];
     if (!s.address) missing.push("address");
-    if (!s.method) missing.push("methods");
     if (!s.main_masjid_choice) missing.push("masjid");
     if (s.main_masjid_choice !== "home" && s.weekly.length !== 7) missing.push("weekly");
-    if (!s.jumuah_saved) missing.push("jumuah");
     return missing;
   }
 
@@ -132,11 +131,13 @@ export class MockApi {
       case "GET /api/settings":
         s.missing = this.missing();
         return json(200, s);
-      case "POST /api/setup/address/search":
-        return json(200, FOUND);
-      case "PUT /api/settings/address":
-        Object.assign(s, { address: body.address, place_name: FOUND.place_name, time_zone: FOUND.time_zone });
+      case "POST /api/setup/location/suggest":
+        return json(200, { suggestions: suggest(body.query).map((label, index) => ({ index, label })), ...CREDIT });
+      case "PUT /api/settings/location": {
+        const label = suggest(body.query)[body.index];
+        Object.assign(s, { address: label, place_name: label, time_zone: "America/Toronto" });
         return json(200, this.saved());
+      }
       case "PUT /api/settings/methods":
         Object.assign(s, { method: body.method, asr_method: body.asr_method });
         return json(200, this.saved());
@@ -172,6 +173,16 @@ export class MockApi {
     }
     throw new Error(`The mock API doesn't know ${key}`);
   }
+}
+
+// Like Photon: every word typed has to start a word in the place. At most 5.
+function suggest(query: string): string[] {
+  if (query.trim().length < 3) return [];
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return PLACES.filter((place) => {
+    const parts = place.toLowerCase().replace(/,/g, " ").split(/\s+/);
+    return words.every((w) => parts.some((p) => p.startsWith(w)));
+  }).slice(0, 5);
 }
 
 function updated(sent: number) {
