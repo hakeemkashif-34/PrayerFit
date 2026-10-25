@@ -126,8 +126,8 @@ class PrayerEvent(Base):
 class UserSettings(Base):
     """A user's setup answers. One row per user.
 
-    The address, the place Nominatim found, and the coordinates are all
-    encrypted, because each one points to where the user lives.
+    The address the user picked and its coordinates are both encrypted,
+    because each one points to where the user lives.
     """
 
     __tablename__ = "user_settings"
@@ -142,7 +142,7 @@ class UserSettings(Base):
     location_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     # Not encrypted: the nightly job needs it to know when 3:00 am is.
     time_zone: Mapped[str | None] = mapped_column(String(64))
-    # Empty until the user saves the methods step.
+    # Empty means the defaults (ISNA, standard). Setup doesn't ask for now.
     method: Mapped[str | None] = mapped_column(String(16))
     asr_method: Mapped[str | None] = mapped_column(String(16))
     # "masjid" or "home". Empty until the masjid step is saved.
@@ -152,7 +152,7 @@ class UserSettings(Base):
     )
     # Like "KMA". Used in event titles instead of the full name.
     main_masjid_short_name: Mapped[str | None] = mapped_column(String(40))
-    # True once the Jumuah step is saved. Picking no masjid is allowed.
+    # True once Jumuah masjids are saved on the settings page. Not part of setup for now.
     jumuah_saved: Mapped[bool] = mapped_column(default=False)
     setup_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
@@ -235,7 +235,7 @@ class OverpassCache(Base):
 
 
 class GeocodeCache(Base):
-    """Nominatim answers, so the same address is never looked up twice.
+    """Photon answers, so the same text is never looked up twice.
 
     The key is an HMAC of the address, so the table can't be searched for
     an address without the secret key. The answer is encrypted.
@@ -249,7 +249,7 @@ class GeocodeCache(Base):
 
 
 class ApiThrottle(Base):
-    """When the app last called an outside service, like Nominatim.
+    """When the app last called an outside service, like Photon.
 
     Kept in Postgres so every process shares one limit.
     """

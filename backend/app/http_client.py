@@ -1,7 +1,7 @@
 """The HTTP client used for every call to Google and OpenStreetMap.
 
 It comes in through a FastAPI dependency, so tests can swap in fakes and
-no test ever reaches the real Google, Nominatim, or Overpass.
+no test ever reaches the real Google, Photon, or Overpass.
 """
 
 import logging
@@ -13,7 +13,7 @@ import httpx2
 # temporary error: stop, and finish on the next run.
 HTTP_TIMEOUT = 10
 
-# httpx2 logs every URL at INFO. A Nominatim URL has the user's address in
+# httpx2 logs every URL at INFO. A Photon URL has what the user typed in
 # it, so these loggers only report warnings and errors.
 for name in ("httpx2", "httpcore2"):
     logging.getLogger(name).setLevel(logging.WARNING)

@@ -1,1 +1,1 @@
-"""Finding places: addresses (Nominatim), time zones, and nearby masjids (Overpass)."""
+"""Finding places: addresses (Photon), time zones, and nearby masjids (Overpass)."""

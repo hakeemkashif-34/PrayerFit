@@ -1,5 +1,5 @@
 # Runs the backend and website tests on every push and every pull request.
-# No real Google keys are used anywhere: Google, Nominatim, and Overpass are all faked.
+# No real Google keys are used anywhere: Google, Photon, and Overpass are all faked.
 name: Tests
 
 on:

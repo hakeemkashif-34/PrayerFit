@@ -3,7 +3,7 @@
 Overpass's usage policy (wiki.openstreetmap.org/wiki/Overpass_API):
 1. Fewer than 10,000 queries a day, and don't hammer it. Results are cached
    for 7 days per grid cell, and calls are spaced at least 1 second apart.
-2. Say who the app is. The same User-Agent as Nominatim.
+2. Say who the app is. The same User-Agent as Photon.
 3. Show the OpenStreetMap credit. The website does that.
 
 Privacy: Overpass is asked about a rounded grid cell (about 1 km across),

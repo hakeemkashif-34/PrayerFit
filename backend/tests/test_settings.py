@@ -1,6 +1,6 @@
 """Tests for the setup questions and the settings endpoints.
 
-Google, Nominatim, and Overpass are all faked.
+Google, Photon, and Overpass are all faked.
 """
 
 import logging
