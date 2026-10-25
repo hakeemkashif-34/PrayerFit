@@ -171,7 +171,7 @@ MAWAQIT can block this at any time. After a 403, a 429, or 3 failed reads in a r
 
 Each masjid prayer gets a **Drive to <masjid>** block before it, from when to leave until you arrive, with a popup reminder when it starts. Drive times come from [OpenRouteService](https://openrouteservice.org), which has a free plan. They're typical drive times with no live traffic. The app calls `https://api.heigit.org/openrouteservice/v2/directions/driving-car`. HeiGIT shut off the old address, `api.openrouteservice.org`, on September 28, 2026.
 
-1. Sign up at https://openrouteservice.org/dev/#/signup and copy your API key.
+1. Sign up at https://account.heigit.org/signup and copy your API key.
 2. Put it in `.env` as `ORS_API_KEY=...` and restart: `docker compose up -d`.
 
 With no key, there are no drive blocks, and everything else works as before. Only the rounded coordinates of your home and your masjids are sent (about 100 m), never an address. Each drive time is saved for 30 days, or until your address or masjids change.
