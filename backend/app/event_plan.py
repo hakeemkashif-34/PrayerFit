@@ -20,7 +20,7 @@ No drive time means no drive block.
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from app.event_times import drive_minutes, trip

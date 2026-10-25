@@ -8,11 +8,11 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import MasjidSource, UpdateJob, UserSettings
-from tests.calendar_helpers import fetch, google_events, on
+from app.models import MasjidSource, UpdateJob
+from tests.calendar_helpers import fetch, google_events
 from tests.conftest import sign_in
 from tests.masjid_helpers import link, masjid_id, user_id
-from tests.setup_helpers import add_masjids, pick_masjid, setup_through_api
+from tests.setup_helpers import pick_masjid, setup_through_api
 
 TORONTO = ZoneInfo("America/Toronto")
 DAY = date(2026, 10, 24)
