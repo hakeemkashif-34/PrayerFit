@@ -59,6 +59,22 @@ def get_osm_settings() -> OsmSettings:
     )
 
 
+@dataclass(frozen=True)
+class OrsSettings:
+    """OpenRouteService, for drive times. An empty key turns drive times off."""
+
+    api_key: str
+    url: str
+
+
+@lru_cache
+def get_ors_settings() -> OrsSettings:
+    return OrsSettings(
+        api_key=os.environ.get("ORS_API_KEY", "").strip(),
+        url=_optional("ORS_URL", "https://api.openrouteservice.org").rstrip("/"),
+    )
+
+
 @lru_cache
 def get_google_settings() -> GoogleSettings:
     return GoogleSettings(
