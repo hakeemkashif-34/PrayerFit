@@ -113,3 +113,47 @@ def test_migration_0005_adds_the_main_masjid_as_the_jumuah_masjid(db):
         ("own-jumuah", "Jamia Omar", 0),  # their own list, unchanged
     ]
     assert saved == {"no-jumuah": True, "own-jumuah": True, "at-home": False}
+
+
+def test_migration_0006_keeps_data_and_copies_how_early(db):
+    """Each user's Jumuah "how early" starts as their prayer "how early". The methods are dropped."""
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import inspect, text
+
+    config = Config("alembic.ini")
+    config.attributes["configure_logger"] = False
+    command.downgrade(config, "0005")
+    try:
+        with db.begin() as connection:
+            connection.execute(text("""
+                INSERT INTO users (id, google_sub, email) VALUES
+                    ('00000000-0000-0000-0000-0000000000b1', 'early-12', 'a@example.com'),
+                    ('00000000-0000-0000-0000-0000000000b2', 'early-0', 'b@example.com');
+                INSERT INTO masjids (id, source, osm_type, osm_id, name, updated_at) VALUES
+                    ('00000000-0000-0000-0000-0000000000d1', 'openstreetmap', 'node', 1, 'Kanata Muslim Association', now());
+                INSERT INTO user_settings (id, user_id, main_masjid_choice, main_masjid_id, main_masjid_short_name,
+                                           method, asr_method, jumuah_saved, optional_saved, arrive_early_minutes,
+                                           updated_at) VALUES
+                    (gen_random_uuid(), '00000000-0000-0000-0000-0000000000b1', 'masjid',
+                     '00000000-0000-0000-0000-0000000000d1', 'KMA', 'mwl', 'hanafi', true, true, 12, now()),
+                    (gen_random_uuid(), '00000000-0000-0000-0000-0000000000b2', 'home', NULL, NULL,
+                     NULL, NULL, true, true, 0, now());
+            """))
+    finally:
+        command.upgrade(config, "head")
+
+    with db.connect() as connection:
+        settings = connection.execute(text(
+            "SELECT u.google_sub, s.main_masjid_short_name, s.arrive_early_minutes, s.jumuah_arrive_early_minutes, "
+            "s.jumuah_pick_masjid_id, s.jumuah_pick_order FROM user_settings s JOIN users u ON u.id = s.user_id "
+            "ORDER BY u.google_sub"
+        )).all()
+        jumuah_minutes = connection.execute(text("SELECT jumuah_minutes FROM masjids")).scalars().all()
+        commute_times = connection.execute(text("SELECT count(*) FROM user_commute_times")).scalar()
+    assert settings == [("early-0", None, 0, 0, None, None), ("early-12", "KMA", 12, 12, None, None)]
+    # No Jumuah length yet, so 45 minutes (estimated) is used.
+    assert jumuah_minutes == [None]
+    assert commute_times == 0
+    columns = {c["name"] for c in inspect(db).get_columns("user_settings")}
+    assert not {"method", "asr_method"} & columns
