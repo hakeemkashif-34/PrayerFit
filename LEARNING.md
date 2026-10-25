@@ -816,14 +816,17 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 8. The footer credits OpenRouteService next to OpenStreetMap.
 9. **Like Google's own colour menu**: the colours are in the order Google lists them (Tomato, Flamingo, Tangerine, and so on), each a round dot with Google's name, and the chosen one has a tick. The tick is drawn with CSS (`::after`), so a screen reader reads "Peacock", not "✓ Peacock". `aria-selected` says which one is chosen.
 
-### 13. After setup: straight to Google Calendar
+### 13. After setup: Google Calendar in a new tab
 
-1. After the last setup step, the page says "Adding your prayers to Google Calendar..." until the first calendar update finishes.
-2. If every prayer reached Google, the same tab goes to `https://calendar.google.com/calendar/r?authuser=<email>` (`web/src/googleCalendar.ts`).
-3. **Why `authuser`**: someone signed in to 2 Google accounts would otherwise land in whichever one is first in the browser, which might not have the Prayers calendar. Google's docs only show `authuser` with a number (the account's place in the browser's list). People report the email works for Calendar too, and an email doesn't change when the list order does. I couldn't test this against the real Google from the cloud environment, so it's a check to do on my laptop with 2 accounts signed in.
-4. If the update fails, the user stays on our site: the Settings page shows the message and **Try again**. If finishing fails completely, the setup page shows the error with its own **Try again**.
-5. **Returning users** land on the Settings page (renamed from "Your prayers"; there was only ever one settings page). It has an **Open Google Calendar** button with the same link, and never redirects on its own.
-6. **Tests never open Google**: the mock API catches every `calendar.google.com` URL and answers with a fake page, and records each visit, so a test can check the exact URL.
+1. **The new tab opens inside the click.** Browsers block a new tab that isn't opened straight from a click, so Finish (and Skip) call `window.open` before anything is awaited (`web/src/finishTab.ts`). The tab shows our own `/adding` page: "Adding your prayers to Google Calendar...".
+2. **The first tab goes to Settings** straight away and runs the first calendar update there. It's never sent away from our site.
+3. **Talking to the new tab**: when the update finishes, the first tab sends the new one `{ type: "open", url }` with `postMessage`, and the new tab goes to `https://calendar.google.com/calendar/r?authuser=<email>` (`web/src/googleCalendar.ts`). The new tab says "ready" once it has loaded and gets the result again, so a fast update can't finish before it's listening. That means the result can arrive twice, so the new tab only acts on the first one. Both sides check the message came from our own site and the right tab, and the new tab only follows a `calendar.google.com` link. It sets `window.opener = null` before leaving, so Google's page can't reach back to ours.
+4. **If the browser blocks it anyway**, `window.open` gives nothing back, and Settings shows "Your browser blocked the new tab, so open Google Calendar from here." under the **Open Google Calendar** button.
+5. **Finishing without a click** (all answers saved on an earlier visit) can't open a tab, so it just shows Settings with the button.
+6. **Why `authuser`**: someone signed in to 2 Google accounts would otherwise land in whichever one is first in the browser, which might not have the Prayers calendar. Google's docs only show `authuser` with a number (the account's place in the browser's list). People report the email works for Calendar too, and an email doesn't change when the list order does. I couldn't test this against the real Google from the cloud environment, so it's a check to do on my laptop with 2 accounts signed in.
+7. If the update fails, the new tab shows the error with a link back to Settings, and Settings shows the message and **Try again**. If finishing fails completely (the server didn't answer), both tabs show the error, and **Try again** on Settings finishes setup.
+8. **Returning users** land on the Settings page (renamed from "Your prayers"; there was only ever one settings page). It has an **Open Google Calendar** button with the same link, and never redirects on its own.
+9. **Tests never open Google**: the mock API catches every `calendar.google.com` URL and answers with a fake page, and records each visit, so a test can check the exact URL.
 
 ### 14. Tests
 
@@ -836,10 +839,10 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 7. **`test_jumuah_picker.py`** and **`test_jumuah_calendar.py`**: shortest drive, ties, busy times, unknown drive times, no slots, no Jumuah masjids, and Friday Dhuhr replaced only when a slot is picked.
 8. **`test_ors.py`**, **`test_optional_settings.py`**, **`test_update_jobs.py`**, **`test_admin.py`**, and **`test_worker.py`** cover the rest.
 9. **`test_migrations.py`**: goes back to milestone 4's tables, adds a user with a masjid, a short name, a method, and Jumuah masjids, upgrades, and checks it all survived.
-10. **Playwright**: the optional step filled in and skipped, the colour dropdown with a mouse and with the keyboard (with the tick moving), the Settings page editing how early, the short name, colours, and Jumuah masjids in order, the "Adding your prayers..." message, the redirect to Google Calendar (faked), staying on our site when the update or the finish fails, and returning users landing on Settings with no redirect.
+10. **Playwright**: the optional step filled in and skipped, the colour dropdown with a mouse and with the keyboard (with the tick moving), the Settings page editing how early, the short name, colours, and Jumuah masjids in order, the "Adding your prayers..." message, the new tab that opens Google Calendar (faked), a blocked new tab, both tabs showing the error when the update or the finish fails, and returning users landing on Settings with no redirect.
 
 ### 15. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`634 passed`) and `npx playwright test` in `web` (`92 passed`).
+1. **Tests**: `pytest` in `backend` (`634 passed`) and `npx playwright test` in `web` (`98 passed`).
 2. **For real**: get a free ORS key and put it in `.env`. Then follow "Masjid times from MAWAQIT" in the README to link KMA, and run `run-now --force`. In Google Calendar: masjid prayers at KMA's iqamah, home prayers at KMA's adhan, each with its source, a drive block with a reminder before each masjid prayer, Jumuah on Friday if KMA is a Jumuah masjid, and the colours picked in Extras.
 3. **Checks I couldn't do here**: reading KMA's live MAWAQIT page (only the saved copy), a real ORS key, and `authuser` with an email on the real Google Calendar. All 3 hosts were blocked where I built this.

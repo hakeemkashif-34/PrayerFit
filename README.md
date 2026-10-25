@@ -118,7 +118,7 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 6. **Which masjid do you usually go to?** Start typing its name. Suggestions show the masjid's name and its distance from home, closest first. If yours doesn't come up, type its address instead and pick that. Press **Skip** if you pray at home: every prayer is at home and the next page is skipped.
 7. **Which prayers do you usually pray at the masjid?** Tick them in the grid: prayers down the side, Monday to Sunday across the top. Anything left unticked is at home, so ticking nothing means every prayer is at home. This page is skipped if you pressed **Skip**.
 8. **A few extras** (optional): how many minutes before iqamah you want to arrive (a whole number from 0 to 60), a short name like `KMA` for the masjid, and a Google Calendar colour for prayer blocks and for drive blocks. The step starts with the defaults filled in: 5 minutes early, the masjid's full name, and Basil (Google's green) for both colours. Press **Skip** to use them. Nothing is written to Google Calendar until you save or skip this step.
-9. Press **Finish**. The page says "Adding your prayers to Google Calendar..." while the calendar fills, in about 10 to 20 seconds. Then the same tab opens Google Calendar for the account you signed in with. If the update fails, you stay on the Settings page, which says what went wrong and has **Try again**.
+9. Press **Finish** (or **Skip**). A new tab opens and says "Adding your prayers to Google Calendar..." while the calendar fills, in about 10 to 20 seconds, then shows Google Calendar for the account you signed in with. The first tab goes to the Settings page. If the update fails, the new tab shows the error with a link back to Settings, and Settings shows it too, with **Try again**. If your browser blocks the new tab, Settings says so, and **Open Google Calendar** is right there.
 10. Setup uses ISNA and standard Asr, and your main masjid becomes your Jumuah masjid. You can change both on the Settings page, where you can also remove the Jumuah masjid or add others. Skipping the masjid step means no Jumuah masjids.
 11. In Google Calendar, the **Prayers** calendar has today and the next 13 days, like `Fajr at home` and `Dhuhr at KMA`. Each description says where the time came from. Until your masjid is linked to MAWAQIT (below), masjid prayers use the calculated time and say the iqamah isn't available.
 
@@ -260,4 +260,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `92 passed`: 46 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `98 passed`: 49 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
