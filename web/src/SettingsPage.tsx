@@ -88,7 +88,7 @@ export function SettingsPage({ email, initial, initialCalendar, onSignedOut }: P
         </Card>
 
         <Card title="Main masjid" step="masjid" editing={editing} onEdit={setEditing}
-          edit={<MasjidStep settings={settings} onSaved={saved} onCancel={cancel} />}>
+          edit={<MasjidStep settings={settings} onSaved={saved} onCancel={cancel} skipLabel="I pray at home" />}>
           {atHome || !settings.main_masjid ? (
             <p>I pray at home</p>
           ) : (
