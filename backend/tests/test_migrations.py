@@ -66,3 +66,50 @@ def test_migration_0004_keeps_existing_data(db):
     # Numbered in name order, the order the settings page showed them in.
     assert jumuah == [("Jamia Omar", 0), ("Stittsville Masjid", 1)]
     assert events == [("isha", "prayer")]
+
+
+def test_migration_0005_adds_the_main_masjid_as_the_jumuah_masjid(db):
+    """Users from before: a main masjid and no Jumuah masjid gets one. Nobody else changes."""
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import text
+
+    config = Config("alembic.ini")
+    config.attributes["configure_logger"] = False
+    command.downgrade(config, "0004")
+    try:
+        with db.begin() as connection:
+            connection.execute(text("""
+                INSERT INTO users (id, google_sub, email) VALUES
+                    ('00000000-0000-0000-0000-0000000000a1', 'no-jumuah', 'a@example.com'),
+                    ('00000000-0000-0000-0000-0000000000a2', 'own-jumuah', 'b@example.com'),
+                    ('00000000-0000-0000-0000-0000000000a3', 'at-home', 'c@example.com');
+                INSERT INTO masjids (id, source, osm_type, osm_id, name, updated_at) VALUES
+                    ('00000000-0000-0000-0000-0000000000c1', 'openstreetmap', 'node', 1, 'Kanata Muslim Association', now()),
+                    ('00000000-0000-0000-0000-0000000000c2', 'openstreetmap', 'node', 2, 'Jamia Omar', now());
+                INSERT INTO user_settings (id, user_id, main_masjid_choice, main_masjid_id, jumuah_saved,
+                                           optional_saved, arrive_early_minutes, updated_at) VALUES
+                    (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a1', 'masjid',
+                     '00000000-0000-0000-0000-0000000000c1', false, true, 0, now()),
+                    (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a2', 'masjid',
+                     '00000000-0000-0000-0000-0000000000c1', true, true, 0, now()),
+                    (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a3', 'home', NULL, false, true, 0, now());
+                INSERT INTO user_jumuah_masjids (user_id, masjid_id, position) VALUES
+                    ('00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000c2', 0);
+            """))
+    finally:
+        command.upgrade(config, "head")
+
+    with db.connect() as connection:
+        jumuah = connection.execute(text(
+            "SELECT u.google_sub, m.name, j.position FROM user_jumuah_masjids j "
+            "JOIN users u ON u.id = j.user_id JOIN masjids m ON m.id = j.masjid_id ORDER BY u.google_sub"
+        )).all()
+        saved = dict(connection.execute(text(
+            "SELECT u.google_sub, s.jumuah_saved FROM user_settings s JOIN users u ON u.id = s.user_id"
+        )).all())
+    assert jumuah == [
+        ("no-jumuah", "Kanata Muslim Association", 0),  # added
+        ("own-jumuah", "Jamia Omar", 0),  # their own list, unchanged
+    ]
+    assert saved == {"no-jumuah": True, "own-jumuah": True, "at-home": False}
