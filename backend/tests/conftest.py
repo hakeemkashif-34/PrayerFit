@@ -22,6 +22,8 @@ os.environ["COOKIE_SECURE"] = "false"
 # Photon is faked too, at its normal URL.
 os.environ["OSM_CONTACT_EMAIL"] = "tests@example.com"
 os.environ["PHOTON_URL"] = "https://photon.komoot.io"
+# Drive times are off unless a test turns them on.
+os.environ["ORS_API_KEY"] = ""
 
 from datetime import datetime, time  # noqa: E402
 from urllib.parse import parse_qs, urlparse  # noqa: E402
@@ -41,6 +43,8 @@ from app.main import app  # noqa: E402
 from app.models import Base  # noqa: E402
 from app.geo import throttle  # noqa: E402
 from tests.fake_google import FakeGoogle  # noqa: E402
+from tests.fake_mawaqit import FakeMawaqit  # noqa: E402
+from tests.fake_ors import FakeOrs  # noqa: E402
 from tests.fake_photon import FakePhoton  # noqa: E402
 
 
@@ -67,29 +71,60 @@ def fake_photon():
     return FakePhoton()
 
 
-def fake_http_client(google: FakeGoogle, photon: FakePhoton) -> httpx2.Client:
-    """An HTTP client that reaches only the fake Google and the fake Photon."""
+@pytest.fixture
+def fake_mawaqit():
+    return FakeMawaqit()
+
+
+@pytest.fixture
+def fake_ors():
+    return FakeOrs()
+
+
+def fake_http_client(
+    google: FakeGoogle, photon: FakePhoton, mawaqit: FakeMawaqit | None = None, ors: FakeOrs | None = None
+) -> httpx2.Client:
+    """An HTTP client that reaches only the fakes. Any other URL fails the test."""
 
     def route(request: httpx2.Request) -> httpx2.Response:
-        if photon.handles(request.url.host):
-            return photon.handle(request)
+        for fake in (photon, mawaqit, ors):
+            if fake is not None and fake.handles(request.url.host):
+                return fake.handle(request)
         return google.handle(request)
 
     return httpx2.Client(transport=httpx2.MockTransport(route))
 
 
 @pytest.fixture
-def fake_google(fake_photon):
+def fake_google(fake_photon, fake_mawaqit, fake_ors):
     """Point every outside call the app makes at fresh fakes."""
     fake = FakeGoogle()
 
     def fake_http():
-        with fake_http_client(fake, fake_photon) as client:
+        with fake_http_client(fake, fake_photon, fake_mawaqit, fake_ors) as client:
             yield client
 
     app.dependency_overrides[get_http] = fake_http
     yield fake
     app.dependency_overrides.pop(get_http, None)
+
+
+@pytest.fixture
+def http(fake_google, fake_photon, fake_mawaqit, fake_ors):
+    """The same fake client the app gets, for tests that call the app's functions directly."""
+    with fake_http_client(fake_google, fake_photon, fake_mawaqit, fake_ors) as client:
+        yield client
+
+
+@pytest.fixture
+def ors_key(monkeypatch):
+    """Turn drive times on, with a made-up key."""
+    from app.config import get_ors_settings
+
+    monkeypatch.setenv("ORS_API_KEY", "test-ors-key")
+    get_ors_settings.cache_clear()
+    yield "test-ors-key"
+    get_ors_settings.cache_clear()
 
 
 @pytest.fixture(autouse=True)
