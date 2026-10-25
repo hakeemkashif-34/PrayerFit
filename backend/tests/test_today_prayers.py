@@ -14,6 +14,9 @@ from tests.setup_helpers import save_setup
 OTTAWA = {"latitude": 45.4215, "longitude": -75.6972, "timezone": "America/Toronto"}
 DAY = date(2026, 10, 24)
 
+# Further east than Ottawa, so every prayer time moves.
+MONTREAL = (45.5017, -73.5673)
+
 
 @pytest.fixture
 def signed_in(client, fake_google, set_today, db):
@@ -64,13 +67,11 @@ def test_event_times_match_the_calculator_and_last_15_minutes(signed_in, fake_go
 
 def test_description_says_where_the_time_came_from(signed_in, fake_google, db):
     signed_in.post("/prayers/today")
-    save_setup(db, method="mwl", asr_method="hanafi")
-    signed_in.post("/prayers/today")
 
     events = fake_google.live_events(_only_calendar(fake_google).id)
     first_lines = [e["description"].splitlines()[0] for e in events]
-    # It's noon, so Fajr already happened and keeps its old description.
-    assert first_lines == ["Calculated (ISNA, standard Asr)"] + ["Calculated (MWL, Hanafi Asr)"] * 4
+    # Always ISNA with standard Asr. There's no setting for the method.
+    assert first_lines == ["Calculated (ISNA, standard Asr)"] * 5
 
 
 def test_first_run_says_isna_standard(signed_in, fake_google):
@@ -113,13 +114,13 @@ def test_running_twice_makes_no_duplicates(signed_in, fake_google, db):
     assert [r.method for r in fake_google.writes()] == ["POST"] + ["POST"] * 5
 
 
-def test_running_again_with_a_new_method_updates_the_same_events(signed_in, fake_google, db):
+def test_running_again_after_moving_updates_the_same_events(signed_in, fake_google, db):
     first = signed_in.post("/prayers/today").json()
-    save_setup(db, asr_method="hanafi")
+    save_setup(db, location=MONTREAL)
     second = signed_in.post("/prayers/today").json()
 
     assert [e["app_event_id"] for e in first["events"]] == [e["app_event_id"] for e in second["events"]]
-    assert second["events"][2]["starts_at"] > first["events"][2]["starts_at"]  # Hanafi Asr is later
+    assert second["events"][2]["starts_at"] < first["events"][2]["starts_at"]  # Montreal is further east
 
 
 @pytest.mark.parametrize("failure", ["timeout", 429, 500, 503, "timeout_after_write"])
@@ -250,7 +251,7 @@ def test_deleted_event_comes_back_exactly_once_when_it_changes(signed_in, fake_g
 
     # Unchanged events aren't sent again, so noticing deletions made in
     # Google waits for two-way sync (milestone 6). A change sends it back.
-    save_setup(db, asr_method="hanafi")
+    save_setup(db, location=MONTREAL)
     signed_in.post("/prayers/today")
 
     events = fake_google.live_events(calendar.id)

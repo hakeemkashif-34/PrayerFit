@@ -51,7 +51,7 @@ def test_migration_0004_keeps_existing_data(db):
 
     with db.connect() as connection:
         settings = connection.execute(text(
-            "SELECT user_id::text, main_masjid_short_name, method, optional_saved, arrive_early_minutes, "
+            "SELECT user_id::text, main_masjid_short_name, optional_saved, arrive_early_minutes, "
             "prayer_color_id FROM user_settings ORDER BY user_id"
         )).all()
         jumuah = connection.execute(text(
@@ -59,9 +59,9 @@ def test_migration_0004_keeps_existing_data(db):
         )).all()
         events = connection.execute(text("SELECT prayer, kind FROM prayer_events")).all()
     assert settings == [
-        ("00000000-0000-0000-0000-00000000000a", "KMA", "mwl", True, 0, None),
+        ("00000000-0000-0000-0000-00000000000a", "KMA", True, 0, None),
         # Not finished setup yet, so the optional step is still ahead of them.
-        ("00000000-0000-0000-0000-00000000000b", None, None, False, 0, None),
+        ("00000000-0000-0000-0000-00000000000b", None, False, 0, None),
     ]
     # Numbered in name order, the order the settings page showed them in.
     assert jumuah == [("Jamia Omar", 0), ("Stittsville Masjid", 1)]

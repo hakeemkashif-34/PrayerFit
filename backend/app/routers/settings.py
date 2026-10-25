@@ -29,7 +29,7 @@ from app.event_plan import date_text
 from app.masjid_times.freshness import Freshness, freshness
 from app.models import Masjid, MasjidSource, PrayerEvent, User, UserJumuahMasjid, WeeklyMasjidPrayers
 from app.prayer_sync import SyncIncomplete
-from app.prayer_times import DEFAULT_TIMEZONE, AsrMethod, CalculationMethod
+from app.prayer_times import DEFAULT_TIMEZONE
 from app.update_jobs import queue_update, run_update
 from app.user_settings import (
     PRAYERS,
@@ -37,10 +37,8 @@ from app.user_settings import (
     DEFAULT_COLOR_ID,
     find_settings,
     follow_main_masjid,
-    asr_method_of,
     get_settings,
     jumuah_masjids,
-    method_of,
     missing_steps,
     read_address,
     read_location,
@@ -96,9 +94,6 @@ class SettingsOut(BaseModel):
     address: str | None
     place_name: str | None
     time_zone: str | None
-    # The defaults (ISNA, standard) until the user picks others.
-    method: CalculationMethod
-    asr_method: AsrMethod
     main_masjid_choice: Literal["masjid", "home"] | None
     main_masjid: MasjidOut | None
     main_masjid_short_name: str | None
@@ -164,8 +159,6 @@ def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
         address=read_address(row),
         place_name=read_place_name(row),
         time_zone=row.time_zone,
-        method=method_of(row),
-        asr_method=asr_method_of(row),
         main_masjid_choice=row.main_masjid_choice,
         main_masjid=_masjid_out(db, main, home, now, zone) if main and row.main_masjid_choice == "masjid" else None,
         main_masjid_short_name=row.main_masjid_short_name,
@@ -323,22 +316,6 @@ def save_location_choice(request: LocationRequest, user: UserDep, db: DbDep, htt
         place.longitude,
         timezone_for(place.latitude, place.longitude),
     )
-    return _saved(db, http, user, now)
-
-
-# ---- Calculation method and Asr method (settings page only, for now) ----
-
-
-class MethodsRequest(BaseModel):
-    method: CalculationMethod = CalculationMethod.ISNA
-    asr_method: AsrMethod = AsrMethod.STANDARD
-
-
-@router.put("/settings/methods", response_model=SaveResponse)
-def save_methods(request: MethodsRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> SaveResponse:
-    row = get_settings(db, user.id)
-    row.method = request.method.value
-    row.asr_method = request.asr_method.value
     return _saved(db, http, user, now)
 
 

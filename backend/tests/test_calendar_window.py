@@ -107,17 +107,6 @@ def test_dhuhr_description_explains_the_extra_minute(signed_in, fake_google, db)
     ]
 
 
-def test_umm_al_qura_dhuhr_is_at_solar_noon(signed_in, fake_google, db):
-    save_setup(db, method="umm_al_qura")
-
-    signed_in.post("/calendar/sync")
-
-    dhuhr = next(e for e in _events(fake_google) if e["summary"] == "Dhuhr at home")
-    assert dhuhr["description"].splitlines()[-1] == (
-        "Starts at solar noon (12:46:57 pm), rounded up to the minute."
-    )
-
-
 # ---- Changes after setup ----
 
 
@@ -147,8 +136,8 @@ def test_past_events_are_left_alone(signed_in, fake_photon, fake_google, db):
         e for e in _events(fake_google) if _local_start(e).date() == DAY and e["summary"].startswith("Fajr")
     )
 
-    # It's noon, so today's Fajr has passed. Every other event changes.
-    response = signed_in.put("/settings/methods", json={"asr_method": "hanafi"})
+    # It's noon, so today's Fajr has passed. A new prayer colour changes every other event.
+    response = signed_in.put("/settings/optional", json={"short_name": "KMA", "prayer_color_id": "3"})
 
     assert response.json()["calendar"]["sent"] == 69
     fajr_after = next(e for e in _events(fake_google) if e["id"] == fajr_before["id"])
@@ -173,7 +162,8 @@ def test_saving_the_same_answer_sends_nothing(signed_in, fake_photon, fake_googl
     setup_through_api(signed_in, fake_photon)
     writes_before = len(fake_google.writes())
 
-    signed_in.put("/settings/methods", json={})
+    # The same answers setup_through_api gave.
+    signed_in.put("/settings/optional", json={"short_name": "KMA"})
 
     assert len(fake_google.writes()) == writes_before
 
@@ -258,3 +248,27 @@ def test_next_day_adds_one_new_day_and_keeps_the_old_one(signed_in, fake_photon,
     assert len(events) == 75  # yesterday's prayers stay in Google
     assert max(_local_start(e).date() for e in events) == date(2026, 11, 7)
     assert not [w for w in fake_google.requests if w.method == "DELETE"]
+
+
+def test_a_user_on_another_method_moves_to_isna_with_only_future_events_sent(signed_in, fake_google, db, monkeypatch):
+    from app import user_settings
+    from app.prayer_times import CalculationMethod
+
+    # Before milestone 5, this user had MWL saved.
+    save_setup(db)
+    monkeypatch.setattr(user_settings, "DEFAULT_METHOD", CalculationMethod.MWL)
+    signed_in.post("/calendar/sync")
+    fajr_before = next(e for e in _events(fake_google) if _local_start(e).date() == DAY and e["summary"].startswith("Fajr"))
+    assert fajr_before["description"].startswith("Calculated (MWL, standard Asr)")
+    before = len(fake_google.writes())
+
+    # Now every user is on ISNA. It's noon, so today's Fajr has passed and stays as it was.
+    monkeypatch.setattr(user_settings, "DEFAULT_METHOD", CalculationMethod.ISNA)
+    response = signed_in.post("/calendar/sync")
+
+    changed = fake_google.writes()[before:]
+    # Every description names the method, so every future event changes:
+    # 70 minus today's Fajr, which is in the past.
+    assert response.json()["sent"] == len(changed) == 69
+    assert all(w.body["description"].startswith("Calculated (ISNA, standard Asr)") for w in changed)
+    assert fajr_before["id"] not in {w.path.rsplit("/", 1)[-1] for w in changed}

@@ -143,25 +143,11 @@ def test_busy_photon_is_a_503_with_a_message(signed_in, fake_photon):
 # ---- Methods ----
 
 
-def test_methods_default_to_isna_and_standard(signed_in):
-    # Not asked in setup, so the defaults apply until the user changes them.
+def test_there_is_no_method_setting(signed_in):
+    # Calculated times always use ISNA with standard Asr.
     settings = signed_in.get("/settings").json()
-    assert (settings["method"], settings["asr_method"]) == ("isna", "standard")
-
-    response = signed_in.put("/settings/methods", json={})
-    settings = response.json()["settings"]
-    assert (settings["method"], settings["asr_method"]) == ("isna", "standard")
-
-
-def test_methods_save(signed_in):
-    signed_in.put("/settings/methods", json={"method": "mwl", "asr_method": "hanafi"})
-
-    settings = signed_in.get("/settings").json()
-    assert (settings["method"], settings["asr_method"]) == ("mwl", "hanafi")
-
-
-def test_unknown_method_is_rejected(signed_in):
-    assert signed_in.put("/settings/methods", json={"method": "made-up"}).status_code == 422
+    assert "method" not in settings and "asr_method" not in settings
+    assert signed_in.put("/settings/methods", json={"method": "mwl"}).status_code in (404, 405)
 
 
 # ---- Main masjid ----
@@ -355,13 +341,11 @@ def test_finish_needs_every_answer(signed_in, osm):
 
 
 def test_setup_is_4_questions(signed_in, osm, fake_google):
-    # No methods step and no Jumuah step: the methods use the defaults, and
-    # the main masjid becomes the Jumuah masjid.
+    # No Jumuah step: the main masjid becomes the Jumuah masjid.
     response = setup_through_api(signed_in, osm)
 
     settings = response.json()["settings"]
     assert settings["setup_complete"] is True
-    assert (settings["method"], settings["asr_method"]) == ("isna", "standard")
     assert [m["name"] for m in settings["jumuah_masjids"]] == ["Kanata Muslim Association"]
     assert osm.requests  # the location came from Photon
     events = fake_google.live_events(fake_google.calendars_of("user-a")[0].id)
@@ -405,10 +389,10 @@ def test_change_after_setup_reports_a_dead_sign_in_instead_of_failing(signed_in,
     fake_google.expire_access_tokens()
     fake_google.kill_refresh_tokens("user-a")
 
-    response = signed_in.put("/settings/methods", json={"asr_method": "hanafi"})
+    response = signed_in.put("/settings/optional", json={"short_name": "Kanata"})
 
     assert response.status_code == 200
-    assert response.json()["settings"]["asr_method"] == "hanafi"  # still saved
+    assert response.json()["settings"]["main_masjid_short_name"] == "Kanata"  # still saved
     calendar = response.json()["calendar"]
     assert calendar["status"] == "sign_in_needed"
     assert calendar["waiting"] > 0
@@ -462,5 +446,5 @@ def test_reading_settings_saves_nothing(signed_in, db):
 
 def test_settings_need_sign_in(client):
     assert client.get("/settings").status_code == 401
-    assert client.put("/settings/methods", json={}).status_code == 401
+    assert client.put("/settings/optional", json={}).status_code == 401
     assert client.post("/setup/location/suggest", json={"query": HOME_QUERY}).status_code == 401

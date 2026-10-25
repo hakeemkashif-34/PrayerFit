@@ -23,8 +23,6 @@ def save_setup(
     sub: str = "user-a",
     location: tuple[float, float] = OTTAWA,
     time_zone: str = "America/Toronto",
-    method: str = "isna",
-    asr_method: str = "standard",
     masjid_name: str | None = None,
     short_name: str | None = None,
     at_masjid: dict[int, set[str]] | None = None,
@@ -39,8 +37,6 @@ def save_setup(
         user = db.scalars(select(User).where(User.google_sub == sub)).one()
         row = get_settings(db, user.id)
         save_location(row, "1 Test Street, Ottawa", *location, time_zone)
-        row.method = method
-        row.asr_method = asr_method
         row.jumuah_saved = True
         row.optional_saved = True
         if masjid_name is None:
