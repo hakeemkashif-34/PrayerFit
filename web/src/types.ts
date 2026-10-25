@@ -58,7 +58,8 @@ export type OptionalAnswers = {
 };
 
 export type CalendarUpdate = {
-  status: "updated" | "waiting" | "sign_in_needed" | "not_set_up";
+  // "adding" is the website's own, while setup's first update runs.
+  status: "updated" | "waiting" | "sign_in_needed" | "not_set_up" | "adding";
   sent: number;
   waiting: number;
   message: string;

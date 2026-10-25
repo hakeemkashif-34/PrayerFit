@@ -17,6 +17,10 @@ type Props = {
   submitLabel?: string;
   // Setup has a Skip button. The settings page has Cancel instead.
   canSkip?: boolean;
+  // Setup opens the Google Calendar tab here, inside the click, so the
+  // browser allows it. onSaveFailed closes it again.
+  onFinishClick?: () => void;
+  onSaveFailed?: () => void;
   onSaved: (response: SaveResponse) => void;
   onCancel?: () => void;
 };
@@ -36,7 +40,9 @@ function wholeMinutes(text: string): number | null {
   return minutes <= MAX_EARLY ? minutes : null;
 }
 
-export function OptionalStep({ settings, page = false, submitLabel = "Save", canSkip = false, onSaved, onCancel }: Props) {
+export function OptionalStep({
+  settings, page = false, submitLabel = "Save", canSkip = false, onFinishClick, onSaveFailed, onSaved, onCancel,
+}: Props) {
   // Not answered yet: start from the defaults. Answered before: show what was saved.
   const fresh = settings.missing.includes("optional");
   const [early, setEarly] = useState(String(fresh ? DEFAULT_ARRIVE_EARLY : settings.arrive_early_minutes));
@@ -56,9 +62,15 @@ export function OptionalStep({ settings, page = false, submitLabel = "Save", can
     try {
       onSaved(await api.saveOptional(answers));
     } catch (e) {
+      onSaveFailed?.();
       setError(e instanceof ApiError ? e.message : "Couldn't save. Try again.");
       setBusy(false);
     }
+  }
+
+  function skip() {
+    onFinishClick?.();
+    void run(DEFAULTS);
   }
 
   function save(event: FormEvent) {
@@ -69,6 +81,7 @@ export function OptionalStep({ settings, page = false, submitLabel = "Save", can
       return;
     }
     setEarlyError("");
+    onFinishClick?.();
     void run({
       arrive_early_minutes: minutes,
       short_name: masjid ? shortName.trim() || undefined : undefined,
@@ -83,7 +96,7 @@ export function OptionalStep({ settings, page = false, submitLabel = "Save", can
       <div className="step-top">
         <Heading id="optional-title">A few extras</Heading>
         {canSkip && (
-          <button type="button" className="link skip" onClick={() => void run(DEFAULTS)} disabled={busy}>
+          <button type="button" className="link skip" onClick={skip} disabled={busy}>
             Skip
           </button>
         )}

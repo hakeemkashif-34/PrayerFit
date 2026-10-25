@@ -1,24 +1,25 @@
 // Setup asks 4 questions, one per page: location, main masjid, the weekly
 // grid (skipped for "I pray at home"), and an optional step that can be
-// skipped (how early, short name, colours). Straight after the last
-// answer the calendar is filled, then the user is sent to Google Calendar.
-// It matches the landing page:
+// skipped (how early, short name, colours). It matches the landing page:
 // the list of steps on the left and the question on the right. On a phone,
-// the list becomes one line at the top. Straight after the last answer,
-// the calendar is filled.
+// the list becomes one line at the top.
+//
+// Finish (or Skip) on the last step opens a new tab for Google Calendar,
+// inside the click. Then App fills the calendar and this tab goes to Settings.
 
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError } from "./api";
+import { openFinishTab, NO_TAB, type FinishTab } from "./finishTab";
 import { OsmFooter } from "./OsmFooter";
 import { LocationStep } from "./steps/LocationStep";
 import { MasjidStep } from "./steps/MasjidStep";
 import { OptionalStep } from "./steps/OptionalStep";
 import { WeeklyStep } from "./steps/WeeklyStep";
-import type { CalendarUpdate, SaveResponse, Settings, Step } from "./types";
+import type { SaveResponse, Settings, Step } from "./types";
 
 type Props = {
   initial: Settings;
-  onFinished: (settings: Settings, calendar: CalendarUpdate | null) => void;
+  // Every question is answered. App fills the calendar.
+  onDone: (settings: Settings, tab: FinishTab) => void;
 };
 
 const STEPS: { step: Step; name: string }[] = [
@@ -32,44 +33,43 @@ export function masjidLabel(settings: Settings): string {
   return settings.main_masjid_short_name || settings.main_masjid?.name || "your masjid";
 }
 
-export function Setup({ initial, onFinished }: Props) {
+export function Setup({ initial, onDone }: Props) {
   const [settings, setSettings] = useState(initial);
   // Start at the first question not answered yet. Back can go to earlier ones.
   const [step, setStep] = useState<Step | "finish">(initial.missing[0] ?? "finish");
-  const [error, setError] = useState("");
   const started = useRef(false);
+  // The Google Calendar tab, opened by the Finish or Skip click.
+  const tab = useRef<FinishTab>(NO_TAB);
 
   const index = step === "finish" ? STEPS.length : STEPS.findIndex((s) => s.step === step);
   const atHome = settings.main_masjid_choice === "home";
 
   // Every question was answered last time, but the calendar wasn't filled
-  // (for example, the tab was closed). Finish now. The ref stops React's
-  // development mode from calling it twice.
+  // (for example, the tab was closed). Finish now, with no new tab, since
+  // there was no click. The ref stops React's development mode from calling it twice.
   useEffect(() => {
     if (step === "finish" && !started.current) {
       started.current = true;
-      void finish();
+      onDone(settings, NO_TAB);
     }
     // Only on the first render.
   }, []);
-
-  async function finish() {
-    setStep("finish");
-    setError("");
-    try {
-      const response = await api.finishSetup();
-      onFinished(response.settings, response.calendar);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't fill your calendar. Try again.");
-    }
-  }
 
   function next(saved: Settings) {
     setSettings(saved);
     if (step === "address") setStep("masjid");
     else if (step === "masjid") setStep(saved.main_masjid_choice === "home" ? "optional" : "weekly");
     else if (step === "weekly") setStep("optional");
-    else void finish();
+    else onDone(saved, tab.current);
+  }
+
+  function openTab() {
+    tab.current = openFinishTab();
+  }
+
+  function closeTab() {
+    tab.current.close();
+    tab.current = NO_TAB;
   }
 
   const saved = (response: SaveResponse) => next(response.settings);
@@ -125,24 +125,9 @@ export function Setup({ initial, onFinished }: Props) {
           {step === "weekly" && (
             <WeeklyStep page initial={settings.weekly} masjidLabel={masjidLabel(settings)} onSaved={saved} submitLabel="Next" />
           )}
-          {step === "optional" && <OptionalStep page settings={settings} onSaved={saved} submitLabel="Finish" canSkip />}
-          {step === "finish" && (
-            <section aria-labelledby="finish-title">
-              <h1 id="finish-title">{error ? "Something went wrong" : "Adding your prayers to Google Calendar..."}</h1>
-              {!error && <p className="hint">Adding today and the next 13 days. This can take up to 20 seconds.</p>}
-              {error && (
-                <>
-                  <p className="error" role="alert">
-                    {error}
-                  </p>
-                  <div className="actions">
-                    <button type="button" onClick={finish}>
-                      Try again
-                    </button>
-                  </div>
-                </>
-              )}
-            </section>
+          {step === "optional" && (
+            <OptionalStep page settings={settings} onSaved={saved} submitLabel="Finish" canSkip
+              onFinishClick={openTab} onSaveFailed={closeTab} />
           )}
         </main>
       </div>

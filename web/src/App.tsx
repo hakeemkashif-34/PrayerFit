@@ -1,8 +1,10 @@
 // Decides which screen to show: sign in, sign in again, setup, or settings.
 
 import { useEffect, useState } from "react";
+import { AddingPage } from "./AddingPage";
 import { api, ApiError, whenSignInExpires } from "./api";
-import { goToGoogleCalendar } from "./googleCalendar";
+import { NO_TAB, type FinishTab } from "./finishTab";
+import { googleCalendarUrl } from "./googleCalendar";
 import { SettingsPage } from "./SettingsPage";
 import { Setup } from "./Setup";
 import { SignIn } from "./SignIn";
@@ -13,10 +15,29 @@ type View =
   | { kind: "signed-out" }
   | { kind: "expired" }
   | { kind: "setup"; settings: Settings }
-  | { kind: "settings"; me: Me; settings: Settings; calendar: CalendarUpdate | null }
+  | {
+      kind: "settings";
+      me: Me;
+      settings: Settings;
+      calendar: CalendarUpdate | null;
+      // The browser blocked the Google Calendar tab, so Settings says so.
+      tabBlocked?: boolean;
+      // Finishing setup failed before the calendar update even ran. Try again finishes it.
+      retryFinish?: () => void;
+    }
   | { kind: "error"; message: string };
 
+const ADDING: CalendarUpdate = {
+  status: "adding", sent: 0, waiting: 0, message: "Adding your prayers to Google Calendar...",
+};
+
 export function App() {
+  // The new tab opened on Finish (see finishTab.ts) is its own small page.
+  if (window.location.pathname === "/adding") return <AddingPage />;
+  return <Main />;
+}
+
+function Main() {
   const [view, setView] = useState<View>({ kind: "loading" });
   const errorCode = new URLSearchParams(window.location.search).get("sign_in_error");
 
@@ -39,6 +60,39 @@ export function App() {
     }
   }
 
+  // Every answer is in. This tab goes to Settings straight away, and the
+  // first calendar update runs. The new tab (if any) opens Google Calendar
+  // when it's done, or shows the error. This tab is never sent away.
+  async function finish(settings: Settings, tab: FinishTab) {
+    let me: Me;
+    try {
+      me = await api.me();
+    } catch (e) {
+      const message = e instanceof ApiError ? e.message : "Couldn't reach the server. Refresh to try again.";
+      tab.fail(message);
+      return setView({ kind: "error", message });
+    }
+    setView({ kind: "settings", me, settings, calendar: ADDING });
+    try {
+      const response = await api.finishSetup();
+      const calendar = response.calendar;
+      if (calendar?.status === "updated") tab.succeed(googleCalendarUrl(me.email));
+      else tab.fail(calendar?.message ?? "Your calendar couldn't be filled. Try again.");
+      setView({
+        kind: "settings", me, settings: response.settings, calendar,
+        tabBlocked: tab.state === "blocked" && calendar?.status === "updated",
+      });
+    } catch (e) {
+      const message = e instanceof ApiError ? e.message : "Couldn't fill your calendar. Try again.";
+      tab.fail(message);
+      setView({
+        kind: "settings", me, settings,
+        calendar: { status: "waiting", sent: 0, waiting: 0, message },
+        retryFinish: () => void finish(settings, NO_TAB),
+      });
+    }
+  }
+
   switch (view.kind) {
     case "loading":
       return <main className="page narrow"><p className="hint">Loading…</p></main>;
@@ -54,17 +108,7 @@ export function App() {
       );
     case "setup":
       return (
-        <Setup
-          initial={view.settings}
-          onFinished={async (settings, calendar) => {
-            const me = await api.me();
-            // Every prayer reached Google, so show them there. Setup keeps
-            // showing "Adding your prayers..." until the browser leaves.
-            if (calendar?.status === "updated") return goToGoogleCalendar(me.email);
-            // Otherwise stay here: Settings shows what went wrong, with Try again.
-            setView({ kind: "settings", me, settings, calendar });
-          }}
-        />
+        <Setup initial={view.settings} onDone={(settings, tab) => void finish(settings, tab)} />
       );
     case "settings":
       return (
@@ -72,6 +116,8 @@ export function App() {
           email={view.me.email}
           initial={view.settings}
           initialCalendar={view.calendar}
+          tabBlocked={view.tabBlocked ?? false}
+          onRetry={view.retryFinish}
           onSignedOut={() => setView({ kind: "signed-out" })}
         />
       );

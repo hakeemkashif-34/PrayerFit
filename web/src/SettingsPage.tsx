@@ -2,7 +2,7 @@
 // Calendar, then every saved setting on its own card, each with an Edit
 // button. Edit opens the same step used in setup. Saving updates the calendar.
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, SIGN_IN_URL } from "./api";
 import { googleCalendarUrl } from "./googleCalendar";
 import { asrName, colourName, earlyText, GOOGLE_COLOURS, masjidName, methodName, PRAYER_NAMES, PRAYERS, WEEKDAYS } from "./labels";
@@ -20,12 +20,22 @@ type Props = {
   email: string;
   initial: Settings;
   initialCalendar: CalendarUpdate | null;
+  // The browser blocked the Google Calendar tab after setup.
+  tabBlocked?: boolean;
+  // Replaces Try again when finishing setup itself failed.
+  onRetry?: () => void;
   onSignedOut: () => void;
 };
 
-export function SettingsPage({ email, initial, initialCalendar, onSignedOut }: Props) {
+export function SettingsPage({ email, initial, initialCalendar, tabBlocked = false, onRetry, onSignedOut }: Props) {
   const [settings, setSettings] = useState(initial);
   const [calendar, setCalendar] = useState(initialCalendar);
+
+  // Setup's first update finishes after this page is already showing.
+  useEffect(() => {
+    setSettings(initial);
+    setCalendar(initialCalendar);
+  }, [initial, initialCalendar]);
   // A masjid picked after "I pray at home" still needs the weekly grid.
   const [editing, setEditing] = useState<Editable | null>(initial.missing[0] ?? null);
   const [busy, setBusy] = useState(false);
@@ -37,6 +47,7 @@ export function SettingsPage({ email, initial, initialCalendar, onSignedOut }: P
   }
 
   async function retry() {
+    if (onRetry) return onRetry();
     setBusy(true);
     try {
       setCalendar(await api.syncCalendar());
@@ -68,10 +79,13 @@ export function SettingsPage({ email, initial, initialCalendar, onSignedOut }: P
           <a className="button open-calendar" href={googleCalendarUrl(email)}>
             Open Google Calendar
           </a>
+          {tabBlocked && (
+            <p className="hint blocked-note">Your browser blocked the new tab, so open Google Calendar from here.</p>
+          )}
         </header>
 
         {calendar && (
-          <p className={calendar.status === "updated" ? "notice" : "notice warning"} role="status">
+          <p className={calendar.status === "updated" || calendar.status === "adding" ? "notice" : "notice warning"} role="status">
             {calendar.message}{" "}
             {calendar.status === "waiting" && (
               <button type="button" className="link" onClick={retry} disabled={busy}>

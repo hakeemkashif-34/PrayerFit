@@ -140,10 +140,12 @@ export class MockApi {
     return { settings: this.settings, calendar: this.me?.setup_complete ? calendar ?? updated(3) : null };
   }
 
+  // On the whole browser context, so the tab that Finish opens is covered too.
   async install(page: Page) {
-    await page.route("**/api/**", (route) => this.handle(route));
-    await page.route("**/auth/logout", (route) => this.handle(route));
-    await page.route("https://calendar.google.com/**", (route) => {
+    const context = page.context();
+    await context.route("**/api/**", (route) => this.handle(route));
+    await context.route("**/auth/logout", (route) => this.handle(route));
+    await context.route("https://calendar.google.com/**", (route) => {
       this.googleVisits.push(route.request().url());
       return route.fulfill({ contentType: "text/html", body: "<title>Fake Google Calendar</title><h1>Fake Google Calendar</h1>" });
     });

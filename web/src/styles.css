@@ -866,3 +866,7 @@ input[aria-invalid="true"] {
   color: var(--muted);
   font-weight: 500;
 }
+
+.blocked-note {
+  margin: 8px 0 0;
+}

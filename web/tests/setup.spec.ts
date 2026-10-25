@@ -20,11 +20,21 @@ async function pickMasjid(page: Page, typed: string, name: string) {
   await page.getByRole("option", { name: new RegExp(`^${name}`) }).click();
 }
 
-// Finishing setup sends the user to Google Calendar, faked by the mock API.
+// The tab that Finish opened. Every test has one browser context of its own.
+async function newTab(page: Page): Promise<Page> {
+  await expect.poll(() => page.context().pages().length).toBe(2);
+  return page.context().pages().find((p) => p !== page)!;
+}
+
+// Finish opened a new tab, which goes to Google Calendar (faked by the mock
+// API). This tab goes to Settings and stays on our site.
 async function expectGoogleCalendar(page: Page, api: MockApi) {
-  await expect(page).toHaveURL(GOOGLE_CALENDAR);
-  await expect(page.getByRole("heading", { name: "Fake Google Calendar" })).toBeVisible();
+  const tab = await newTab(page);
+  await expect(tab).toHaveURL(GOOGLE_CALENDAR);
+  await expect(tab.getByRole("heading", { name: "Fake Google Calendar" })).toBeVisible();
   expect(api.googleVisits).toEqual([GOOGLE_CALENDAR]);
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  expect(new URL(page.url()).host).toBe("localhost:4173");
 }
 
 async function pickColour(page: Page, picker: string, colour: string) {
@@ -327,8 +337,13 @@ test("answers saved before but never finished fill the calendar on the next visi
   await api.install(page);
   await page.goto("/");
 
-  await expectGoogleCalendar(page, api);
+  // No click, so no new tab: Settings, with the Open Google Calendar button.
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("Calendar updated. 70 events sent to Google.");
+  await expect(page.getByRole("link", { name: "Open Google Calendar" })).toBeVisible();
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
+  expect(page.context().pages()).toHaveLength(1);
+  expect(api.googleVisits).toEqual([]);
 });
 
 test("setup looks like the landing page: steps on the left on a computer, one line on a phone", async ({ page }, info) => {
@@ -430,21 +445,53 @@ test("the colour dropdown works with the keyboard", async ({ page }) => {
   await expect(button).toContainText("Blueberry");
 });
 
-test("finishing shows a message until the calendar is filled, then opens Google Calendar", async ({ page }) => {
+test("Finish opens a new tab that shows a message, then Google Calendar, while this tab goes to Settings", async ({ page }) => {
   const api = new MockApi().signedIn();
   api.finishDelayMs = 1500;
   await api.install(page);
   await page.goto("/");
   await pickHome(page);
   await page.getByRole("button", { name: "Skip" }).click();
+  const popup = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Finish" }).click();
 
-  await expect(page.getByRole("heading", { level: 1, name: "Adding your prayers to Google Calendar..." })).toBeVisible();
+  // The new tab opened inside the click, before the calendar was filled.
+  const tab = await popup;
+  await expect(tab).toHaveURL(/localhost:4173\/adding$/);
+  await expect(tab.getByRole("heading", { level: 1, name: "Adding your prayers to Google Calendar..." })).toBeVisible();
+  // This tab is on Settings already, saying the same.
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("Adding your prayers to Google Calendar...");
   expect(api.googleVisits).toEqual([]);
+
+  // Once the update finishes, the new tab opens Google Calendar for their account.
   await expectGoogleCalendar(page, api);
+  await expect(page.getByRole("status")).toHaveText("Calendar updated. 70 events sent to Google.");
+  await expect(page.getByText("blocked the new tab")).toHaveCount(0);
+  // The new tab can't reach back to this one.
+  expect(await tab.evaluate(() => window.opener)).toBeNull();
 });
 
-test("if the first calendar update fails, it stays on our site and shows why", async ({ page }) => {
+test("a blocked new tab leaves Settings with the Open Google Calendar button and a note", async ({ page }) => {
+  // Like a popup blocker: window.open gives nothing back.
+  await page.addInitScript(() => {
+    window.open = () => null;
+  });
+  const api = new MockApi().signedIn();
+  await api.install(page);
+  await page.goto("/");
+  await pickHome(page);
+  await page.getByRole("button", { name: "Skip" }).click();
+  await page.getByRole("button", { name: "Finish" }).click();
+
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("Calendar updated. 70 events sent to Google.");
+  await expect(page.getByText("Your browser blocked the new tab, so open Google Calendar from here.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open Google Calendar" })).toHaveAttribute("href", GOOGLE_CALENDAR);
+  expect(api.googleVisits).toEqual([]);
+});
+
+test("if the first calendar update fails, both tabs show why", async ({ page }) => {
   const api = new MockApi().signedIn();
   api.finishCalendar = {
     status: "waiting", sent: 40, waiting: 30,
@@ -454,31 +501,71 @@ test("if the first calendar update fails, it stays on our site and shows why", a
   await page.goto("/");
   await pickHome(page);
   await page.getByRole("button", { name: "Skip" }).click();
+  const popup = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Skip" }).click();
+  const tab = await popup;
 
+  // The new tab: the error and a link back to Settings. No Google Calendar.
+  await expect(tab.getByRole("alert")).toHaveText(
+    "Saved. Some prayers haven't reached Google Calendar yet. Try again in a minute.",
+  );
+  await expect(tab.getByRole("link", { name: "Back to Settings" })).toHaveAttribute("href", "/");
+  // This tab: Settings with the same message and Try again.
   await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
   await expect(page.getByRole("status")).toContainText("Some prayers haven't reached Google Calendar yet.");
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
   expect(api.googleVisits).toEqual([]);
-  expect(page.url()).not.toContain("google.com");
+
+  // The link back goes to Settings, in the new tab.
+  await tab.getByRole("link", { name: "Back to Settings" }).click();
+  await expect(tab.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
 });
 
-test("if finishing setup fails, it stays on the setup page with the error", async ({ page }) => {
+test("if finishing setup fails, the new tab and Settings show the error, and Try again finishes it", async ({ page }) => {
   const api = new MockApi().signedIn();
   api.failNext["/api/setup/finish"] = { status: 503, detail: { message: "Google Calendar didn't answer. Try again in a minute." } };
   await api.install(page);
   await page.goto("/");
   await pickHome(page);
   await page.getByRole("button", { name: "Skip" }).click();
+  const popup = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Skip" }).click();
+  const tab = await popup;
 
-  await expect(page.getByRole("heading", { level: 1, name: "Something went wrong" })).toBeVisible();
-  await expect(page.getByRole("alert")).toHaveText("Google Calendar didn't answer. Try again in a minute.");
+  await expect(tab.getByRole("alert")).toHaveText("Google Calendar didn't answer. Try again in a minute.");
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Google Calendar didn't answer. Try again in a minute.");
   expect(api.googleVisits).toEqual([]);
 
-  // Try again works, and then it opens Google Calendar.
+  // Try again finishes setup. There's no click-opened tab this time, so nothing opens.
   await page.getByRole("button", { name: "Try again" }).click();
-  await expectGoogleCalendar(page, api);
+  await expect(page.getByRole("status")).toHaveText("Calendar updated. 70 events sent to Google.");
+  expect(api.calls("POST", "/api/setup/finish")).toHaveLength(2);
+  expect(api.googleVisits).toEqual([]);
+});
+
+test("the adding page opened by hand just links to Settings", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  await api.install(page);
+  await page.goto("/adding");
+  await expect(page.getByRole("heading", { level: 1, name: "Nothing to add here" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Go to Settings" })).toHaveAttribute("href", "/");
+  expect(api.requests).toEqual([]);
+});
+
+test("a failed save closes the new tab and stays on the step", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  api.failNext["/api/settings/optional"] = { status: 503, detail: { message: "The server is busy. Try again." } };
+  await api.install(page);
+  await page.goto("/");
+  await pickHome(page);
+  await page.getByRole("button", { name: "Skip" }).click();
+  await page.getByRole("button", { name: "Finish" }).click();
+
+  await expect(page.getByRole("alert")).toHaveText("The server is busy. Try again.");
+  await expect.poll(() => page.context().pages().length).toBe(1);
+  await expect(page.getByRole("heading", { level: 1, name: "A few extras" })).toBeVisible();
+  expect(api.calls("POST", "/api/setup/finish")).toHaveLength(0);
 });
 
 test("how early takes whole numbers from 0 to 60 only", async ({ page }) => {
