@@ -49,9 +49,9 @@ test("Google expiring in the middle of an edit switches to Sign in again", async
   const api = new MockApi().signedIn(finishedSettings());
   await api.install(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Edit prayer time method" }).click();
+  await page.getByRole("button", { name: "Edit prayers at the masjid" }).click();
 
-  api.failNext["/api/settings/methods"] = {
+  api.failNext["/api/settings/weekly"] = {
     status: 401,
     detail: { message: "Google sign-in expired. Sign in again.", reason: "google_sign_in_expired", login_url: "/auth/google/login" },
   };
