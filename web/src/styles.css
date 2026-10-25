@@ -779,17 +779,43 @@ ul.colour-list li[aria-selected="true"] {
   font-weight: 700;
 }
 
+/* Round dots, like Google Calendar's colour menu. */
 .swatch {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
 }
 
 /* No colour picked: an empty ring, since it's whatever the calendar's colour is. */
 .swatch.none {
   border: 2px solid var(--faint);
+}
+
+/* The tick on the chosen colour, white on the dot like Google's menu. */
+.swatch .tick::after {
+  content: "✓";
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.swatch.none .tick::after {
+  color: var(--text);
+}
+
+/* A dot in a sentence ("Prayer colour: Peacock") sits on the text's middle. */
+.colour-name .swatch {
+  width: 16px;
+  height: 16px;
+}
+
+.open-calendar {
+  margin-top: 12px;
 }
 
 .colour-name {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, ApiError, whenSignInExpires } from "./api";
+import { goToGoogleCalendar } from "./googleCalendar";
 import { SettingsPage } from "./SettingsPage";
 import { Setup } from "./Setup";
 import { SignIn } from "./SignIn";
@@ -57,6 +58,10 @@ export function App() {
           initial={view.settings}
           onFinished={async (settings, calendar) => {
             const me = await api.me();
+            // Every prayer reached Google, so show them there. Setup keeps
+            // showing "Adding your prayers..." until the browser leaves.
+            if (calendar?.status === "updated") return goToGoogleCalendar(me.email);
+            // Otherwise stay here: Settings shows what went wrong, with Try again.
             setView({ kind: "settings", me, settings, calendar });
           }}
         />

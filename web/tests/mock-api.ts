@@ -97,6 +97,11 @@ export class MockApi {
   failNext: Record<string, { status: number; detail: unknown }> = {};
   // Like optional_saved on the backend. The website never sees it, only "optional" in missing.
   optionalSaved = false;
+  // What POST /api/setup/finish says about the calendar, and how long it takes.
+  finishCalendar: unknown = updated(70);
+  finishDelayMs = 0;
+  // Every Google Calendar URL the page went to. A fake page answers, so no test reaches Google.
+  googleVisits: string[] = [];
 
   signedIn(settings: Settings = emptySettings(), me: Partial<Me> = {}) {
     this.settings = settings;
@@ -138,6 +143,10 @@ export class MockApi {
   async install(page: Page) {
     await page.route("**/api/**", (route) => this.handle(route));
     await page.route("**/auth/logout", (route) => this.handle(route));
+    await page.route("https://calendar.google.com/**", (route) => {
+      this.googleVisits.push(route.request().url());
+      return route.fulfill({ contentType: "text/html", body: "<title>Fake Google Calendar</title><h1>Fake Google Calendar</h1>" });
+    });
   }
 
   private async handle(route: Route) {
@@ -223,10 +232,11 @@ export class MockApi {
         });
         return json(200, this.saved(updated(20)));
       case "POST /api/setup/finish":
+        await new Promise((resolve) => setTimeout(resolve, this.finishDelayMs));
         s.setup_complete = true;
         this.me.setup_complete = true;
         s.missing = this.missing();
-        return json(200, { settings: s, calendar: updated(70) });
+        return json(200, { settings: s, calendar: this.finishCalendar });
       case "POST /api/calendar/sync":
         return json(200, updated(0));
     }
@@ -258,6 +268,9 @@ function suggestMasjids(query: string): PretendMasjid[] {
   return found.slice(0, 5);
 }
 
-function updated(sent: number) {
+// Where a finished setup sends hakeem@example.com.
+export const GOOGLE_CALENDAR = "https://calendar.google.com/calendar/r?authuser=hakeem%40example.com";
+
+export function updated(sent: number) {
   return { status: "updated", sent, waiting: 0, message: `Calendar updated. ${sent} events sent to Google.` };
 }

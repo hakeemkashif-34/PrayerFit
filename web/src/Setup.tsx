@@ -1,6 +1,8 @@
 // Setup asks 4 questions, one per page: location, main masjid, the weekly
 // grid (skipped for "I pray at home"), and an optional step that can be
-// skipped (how early, short name, colours). It matches the landing page:
+// skipped (how early, short name, colours). Straight after the last
+// answer the calendar is filled, then the user is sent to Google Calendar.
+// It matches the landing page:
 // the list of steps on the left and the question on the right. On a phone,
 // the list becomes one line at the top. Straight after the last answer,
 // the calendar is filled.
@@ -126,7 +128,7 @@ export function Setup({ initial, onFinished }: Props) {
           {step === "optional" && <OptionalStep page settings={settings} onSaved={saved} submitLabel="Finish" canSkip />}
           {step === "finish" && (
             <section aria-labelledby="finish-title">
-              <h1 id="finish-title">{error ? "Something went wrong" : "Filling your Prayers calendar…"}</h1>
+              <h1 id="finish-title">{error ? "Something went wrong" : "Adding your prayers to Google Calendar..."}</h1>
               {!error && <p className="hint">Adding today and the next 13 days. This can take up to 20 seconds.</p>}
               {error && (
                 <>

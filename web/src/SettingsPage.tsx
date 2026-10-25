@@ -1,8 +1,10 @@
-// After setup: every saved setting on its own card, each with an Edit button.
-// Edit opens the same step used in setup. Saving updates the calendar.
+// The Settings page, where returning users land: a button to open Google
+// Calendar, then every saved setting on its own card, each with an Edit
+// button. Edit opens the same step used in setup. Saving updates the calendar.
 
 import { useState, type ReactNode } from "react";
 import { api, ApiError, SIGN_IN_URL } from "./api";
+import { googleCalendarUrl } from "./googleCalendar";
 import { asrName, colourName, earlyText, GOOGLE_COLOURS, masjidName, methodName, PRAYER_NAMES, PRAYERS, WEEKDAYS } from "./labels";
 import { OsmFooter } from "./OsmFooter";
 import { masjidLabel } from "./Setup";
@@ -61,8 +63,11 @@ export function SettingsPage({ email, initial, initialCalendar, onSignedOut }: P
     <div className="page-with-footer">
       <main className="page">
         <header className="top">
-          <h1>Your prayers</h1>
+          <h1>Settings</h1>
           <p className="hint">Signed in as {email}</p>
+          <a className="button open-calendar" href={googleCalendarUrl(email)}>
+            Open Google Calendar
+          </a>
         </header>
 
         {calendar && (

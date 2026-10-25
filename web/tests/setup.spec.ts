@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { HOME_PLACE, KMA, MockApi } from "./mock-api";
+import { GOOGLE_CALENDAR, HOME_PLACE, KMA, MockApi } from "./mock-api";
 
 const LOCATION = "What's your location?";
 const MASJID = "Which masjid do you usually go to?";
@@ -18,6 +18,13 @@ async function expectStep(page: Page, number: number) {
 async function pickMasjid(page: Page, typed: string, name: string) {
   await page.getByRole("combobox").pressSequentially(typed, { delay: 30 });
   await page.getByRole("option", { name: new RegExp(`^${name}`) }).click();
+}
+
+// Finishing setup sends the user to Google Calendar, faked by the mock API.
+async function expectGoogleCalendar(page: Page, api: MockApi) {
+  await expect(page).toHaveURL(GOOGLE_CALENDAR);
+  await expect(page.getByRole("heading", { name: "Fake Google Calendar" })).toBeVisible();
+  expect(api.googleVisits).toEqual([GOOGLE_CALENDAR]);
 }
 
 async function pickColour(page: Page, picker: string, colour: string) {
@@ -115,9 +122,13 @@ test("the full setup: location, masjid, weekly grid, extras, then a filled calen
   await page.getByRole("button", { name: /^Prayer colour/ }).click();
   // Every Google colour, by Google's name, after "Calendar colour".
   await expect(page.getByRole("listbox").getByRole("option")).toHaveText([
-    "Calendar colour", "Lavender", "Sage", "Grape", "Flamingo", "Banana", "Tangerine",
-    "Peacock", "Graphite", "Blueberry", "Basil", "Tomato",
+    "Calendar colour", "Tomato", "Flamingo", "Tangerine", "Banana", "Sage", "Basil",
+    "Peacock", "Blueberry", "Lavender", "Grape", "Graphite",
   ]);
+  // Like Google's menu: a tick on the chosen one, "Calendar colour" by default.
+  await expect(page.getByRole("listbox").getByRole("option", { selected: true })).toHaveText("Calendar colour");
+  await expect(page.locator(".colour-list .tick")).toHaveCount(1);
+  await expect(page.getByRole("option", { name: "Calendar colour" }).locator(".tick")).toBeVisible();
   await page.getByRole("option", { name: "Peacock" }).click();
   await pickColour(page, "Drive colour", "Tomato");
   await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Tomato");
@@ -126,13 +137,12 @@ test("the full setup: location, masjid, weekly grid, extras, then a filled calen
     arrive_early_minutes: 5, short_name: "KMA", prayer_color_id: "7", drive_color_id: "11",
   });
 
-  // Finishing fills the calendar straight away. No methods or Jumuah questions.
-  await expect(page.getByRole("status")).toHaveText("Calendar updated. 70 events sent to Google.");
-  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
+  // Finishing fills the calendar straight away, then opens Google Calendar
+  // in the same tab, for the account they signed in with. No methods or Jumuah questions.
+  await expectGoogleCalendar(page, api);
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
   expect(api.calls("PUT", "/api/settings/methods")).toHaveLength(0);
   expect(api.calls("PUT", "/api/settings/jumuah")).toHaveLength(0);
-  await expect(page.getByText("ISNA, Standard Asr")).toBeVisible();
 });
 
 test("Back goes to the previous question with the answer kept", async ({ page }) => {
@@ -200,8 +210,8 @@ test("Skip means every prayer at home, with no weekly grid", async ({ page }) =>
   await page.getByRole("button", { name: "Skip" }).click();
   await page.getByRole("button", { name: "Skip" }).click();
 
-  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
-  await expect(page.getByText("I pray at home")).toBeVisible();
+  await expectGoogleCalendar(page, api);
+  expect(api.settings.main_masjid_choice).toBe("home");
   expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({ choice: "home" });
   expect(api.calls("PUT", "/api/settings/weekly")).toHaveLength(0);
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
@@ -229,8 +239,8 @@ test("a masjid that isn't on the map can be picked by typing its address", async
   await page.getByLabel("Short name for your masjid (optional)").fill("Barrhaven Musalla");
   await page.getByRole("button", { name: "Finish" }).click();
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toMatchObject({ short_name: "Barrhaven Musalla" });
-  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
-  await expect(page.getByText("(Barrhaven Musalla)")).toBeVisible();
+  await expectGoogleCalendar(page, api);
+  expect(api.settings.main_masjid_short_name).toBe("Barrhaven Musalla");
 });
 
 test("the masjid search waits for a typing pause and 3 characters", async ({ page }) => {
@@ -311,7 +321,7 @@ test("answers saved before but never finished fill the calendar on the next visi
   await api.install(page);
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
+  await expectGoogleCalendar(page, api);
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
 });
 
@@ -381,9 +391,9 @@ test("the optional step can be skipped, which saves the defaults", async ({ page
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({
     arrive_early_minutes: 0, prayer_color_id: null, drive_color_id: null,
   });
-  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
+  await expectGoogleCalendar(page, api);
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
-  await expect(page.getByText("Arrive at iqamah time")).toBeVisible();
+  expect(api.settings.arrive_early_minutes).toBe(0);
 });
 
 test("the colour dropdown works with the keyboard", async ({ page }) => {
@@ -400,10 +410,64 @@ test("the colour dropdown works with the keyboard", async ({ page }) => {
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("listbox")).toHaveCount(0);
-  await expect(button).toContainText("Sage");
+  await expect(button).toContainText("Flamingo");
   await expect(button).toBeFocused();
   await page.keyboard.press("ArrowDown");
+  // The tick moved to the new choice.
+  await expect(page.getByRole("listbox").getByRole("option", { selected: true })).toHaveText("Flamingo");
+  await expect(page.getByRole("option", { name: "Flamingo" }).locator(".tick")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("listbox")).toHaveCount(0);
-  await expect(button).toContainText("Sage");
+  await expect(button).toContainText("Flamingo");
+});
+
+test("finishing shows a message until the calendar is filled, then opens Google Calendar", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  api.finishDelayMs = 1500;
+  await api.install(page);
+  await page.goto("/");
+  await pickHome(page);
+  await page.getByRole("button", { name: "Skip" }).click();
+  await page.getByRole("button", { name: "Finish" }).click();
+
+  await expect(page.getByRole("heading", { level: 1, name: "Adding your prayers to Google Calendar..." })).toBeVisible();
+  expect(api.googleVisits).toEqual([]);
+  await expectGoogleCalendar(page, api);
+});
+
+test("if the first calendar update fails, it stays on our site and shows why", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  api.finishCalendar = {
+    status: "waiting", sent: 40, waiting: 30,
+    message: "Saved. Some prayers haven't reached Google Calendar yet. Try again in a minute.",
+  };
+  await api.install(page);
+  await page.goto("/");
+  await pickHome(page);
+  await page.getByRole("button", { name: "Skip" }).click();
+  await page.getByRole("button", { name: "Skip" }).click();
+
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Some prayers haven't reached Google Calendar yet.");
+  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+  expect(api.googleVisits).toEqual([]);
+  expect(page.url()).not.toContain("google.com");
+});
+
+test("if finishing setup fails, it stays on the setup page with the error", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  api.failNext["/api/setup/finish"] = { status: 503, detail: { message: "Google Calendar didn't answer. Try again in a minute." } };
+  await api.install(page);
+  await page.goto("/");
+  await pickHome(page);
+  await page.getByRole("button", { name: "Skip" }).click();
+  await page.getByRole("button", { name: "Skip" }).click();
+
+  await expect(page.getByRole("heading", { level: 1, name: "Something went wrong" })).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveText("Google Calendar didn't answer. Try again in a minute.");
+  expect(api.googleVisits).toEqual([]);
+
+  // Try again works, and then it opens Google Calendar.
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expectGoogleCalendar(page, api);
 });

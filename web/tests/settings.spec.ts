@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { finishedSettings, MockApi } from "./mock-api";
+import { finishedSettings, GOOGLE_CALENDAR, MockApi } from "./mock-api";
 
 test("the settings page shows every saved setting with an Edit button", async ({ page }) => {
   await new MockApi().signedIn(finishedSettings()).install(page);
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
   await expect(page.getByText("Signed in as hakeem@example.com")).toBeVisible();
   for (const name of ["location", "prayer time method", "main masjid", "prayers at the masjid", "jumuah masjids", "extras"]) {
     await expect(page.getByRole("button", { name: `Edit ${name}` })).toBeVisible();
@@ -19,10 +19,30 @@ test("the settings page shows every saved setting with an Edit button", async ({
   await expect(extras).toContainText("Arrive 5 min before iqamah");
   await expect(extras).toContainText("Prayer colour: Peacock");
   await expect(extras).toContainText("Drive colour: Calendar colour");
+  // The old "Your prayers" title is gone: this page is Settings now.
+  await expect(page.getByText("Your prayers")).toHaveCount(0);
   // The page shows OpenStreetMap data and OpenRouteService drive times, so both credits are in its footer.
   const footer = page.getByRole("contentinfo");
   await expect(footer.getByRole("link", { name: "© OpenStreetMap contributors" })).toBeVisible();
   await expect(footer.getByRole("link", { name: "Drive times © openrouteservice.org by HeiGIT" })).toBeVisible();
+});
+
+test("returning users land on Settings with an Open Google Calendar button, and no redirect", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  await api.install(page);
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  const open = page.getByRole("link", { name: "Open Google Calendar" });
+  await expect(open).toHaveAttribute("href", GOOGLE_CALENDAR);
+  // Give a redirect time to happen, if there were one.
+  await page.waitForTimeout(500);
+  expect(api.googleVisits).toEqual([]);
+  expect(new URL(page.url()).host).toBe("localhost:4173");
+
+  await open.click();
+  await expect(page).toHaveURL(GOOGLE_CALENDAR);
+  expect(api.googleVisits).toEqual([GOOGLE_CALENDAR]);
 });
 
 test("editing a setting saves it and says what changed in the calendar", async ({ page }) => {
