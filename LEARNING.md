@@ -808,7 +808,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 7. The footer credits OpenRouteService next to OpenStreetMap.
 8. **Like Google's own colour menu**: the colours are in the order Google lists them (Tomato, Flamingo, Tangerine, and so on), each a round dot with Google's name, and the chosen one has a tick. The tick is drawn with CSS (`::after`), so a screen reader reads "Peacock", not "✓ Peacock". `aria-selected` says which one is chosen.
 
-### 12a. After setup: straight to Google Calendar
+### 13. After setup: straight to Google Calendar
 
 1. After the last setup step, the page says "Adding your prayers to Google Calendar..." until the first calendar update finishes.
 2. If every prayer reached Google, the same tab goes to `https://calendar.google.com/calendar/r?authuser=<email>` (`web/src/googleCalendar.ts`).
@@ -817,7 +817,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 5. **Returning users** land on the Settings page (renamed from "Your prayers"; there was only ever one settings page). It has an **Open Google Calendar** button with the same link, and never redirects on its own.
 6. **Tests never open Google**: the mock API catches every `calendar.google.com` URL and answers with a fake page, and records each visit, so a test can check the exact URL.
 
-### 13. Tests
+### 14. Tests
 
 1. **New fakes**: `fake_mawaqit.py` (serves pages, can answer 403, 429, 500, time out, or send 4 MB) and `fake_ors.py` (a drive time per destination, a timeout, a 429, or no route). Both only answer their own host, and any other URL fails the test.
 2. **`test_mawaqit_parser.py`** and **`test_mawaqit_links.py`**: adhan, iqamah (clock time and "+10"), Jumuah, missing iqamah, impossible times, a missing day, a changed page format, and links that aren't mawaqit.net.
@@ -830,7 +830,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 9. **`test_migrations.py`**: goes back to milestone 4's tables, adds a user with a masjid, a short name, a method, and Jumuah masjids, upgrades, and checks it all survived.
 10. **Playwright**: the optional step filled in and skipped, the colour dropdown with a mouse and with the keyboard (with the tick moving), the Settings page editing how early, the short name, colours, and Jumuah masjids in order, the "Adding your prayers..." message, the redirect to Google Calendar (faked), staying on our site when the update or the finish fails, and returning users landing on Settings with no redirect.
 
-### 14. How to check it works
+### 15. How to check it works
 
 1. **Tests**: `pytest` in `backend` (`600 passed`) and `npx playwright test` in `web` (`78 passed`).
 2. **For real**: get a free ORS key and put it in `.env`. Then follow "Masjid times from MAWAQIT" in the README to link KMA, and run `run-now --force`. In Google Calendar: masjid prayers at KMA's iqamah, home prayers at KMA's adhan, each with its source, a drive block with a reminder before each masjid prayer, Jumuah on Friday if KMA is a Jumuah masjid, and the colours picked in Extras.
