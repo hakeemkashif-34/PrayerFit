@@ -6,7 +6,7 @@ no test ever reaches the real Google, Photon, or Overpass.
 
 import logging
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import httpx2
 
@@ -30,6 +30,14 @@ def new_http_client() -> httpx2.Client:
 def get_http() -> Iterator[httpx2.Client]:
     with new_http_client() as client:
         yield client
+
+
+def get_http_factory() -> Callable[[], httpx2.Client]:
+    """For background work that outlives the request (its client is closed by then).
+
+    A dependency, so tests can swap in the fakes here too.
+    """
+    return new_http_client
 
 
 def transport_reason(error: httpx2.TransportError) -> str:

@@ -5,12 +5,14 @@ goes to Google. Once setup is finished, every change updates the
 calendar straight away, but only the future events that changed.
 """
 
+import logging
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated, Literal
 
 import httpx2
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -20,10 +22,11 @@ from app.calendar_window import SetupIncomplete, refresh_calendar
 from app.clock import get_now
 from app.db import get_db
 from app.geo.photon import MAX_SUGGESTIONS, MIN_QUERY_LENGTH, suggest
+from app.geo.errors import OsmServiceError
 from app.geo.overpass import SEARCH_RADIUS_KM, nearby_masjids
 from app.geo.timezones import timezone_for
 from app.google_errors import CalendarAccessMissing, GoogleError, ReauthRequired
-from app.http_client import get_http
+from app.http_client import get_http, get_http_factory
 from app.models import Masjid, PrayerEvent, User, UserJumuahMasjid, WeeklyMasjidPrayers
 from app.prayer_sync import SyncIncomplete
 from app.prayer_times import AsrMethod, CalculationMethod
@@ -44,6 +47,7 @@ from app.user_settings import (
 )
 
 router = APIRouter(tags=["settings"])
+logger = logging.getLogger("app.settings")
 
 OSM_CREDIT = "© OpenStreetMap contributors"
 OSM_CREDIT_URL = "https://www.openstreetmap.org/copyright"
@@ -255,9 +259,39 @@ class LocationRequest(BaseModel):
         return _one_line(value)
 
 
+def search_masjids_in_background(
+    db: Session, make_http: Callable[[], httpx2.Client], user_id: uuid.UUID, now: datetime
+) -> None:
+    """Fill the masjid cache for the user's location, after the response is sent.
+
+    Overpass can take a minute, so starting now means the masjid page is
+    usually ready by the time the user gets there. A failure here is only
+    logged: the masjid page tries again, and never blocks setup.
+    """
+    try:
+        location = read_location(find_settings(db, user_id))
+        if location is not None:
+            with make_http() as http:
+                nearby_masjids(db, http, *location, now)
+    except OsmServiceError:
+        pass  # each server's failure is already logged
+    except Exception:  # noqa: BLE001 - a background job must never crash the server
+        logger.exception("The background masjid search failed")
+    finally:
+        db.close()
+
+
 @router.put("/settings/location", response_model=SaveResponse)
-def save_location_choice(request: LocationRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> SaveResponse:
-    """Save the suggestion the user picked.
+def save_location_choice(
+    request: LocationRequest,
+    user: UserDep,
+    db: DbDep,
+    http: HttpDep,
+    now: NowDep,
+    background: BackgroundTasks,
+    make_http: Annotated[Callable[[], httpx2.Client], Depends(get_http_factory)],
+) -> SaveResponse:
+    """Save the suggestion the user picked, then start the masjid search.
 
     The location comes from the same search the user just saw (it's
     cached), not from the browser, so it always matches what they picked.
@@ -275,7 +309,12 @@ def save_location_choice(request: LocationRequest, user: UserDep, db: DbDep, htt
         place.longitude,
         timezone_for(place.latitude, place.longitude),
     )
-    return _saved(db, http, user, now)
+    response = _saved(db, http, user, now)
+    # Its own database session: the request's one is closed by the time this runs.
+    background.add_task(
+        search_masjids_in_background, Session(db.get_bind(), expire_on_commit=False), make_http, user.id, now
+    )
+    return response
 
 
 # ---- Calculation method and Asr method (settings page only, for now) ----

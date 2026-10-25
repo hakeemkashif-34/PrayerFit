@@ -186,6 +186,33 @@ def test_nearby_masjids_are_sorted_by_distance(signed_in, osm):
     assert body["credit"] == "© OpenStreetMap contributors"
 
 
+def test_masjid_search_starts_as_soon_as_the_location_is_saved(signed_in, osm):
+    save_home(signed_in)
+
+    # The background search already asked Overpass, before the masjid page.
+    assert len(osm.overpass_requests) == 1
+
+    response = signed_in.get("/masjids/nearby")
+
+    assert [m["name"] for m in response.json()["masjids"]][0] == "Kanata Muslim Association"
+    assert len(osm.overpass_requests) == 1  # the page read the cache
+
+
+def test_a_failed_background_search_doesnt_stop_saving_the_location(signed_in, osm, caplog):
+    osm.overpass_failure = 502
+
+    suggestions = signed_in.post("/setup/location/suggest", json={"query": HOME_QUERY}).json()["suggestions"]
+    response = signed_in.put("/settings/location", json={"query": HOME_QUERY, "index": suggestions[0]["index"]})
+
+    assert response.status_code == 200
+    assert response.json()["settings"]["missing"] == ["masjid", "weekly"]
+    assert "Overpass (overpass-api.de) failed: status 502" in caplog.text
+    # The masjid page asks again, and says so if it still fails.
+    nearby = signed_in.get("/masjids/nearby")
+    assert nearby.status_code == 503
+    assert "Try again in a few minutes" in nearby.json()["detail"]["message"]
+
+
 def test_nearby_needs_an_address_first(signed_in):
     response = signed_in.get("/masjids/nearby")
     assert response.status_code == 409

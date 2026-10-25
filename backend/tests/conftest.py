@@ -22,7 +22,8 @@ os.environ["COOKIE_SECURE"] = "false"
 # Photon and Overpass are faked too, at their normal URLs.
 os.environ["OSM_CONTACT_EMAIL"] = "tests@example.com"
 os.environ["PHOTON_URL"] = "https://photon.komoot.io"
-os.environ["OVERPASS_URL"] = "https://overpass-api.de/api/interpreter"
+# 2 Overpass servers, so tests can make the first one fail.
+os.environ["OVERPASS_URLS"] = "https://overpass-api.de/api/interpreter,https://overpass.backup.example/api/interpreter"
 
 from datetime import datetime, time  # noqa: E402
 from urllib.parse import parse_qs, urlparse  # noqa: E402
@@ -37,7 +38,7 @@ from sqlalchemy import text  # noqa: E402
 
 from app.clock import get_now  # noqa: E402
 from app.db import get_engine  # noqa: E402
-from app.http_client import get_http  # noqa: E402
+from app.http_client import get_http, get_http_factory  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Base  # noqa: E402
 from app.geo import throttle  # noqa: E402
@@ -89,8 +90,11 @@ def fake_google(fake_osm):
             yield client
 
     app.dependency_overrides[get_http] = fake_http
+    # Background work makes its own clients. They reach the fakes too.
+    app.dependency_overrides[get_http_factory] = lambda: lambda: fake_http_client(fake, fake_osm)
     yield fake
     app.dependency_overrides.pop(get_http, None)
+    app.dependency_overrides.pop(get_http_factory, None)
 
 
 @pytest.fixture(autouse=True)
