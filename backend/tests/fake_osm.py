@@ -11,7 +11,8 @@ from urllib.parse import parse_qs
 import httpx2
 
 PHOTON_HOST = "photon.komoot.io"
-OVERPASS_HOST = "overpass-api.de"
+# The servers in OVERPASS_URLS in conftest.py, in order.
+OVERPASS_HOSTS = ("overpass-api.de", "overpass.backup.example")
 
 
 def _metres(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -33,7 +34,9 @@ class FakeOsm:
         self.overpass_requests: list[httpx2.Request] = []
         # Set to a status code (like 429), "timeout", or "connect" to make the next calls fail.
         self.photon_failure: int | str | None = None
+        # Fails every Overpass server. overpass_failures fails just the ones named.
         self.overpass_failure: int | str | None = None
+        self.overpass_failures: dict[str, int | str] = {}
 
     # ---- Things tests call to set up a scene ----
 
@@ -61,13 +64,13 @@ class FakeOsm:
     # ---- The transport ----
 
     def handles(self, host: str) -> bool:
-        return host in (PHOTON_HOST, OVERPASS_HOST)
+        return host == PHOTON_HOST or host in OVERPASS_HOSTS
 
     def handle(self, request: httpx2.Request) -> httpx2.Response:
         if request.url.host == PHOTON_HOST and request.url.path == "/api/":
             self.photon_requests.append(request)
             return self._photon(request)
-        if request.url.host == OVERPASS_HOST and request.url.path == "/api/interpreter":
+        if request.url.host in OVERPASS_HOSTS and request.url.path == "/api/interpreter":
             self.overpass_requests.append(request)
             return self._overpass(request)
         raise AssertionError(f"The app called a URL the fake OpenStreetMap doesn't know: {request.url}")
@@ -99,8 +102,9 @@ class FakeOsm:
         )
 
     def _overpass(self, request: httpx2.Request) -> httpx2.Response:
-        if self.overpass_failure is not None:
-            return self._fail(request, self.overpass_failure)
+        failure = self.overpass_failures.get(request.url.host, self.overpass_failure)
+        if failure is not None:
+            return self._fail(request, failure)
         assert "MuslimCalendar" in request.headers["user-agent"]
         query = parse_qs(request.content.decode())["data"][0]
         assert '["religion"="muslim"]' in query
@@ -116,3 +120,6 @@ class FakeOsm:
         query = parse_qs(self.overpass_requests[-1].content.decode())["data"][0]
         _, lat, lon = re.search(r"around:([\d.]+),(-?[\d.]+),(-?[\d.]+)", query).groups()
         return float(lat), float(lon)
+
+    def overpass_hosts_asked(self) -> list[str]:
+        return [r.url.host for r in self.overpass_requests]

@@ -2,6 +2,8 @@
 
 import logging
 import re
+import threading
+import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -212,13 +214,13 @@ def test_every_point_in_a_cell_gets_the_full_15_km(session, http, fake_osm):
     assert [round(n.distance_km, 1) for n in nearby] == [14.9]
 
 
-def test_overpass_results_are_cached_for_7_days(session, http, fake_osm):
+def test_overpass_results_are_cached_for_30_days(session, http, fake_osm):
     fake_osm.add_masjid(1, "Near Masjid", HOME[0] + 0.01, HOME[1])
     nearby_masjids(session, http, *HOME, NOW)
-    nearby_masjids(session, http, HOME[0] + 0.001, HOME[1], NOW + timedelta(days=6))  # same cell
+    nearby_masjids(session, http, HOME[0] + 0.001, HOME[1], NOW + timedelta(days=29))  # same cell
     assert len(fake_osm.overpass_requests) == 1
 
-    nearby_masjids(session, http, *HOME, NOW + timedelta(days=8))
+    nearby_masjids(session, http, *HOME, NOW + timedelta(days=31))
     assert len(fake_osm.overpass_requests) == 2
 
 
@@ -229,11 +231,83 @@ def test_a_masjid_found_twice_is_saved_once(session, http, fake_osm):
     assert len(session.scalars(select(Masjid)).all()) == 1
 
 
-@pytest.mark.parametrize("failure", [429, 504, "timeout", "connect"])
-def test_busy_overpass_gives_a_friendly_message(session, http, fake_osm, failure):
+@pytest.mark.parametrize("failure", [429, 502, 504, "timeout", "connect"])
+def test_every_server_down_gives_a_friendly_message(session, http, fake_osm, failure):
     fake_osm.overpass_failure = failure
-    with pytest.raises(OsmServiceError, match="Try again in a minute"):
+    with pytest.raises(OsmServiceError, match="busy right now. Try again in a few minutes"):
         nearby_masjids(session, http, *HOME, NOW)
+    # Both servers were asked before giving up.
+    assert fake_osm.overpass_hosts_asked() == ["overpass-api.de", "overpass.backup.example"]
+
+
+# ---- Backup Overpass servers ----
+
+
+@pytest.mark.parametrize("failure", [502, 429, 503, 504, "timeout", "connect"])
+def test_a_failing_first_server_falls_through_to_the_next(session, http, fake_osm, failure):
+    fake_osm.add_masjid(1, "Near Masjid", HOME[0] + 0.01, HOME[1])
+    fake_osm.overpass_failures = {"overpass-api.de": failure}
+
+    nearby = nearby_masjids(session, http, *HOME, NOW)
+
+    assert [n.masjid.name for n in nearby] == ["Near Masjid"]
+    assert fake_osm.overpass_hosts_asked() == ["overpass-api.de", "overpass.backup.example"]
+
+
+def test_a_working_first_server_is_the_only_one_asked(session, http, fake_osm):
+    nearby_masjids(session, http, *HOME, NOW)
+    assert fake_osm.overpass_hosts_asked() == ["overpass-api.de"]
+
+
+def test_a_bad_request_isnt_sent_to_the_next_server(session, http, fake_osm):
+    # 400 means our query is wrong. Every server would say the same.
+    fake_osm.overpass_failures = {"overpass-api.de": 400}
+    with pytest.raises(OsmServiceError, match="answered 400"):
+        nearby_masjids(session, http, *HOME, NOW)
+    assert fake_osm.overpass_hosts_asked() == ["overpass-api.de"]
+
+
+def test_the_servers_come_from_settings_with_public_defaults(monkeypatch):
+    from app.config import PUBLIC_OVERPASS_SERVERS, get_osm_settings
+
+    monkeypatch.delenv("OVERPASS_URLS")
+    get_osm_settings.cache_clear()
+    try:
+        assert get_osm_settings().overpass_urls == PUBLIC_OVERPASS_SERVERS
+        assert PUBLIC_OVERPASS_SERVERS[0] == "https://overpass-api.de/api/interpreter"
+        monkeypatch.setenv("OVERPASS_URLS", " https://a.example/api/interpreter , https://b.example/api/interpreter ")
+        get_osm_settings.cache_clear()
+        assert get_osm_settings().overpass_urls == (
+            "https://a.example/api/interpreter", "https://b.example/api/interpreter"
+        )
+    finally:
+        get_osm_settings.cache_clear()
+
+
+def test_all_servers_together_get_at_most_100_seconds(session, http, fake_osm, monkeypatch):
+    from app.geo import overpass
+
+    # Pretend the first server took 55 seconds to time out.
+    times = iter([0.0, 0.0, 55.0])
+    monkeypatch.setattr(overpass, "clock", lambda: next(times))
+    fake_osm.overpass_failures = {"overpass-api.de": "timeout"}
+
+    nearby_masjids(session, http, *HOME, NOW)
+
+    first, second = (r.extensions["timeout"]["read"] for r in fake_osm.overpass_requests)
+    assert (first, second) == (60, 45)  # 100 - 55 = 45 seconds left
+
+
+def test_no_server_is_asked_with_under_5_seconds_left(session, http, fake_osm, monkeypatch):
+    from app.geo import overpass
+
+    times = iter([0.0, 0.0, 97.0])
+    monkeypatch.setattr(overpass, "clock", lambda: next(times))
+    fake_osm.overpass_failures = {"overpass-api.de": "timeout"}
+
+    with pytest.raises(OsmServiceError):
+        nearby_masjids(session, http, *HOME, NOW)
+    assert fake_osm.overpass_hosts_asked() == ["overpass-api.de"]
 
 
 # ---- Timeouts and failure logs ----
@@ -258,12 +332,6 @@ def test_google_and_photon_keep_the_10_second_timeout(session, http, fake_osm):
     assert fake_osm.photon_requests[0].extensions["timeout"]["read"] != OVERPASS_TIMEOUT
 
 
-def test_overpass_timeout_says_it_took_too_long(session, http, fake_osm):
-    fake_osm.overpass_failure = "timeout"
-    with pytest.raises(OsmServiceError, match="took too long"):
-        nearby_masjids(session, http, *HOME, NOW)
-
-
 @pytest.mark.parametrize(
     "failure, reason", [(504, "status 504"), (429, "status 429"), ("timeout", "timeout"), ("connect", "connection error")]
 )
@@ -274,7 +342,9 @@ def test_overpass_failure_logs_the_reason_and_time_but_not_the_location(session,
     with pytest.raises(OsmServiceError):
         nearby_masjids(session, http, *HOME, NOW)
 
-    assert re.search(rf"Overpass failed: {reason} after \d+\.\d s", caplog.text)
+    # Each server's failure is logged with its name.
+    assert re.search(rf"Overpass \(overpass-api.de\) failed: {reason} after \d+\.\d s", caplog.text)
+    assert re.search(rf"Overpass \(overpass.backup.example\) failed: {reason} after \d+\.\d s", caplog.text)
     for secret in ("45.3", "75.8", "75.9", "45.31", "-75.9"):
         assert secret not in caplog.text
 
@@ -292,3 +362,63 @@ def test_photon_failure_logs_the_reason_and_time_but_not_the_address(session, ht
     assert re.search(rf"Photon failed: {reason} after \d+\.\d s", caplog.text)
     assert "Kanata" not in caplog.text
     assert "200" not in caplog.text
+
+
+# ---- One search per cell at a time ----
+
+
+def test_the_page_waits_for_a_search_already_running_instead_of_asking_again(db, http, fake_osm):
+    from app.geo.overpass import cell_for
+    from app.locks import advisory_lock
+
+    fake_osm.add_masjid(1, "Near Masjid", HOME[0] + 0.01, HOME[1])
+    cell = "{:.2f},{:.2f}".format(*cell_for(*HOME))
+    results = []
+
+    def masjid_page():
+        with Session(db, expire_on_commit=False) as page_session:
+            results.append(nearby_masjids(page_session, http, *HOME, NOW))
+
+    # The "background search" holds the cell's lock and fills the cache.
+    with Session(db, expire_on_commit=False) as background:
+        with advisory_lock(background, f"overpass:{cell}"):
+            page = threading.Thread(target=masjid_page)
+            page.start()
+            time.sleep(0.3)  # the page is now waiting on the lock
+            assert results == []
+            from app.geo.overpass import _save_masjids
+            from app.models import OverpassCache
+
+            ids = _save_masjids(background, fake_osm.elements)
+            background.add(OverpassCache(cell=cell, masjid_ids=[str(i) for i in ids], fetched_at=NOW))
+            background.commit()
+        page.join(timeout=10)
+
+    assert [n.masjid.name for n in results[0]] == ["Near Masjid"]
+    assert fake_osm.overpass_requests == []  # only the cache was read
+
+
+def test_if_the_search_it_waited_for_failed_the_page_doesnt_ask_again(db, http, fake_osm):
+    from app.geo.overpass import cell_for
+    from app.locks import advisory_lock
+
+    cell = "{:.2f},{:.2f}".format(*cell_for(*HOME))
+    errors = []
+
+    def masjid_page():
+        with Session(db, expire_on_commit=False) as page_session:
+            try:
+                nearby_masjids(page_session, http, *HOME, NOW)
+            except OsmServiceError as error:
+                errors.append(str(error))
+
+    with Session(db) as background:
+        with advisory_lock(background, f"overpass:{cell}"):
+            page = threading.Thread(target=masjid_page)
+            page.start()
+            time.sleep(0.3)
+        # The background search ends with nothing cached (it failed).
+        page.join(timeout=10)
+
+    assert errors and "busy right now" in errors[0]
+    assert fake_osm.overpass_requests == []

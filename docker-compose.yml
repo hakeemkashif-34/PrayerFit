@@ -19,7 +19,7 @@ x-backend-environment: &backend-environment
   SESSION_DAYS: ${SESSION_DAYS}
   OSM_CONTACT_EMAIL: ${OSM_CONTACT_EMAIL}
   PHOTON_URL: ${PHOTON_URL:-}
-  OVERPASS_URL: ${OVERPASS_URL:-}
+  OVERPASS_URLS: ${OVERPASS_URLS:-}
 
 services:
   db:
