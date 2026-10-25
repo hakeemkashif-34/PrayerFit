@@ -3,13 +3,14 @@ import { HOME_PLACE, KMA, MockApi } from "./mock-api";
 
 const LOCATION = "What's your location?";
 const MASJID = "Which masjid do you usually go to?";
-const STEP_NAMES = ["Location", "Masjid", "Weekly prayers"];
+const OPTIONAL = "A few extras";
+const STEP_NAMES = ["Location", "Masjid", "Weekly prayers", "Optional"];
 
 // The current step is highlighted in the list on a computer, and named in
 // one line at the top on a phone.
 async function expectStep(page: Page, number: number) {
   await expect(page.locator('[aria-current="step"]')).toContainText(STEP_NAMES[number - 1]);
-  const phoneLine = page.getByText(`Setup · Step ${number} of 3`);
+  const phoneLine = page.getByText(`Setup · Step ${number} of 4`);
   if (test.info().project.name === "phone") await expect(phoneLine).toBeVisible();
   else await expect(page.getByRole("complementary", { name: "Setup steps" })).toBeVisible();
 }
@@ -17,6 +18,11 @@ async function expectStep(page: Page, number: number) {
 async function pickMasjid(page: Page, typed: string, name: string) {
   await page.getByRole("combobox").pressSequentially(typed, { delay: 30 });
   await page.getByRole("option", { name: new RegExp(`^${name}`) }).click();
+}
+
+async function pickColour(page: Page, picker: string, colour: string) {
+  await page.getByRole("button", { name: new RegExp(`^${picker}`) }).click();
+  await page.getByRole("option", { name: colour }).click();
 }
 
 async function pickHome(page: Page) {
@@ -27,7 +33,7 @@ async function pickHome(page: Page) {
   await expect(page.getByRole("heading", { level: 1, name: MASJID })).toBeVisible();
 }
 
-test("the full setup: location, masjid, weekly grid, then a filled calendar", async ({ page }) => {
+test("the full setup: location, masjid, weekly grid, extras, then a filled calendar", async ({ page }) => {
   const api = new MockApi().signedIn();
   await api.install(page);
   await page.goto("/");
@@ -73,13 +79,13 @@ test("the full setup: location, masjid, weekly grid, then a filled calendar", as
   await page.getByRole("option", { name: /^Kanata Muslim Association/ }).click();
   expect((await api.sent("POST", "/api/masjids/from-suggestion", 1))[0].body).toEqual({ query: "Kanata", index: 0 });
   await expect(page.locator(".picked-masjid")).toContainText("Kanata Muslim Association · 1.1 km away");
-  await page.getByLabel("Short name for your calendar (optional)").fill("KMA");
-  await expect(page.getByText('Events will say "Dhuhr at KMA".')).toBeVisible();
+  // The short name moved to the optional step.
+  await expect(page.getByLabel(/Short name/)).toHaveCount(0);
   await page.getByRole("button", { name: "Next" }).click();
-  expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({ choice: "masjid", masjid_id: KMA.id, short_name: "KMA" });
+  expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({ choice: "masjid", masjid_id: KMA.id });
 
   // 3. Weekly grid: prayers are rows, days are columns.
-  await expect(page.getByRole("heading", { level: 1, name: "Which prayers do you usually pray at KMA?" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Which prayers do you usually pray at Kanata Muslim Association?" })).toBeVisible();
   await expectStep(page, 3);
   await expect(page.locator("table.grid thead th")).toHaveText(["Prayer", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
   await expect(page.locator("table.grid tbody th")).toHaveText(["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"]);
@@ -87,13 +93,38 @@ test("the full setup: location, masjid, weekly grid, then a filled calendar", as
   await page.getByLabel("Dhuhr on Monday at the masjid").check();
   await page.getByLabel("Isha on Friday at the masjid").check();
   await page.getByLabel("Fajr on Sunday at the masjid").check();
-  await page.getByRole("button", { name: "Finish" }).click();
+  await page.getByRole("button", { name: "Next" }).click();
 
   const days = ((await api.sent("PUT", "/api/settings/weekly", 1))[0].body as { days: Record<string, unknown>[] }).days;
   expect(days).toHaveLength(7);
   expect(days[0]).toEqual({ weekday: 0, fajr: false, dhuhr: true, asr: false, maghrib: false, isha: false });
   expect(days[4].isha).toBe(true);
   expect(days[6].fajr).toBe(true);
+
+  // 4. Optional: how early, short name, and colours. Each has a default.
+  await expect(page.getByRole("heading", { level: 1, name: OPTIONAL })).toBeVisible();
+  await expectStep(page, 4);
+  await expect(page.getByRole("button", { name: "Skip" })).toBeVisible();
+  const early = page.getByLabel("How early do you want to arrive before iqamah?");
+  await expect(early).toHaveValue("0");
+  await expect(early.locator("option")).toHaveCount(31);
+  await early.selectOption("5");
+  await page.getByLabel("Short name for Kanata Muslim Association (optional)").fill("KMA");
+  await expect(page.getByText('Events will say "Dhuhr at KMA".')).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Prayer colour/ })).toContainText("Calendar colour");
+  await page.getByRole("button", { name: /^Prayer colour/ }).click();
+  // Every Google colour, by Google's name, after "Calendar colour".
+  await expect(page.getByRole("listbox").getByRole("option")).toHaveText([
+    "Calendar colour", "Lavender", "Sage", "Grape", "Flamingo", "Banana", "Tangerine",
+    "Peacock", "Graphite", "Blueberry", "Basil", "Tomato",
+  ]);
+  await page.getByRole("option", { name: "Peacock" }).click();
+  await pickColour(page, "Drive colour", "Tomato");
+  await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Tomato");
+  await page.getByRole("button", { name: "Finish" }).click();
+  expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({
+    arrive_early_minutes: 5, short_name: "KMA", prayer_color_id: "7", drive_color_id: "11",
+  });
 
   // Finishing fills the calendar straight away. No methods or Jumuah questions.
   await expect(page.getByRole("status")).toHaveText("Calendar updated. 70 events sent to Google.");
@@ -159,7 +190,16 @@ test("Skip means every prayer at home, with no weekly grid", async ({ page }) =>
   await pickHome(page);
   await page.getByRole("button", { name: "Skip" }).click();
 
-  // Straight to the calendar, with no weekly grid.
+  // Straight to the optional step, with no weekly grid and no short name.
+  await expect(page.getByRole("heading", { level: 1, name: OPTIONAL })).toBeVisible();
+  await expectStep(page, 4);
+  await expect(page.getByLabel(/Short name/)).toHaveCount(0);
+  // Back goes to the masjid question, since the grid was skipped.
+  await page.getByRole("button", { name: "← Back" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: MASJID })).toBeVisible();
+  await page.getByRole("button", { name: "Skip" }).click();
+  await page.getByRole("button", { name: "Skip" }).click();
+
   await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
   await expect(page.getByText("I pray at home")).toBeVisible();
   expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({ choice: "home" });
@@ -177,15 +217,20 @@ test("a masjid that isn't on the map can be picked by typing its address", async
   await expect(page.getByRole("option")).toHaveText([/^3500 Fallowfield Road, Ottawa, Ontario, CanadaAddress · 7\.2 km away/]);
   await page.getByRole("option").first().click();
 
-  // No name on the map, so it asks for one.
-  await expect(page.getByText("This masjid has no name on the map.")).toBeVisible();
-  await page.getByLabel("Short name for your calendar (optional)").fill("Barrhaven Musalla");
+  await page.getByRole("button", { name: "Next" }).click();
+  expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({
+    choice: "masjid", masjid_id: "44444444-4444-4444-4444-444444444444",
+  });
+  await expect(page.getByRole("heading", { level: 1, name: "Which prayers do you usually pray at your masjid?" })).toBeVisible();
   await page.getByRole("button", { name: "Next" }).click();
 
-  expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({
-    choice: "masjid", masjid_id: "44444444-4444-4444-4444-444444444444", short_name: "Barrhaven Musalla",
-  });
-  await expect(page.getByRole("heading", { level: 1, name: "Which prayers do you usually pray at Barrhaven Musalla?" })).toBeVisible();
+  // No name on the map, so the optional step asks for one.
+  await expect(page.getByText("This masjid has no name on the map.")).toBeVisible();
+  await page.getByLabel("Short name for your masjid (optional)").fill("Barrhaven Musalla");
+  await page.getByRole("button", { name: "Finish" }).click();
+  expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toMatchObject({ short_name: "Barrhaven Musalla" });
+  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
+  await expect(page.getByText("(Barrhaven Musalla)")).toBeVisible();
 });
 
 test("the masjid search waits for a typing pause and 3 characters", async ({ page }) => {
@@ -226,8 +271,7 @@ test("a failed masjid search shows its message and Skip still works", async ({ p
   await page.getByRole("combobox").pressSequentially("Kanata", { delay: 30 });
   await expect(page.getByRole("alert")).toHaveText("The search is busy. Try again in a minute.");
   await page.getByRole("button", { name: "Skip" }).click();
-
-  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: OPTIONAL })).toBeVisible();
 });
 
 test("ticking nothing in the grid means every prayer at home", async ({ page }) => {
@@ -238,11 +282,12 @@ test("ticking nothing in the grid means every prayer at home", async ({ page }) 
   await pickMasjid(page, "Kanata", "Kanata Muslim Association");
   await page.getByRole("button", { name: "Next" }).click();
 
-  await page.getByRole("button", { name: "Finish" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: /Which prayers/ })).toBeVisible();
+  await page.getByRole("button", { name: "Next" }).click();
 
   const days = ((await api.sent("PUT", "/api/settings/weekly", 1))[0].body as { days: Record<string, boolean>[] }).days;
   expect(days.every((d) => !d.fajr && !d.dhuhr && !d.asr && !d.maghrib && !d.isha)).toBe(true);
-  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: OPTIONAL })).toBeVisible();
 });
 
 test("a busy address search shows its message", async ({ page }) => {
@@ -262,6 +307,7 @@ test("a busy address search shows its message", async ({ page }) => {
 test("answers saved before but never finished fill the calendar on the next visit", async ({ page }) => {
   const api = new MockApi().signedIn();
   api.settings = { ...api.settings, address: HOME_PLACE, place_name: HOME_PLACE, time_zone: "America/Toronto", main_masjid_choice: "home" };
+  api.optionalSaved = true;
   await api.install(page);
   await page.goto("/");
 
@@ -278,12 +324,12 @@ test("setup looks like the landing page: steps on the left on a computer, one li
   await expect(question).toBeVisible();
   if (info.project.name === "phone") {
     await expect(steps).toBeHidden();
-    await expect(page.getByText("Setup · Step 1 of 3")).toBeVisible();
+    await expect(page.getByText("Setup · Step 1 of 4")).toBeVisible();
   } else {
     await expect(steps.getByRole("heading", { name: "Setup" })).toBeVisible();
-    await expect(steps.getByRole("listitem")).toHaveText([/Location/, /Masjid/, /Weekly prayers/]);
+    await expect(steps.getByRole("listitem")).toHaveText([/Location/, /Masjid/, /Weekly prayers/, /Optional/]);
     await expect(steps.locator('[aria-current="step"]')).toHaveText(/Location/);
-    await expect(page.getByText("Setup · Step 1 of 3")).toBeHidden();
+    await expect(page.getByText("Setup · Step 1 of 4")).toBeHidden();
     const left = await steps.boundingBox();
     const right = await question.boundingBox();
     expect(right!.x).toBeGreaterThan(left!.x + left!.width - 1);
@@ -315,4 +361,49 @@ test("the page uses Plus Jakarta Sans from our own site", async ({ page }) => {
   expect(await page.evaluate(() => document.fonts.check('16px "Plus Jakarta Sans Variable"'))).toBe(true);
   expect(fontRequests.length).toBeGreaterThan(0);
   expect(fontRequests.every((url) => url.startsWith("http://localhost:4173/assets/"))).toBe(true);
+});
+
+test("the optional step can be skipped, which saves the defaults", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  await api.install(page);
+  await page.goto("/");
+  await pickHome(page);
+  await pickMasjid(page, "Kanata", "Kanata Muslim Association");
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByLabel("Isha on Monday at the masjid").check();
+  await page.getByRole("button", { name: "Next" }).click();
+
+  await expect(page.getByRole("heading", { level: 1, name: OPTIONAL })).toBeVisible();
+  // Something typed, then skipped: the defaults win.
+  await page.getByLabel("How early do you want to arrive before iqamah?").selectOption("10");
+  await page.getByRole("button", { name: "Skip" }).click();
+
+  expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({
+    arrive_early_minutes: 0, prayer_color_id: null, drive_color_id: null,
+  });
+  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
+  expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
+  await expect(page.getByText("Arrive at iqamah time")).toBeVisible();
+});
+
+test("the colour dropdown works with the keyboard", async ({ page }) => {
+  await new MockApi().signedIn().install(page);
+  await page.goto("/");
+  await pickHome(page);
+  await page.getByRole("button", { name: "Skip" }).click();
+
+  const button = page.getByRole("button", { name: /^Drive colour/ });
+  await button.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(button).toContainText("Sage");
+  await expect(button).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(button).toContainText("Sage");
 });

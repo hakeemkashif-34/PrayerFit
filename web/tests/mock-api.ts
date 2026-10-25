@@ -11,9 +11,12 @@ export const KMA: Masjid = {
   address: "351 Sandhill Rd",
   source: "openstreetmap",
   distance_km: 1.1,
-  iqamah_status: "Iqamah times not added yet",
+  iqamah_status: "Times from MAWAQIT, updated Oct 25, 2026",
 };
-export const STITTSVILLE: Masjid = { ...KMA, id: "22222222-2222-2222-2222-222222222222", name: "Stittsville Masjid", address: "Stittsville Main Street, Ottawa", distance_km: 5.8 };
+export const STITTSVILLE: Masjid = {
+  ...KMA, id: "22222222-2222-2222-2222-222222222222", name: "Stittsville Masjid", address: "Stittsville Main Street, Ottawa",
+  distance_km: 5.8, iqamah_status: "Not linked to MAWAQIT, so calculated times are used",
+};
 export const TORONTO: Masjid = { ...KMA, id: "33333333-3333-3333-3333-333333333333", name: "Kanata Masjid Toronto", address: "Toronto", distance_km: 352.1 };
 
 // What the pretend Photon knows about masjids, as the backend would send them.
@@ -24,7 +27,7 @@ const BY_ADDRESS: PretendMasjid = {
   kind: "address",
   masjid: {
     id: "44444444-4444-4444-4444-444444444444", name: null, address: "3500 Fallowfield Road, Ottawa, Ontario, Canada",
-    source: "user", distance_km: 7.2, iqamah_status: "Iqamah times not added yet",
+    source: "user", distance_km: 7.2, iqamah_status: "Not linked to MAWAQIT, so calculated times are used",
   },
 };
 
@@ -41,7 +44,7 @@ const CREDIT = { credit: "© OpenStreetMap contributors", credit_url: "https://w
 export function emptySettings(): Settings {
   return {
     setup_complete: false,
-    missing: ["address", "masjid", "weekly"],
+    missing: ["address", "masjid", "weekly", "optional"],
     address: null,
     place_name: null,
     time_zone: null,
@@ -53,6 +56,9 @@ export function emptySettings(): Settings {
     weekly: [],
     jumuah_saved: false,
     jumuah_masjids: [],
+    arrive_early_minutes: 0,
+    prayer_color_id: null,
+    drive_color_id: null,
   };
 }
 
@@ -73,6 +79,9 @@ export function finishedSettings(): Settings {
     })),
     jumuah_saved: true,
     jumuah_masjids: [KMA, STITTSVILLE],
+    arrive_early_minutes: 5,
+    prayer_color_id: "7",
+    drive_color_id: null,
   };
 }
 
@@ -86,9 +95,12 @@ export class MockApi {
   savedMasjids = new Map<string, Masjid>([KMA, STITTSVILLE].map((m) => [m.id, m]));
   // Make the next call to this path answer with this error.
   failNext: Record<string, { status: number; detail: unknown }> = {};
+  // Like optional_saved on the backend. The website never sees it, only "optional" in missing.
+  optionalSaved = false;
 
   signedIn(settings: Settings = emptySettings(), me: Partial<Me> = {}) {
     this.settings = settings;
+    this.optionalSaved = !settings.missing.includes("optional");
     this.me = { email: "hakeem@example.com", google_sign_in_needed: false, calendar_access: true, setup_complete: settings.setup_complete, ...me };
     return this;
   }
@@ -114,6 +126,7 @@ export class MockApi {
     if (!s.address) missing.push("address");
     if (!s.main_masjid_choice) missing.push("masjid");
     if (s.main_masjid_choice !== "home" && s.weekly.length !== 7) missing.push("weekly");
+    if (!this.optionalSaved) missing.push("optional");
     return missing;
   }
 
@@ -187,7 +200,9 @@ export class MockApi {
         } else {
           const masjid = this.savedMasjids.get(body.masjid_id);
           if (!masjid) return json(404, { detail: { message: "Pick a masjid from the suggestions." } });
-          Object.assign(s, { main_masjid_choice: "masjid", main_masjid: masjid, main_masjid_short_name: body.short_name ?? null });
+          // Like the backend: a short name belongs to one masjid.
+          const shortName = s.main_masjid?.id === masjid.id ? s.main_masjid_short_name : null;
+          Object.assign(s, { main_masjid_choice: "masjid", main_masjid: masjid, main_masjid_short_name: shortName });
         }
         return json(200, this.saved(updated(20)));
       }
@@ -198,6 +213,15 @@ export class MockApi {
         s.jumuah_saved = true;
         s.jumuah_masjids = body.masjid_ids.map((id: string) => this.savedMasjids.get(id)!);
         return json(200, this.saved());
+      case "PUT /api/settings/optional":
+        this.optionalSaved = true;
+        Object.assign(s, {
+          arrive_early_minutes: body.arrive_early_minutes ?? 0,
+          main_masjid_short_name: s.main_masjid_choice === "masjid" ? body.short_name?.trim() || null : null,
+          prayer_color_id: body.prayer_color_id ?? null,
+          drive_color_id: body.drive_color_id ?? null,
+        });
+        return json(200, this.saved(updated(20)));
       case "POST /api/setup/finish":
         s.setup_complete = true;
         this.me.setup_complete = true;

@@ -2,7 +2,7 @@
 // The session cookie is HttpOnly, so this code never sees it. The browser
 // sends it because the website and the API are the same site.
 
-import type { CalendarUpdate, Masjid, MasjidSuggestion, Me, SaveResponse, Settings, Suggestions } from "./types";
+import type { CalendarUpdate, Masjid, MasjidSuggestion, Me, OptionalAnswers, SaveResponse, Settings, Suggestions } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -63,10 +63,12 @@ export const api = {
   // Saves the picked suggestion as a masjid, so it can be the main or a Jumuah masjid.
   masjidFromSuggestion: (query: string, index: number) =>
     request<Masjid>("POST", "/api/masjids/from-suggestion", { query, index }),
-  saveMainMasjid: (body: { choice: "masjid" | "home"; masjid_id?: string; short_name?: string }) =>
+  saveMainMasjid: (body: { choice: "masjid" | "home"; masjid_id?: string }) =>
     request<SaveResponse>("PUT", "/api/settings/main-masjid", body),
   saveWeekly: (days: Settings["weekly"]) => request<SaveResponse>("PUT", "/api/settings/weekly", { days }),
   saveJumuah: (masjid_ids: string[]) => request<SaveResponse>("PUT", "/api/settings/jumuah", { masjid_ids }),
+  // Skip sends the defaults.
+  saveOptional: (answers: OptionalAnswers) => request<SaveResponse>("PUT", "/api/settings/optional", answers),
   finishSetup: () => request<SaveResponse>("POST", "/api/setup/finish"),
   syncCalendar: () => request<CalendarUpdate>("POST", "/api/calendar/sync"),
   // /auth/ goes straight to the backend, like the sign-in links.

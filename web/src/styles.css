@@ -676,3 +676,134 @@ ul.picked-list li {
   color: var(--muted);
   font-weight: 500;
 }
+
+/* ---- Optional step: how early and colours ---- */
+
+select {
+  width: 100%;
+  font-size: 1rem;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+}
+
+select:focus {
+  outline: 2px solid var(--green);
+  outline-offset: 1px;
+  border-color: var(--green);
+}
+
+.field-label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  margin: 16px 0 6px;
+}
+
+/* Two pickers side by side on wider screens, stacked on a phone. */
+.colour-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0 16px;
+}
+
+@media (min-width: 560px) {
+  .colour-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.colour-picker {
+  position: relative;
+}
+
+button.colour-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--line);
+  font-weight: 500;
+  text-align: left;
+}
+
+button.colour-button:hover {
+  background: #fff;
+  border-color: var(--green);
+}
+
+.colour-button .chevron {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+ul.colour-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgb(23 32 28 / 0.12);
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+ul.colour-list:focus {
+  outline: 2px solid var(--green);
+}
+
+ul.colour-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+ul.colour-list li.active {
+  background: var(--green-soft);
+}
+
+ul.colour-list li[aria-selected="true"] {
+  font-weight: 700;
+}
+
+.swatch {
+  display: inline-block;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+/* No colour picked: an empty ring, since it's whatever the calendar's colour is. */
+.swatch.none {
+  border: 2px solid var(--faint);
+}
+
+.colour-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+ol.plain {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+ol.plain li {
+  padding: 2px 0;
+}

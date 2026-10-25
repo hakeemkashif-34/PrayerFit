@@ -1,5 +1,6 @@
 // Jumuah masjids, found with the same search box as the main masjid.
 // Only on the settings page for now. They can pick more than one, or none.
+// The order matters: when drive times are unknown, the first one is used.
 
 import { useState, type FormEvent } from "react";
 import { api, ApiError } from "../api";
@@ -37,7 +38,10 @@ export function JumuahStep({ settings, onSaved, onCancel }: Props) {
   return (
     <form onSubmit={save} aria-labelledby="jumuah-title">
       <h2 id="jumuah-title">Where can you go for Jumuah?</h2>
-      <p className="hint">Add every masjid that works. A later update picks the Jumuah time that fits your Friday.</p>
+      <p className="hint">
+        Add every masjid that works, your favourite first. Each Friday, your calendar picks the Jumuah with the
+        shortest drive, then the earliest time.
+      </p>
       {picked.length > 0 && (
         <ul className="plain picked-list">
           {picked.map((m) => (

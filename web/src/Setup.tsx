@@ -1,5 +1,6 @@
-// Setup asks 3 questions, one per page: location, main masjid, and the
-// weekly grid (skipped for "I pray at home"). It matches the landing page:
+// Setup asks 4 questions, one per page: location, main masjid, the weekly
+// grid (skipped for "I pray at home"), and an optional step that can be
+// skipped (how early, short name, colours). It matches the landing page:
 // the list of steps on the left and the question on the right. On a phone,
 // the list becomes one line at the top. Straight after the last answer,
 // the calendar is filled.
@@ -9,6 +10,7 @@ import { api, ApiError } from "./api";
 import { OsmFooter } from "./OsmFooter";
 import { LocationStep } from "./steps/LocationStep";
 import { MasjidStep } from "./steps/MasjidStep";
+import { OptionalStep } from "./steps/OptionalStep";
 import { WeeklyStep } from "./steps/WeeklyStep";
 import type { CalendarUpdate, SaveResponse, Settings, Step } from "./types";
 
@@ -21,6 +23,7 @@ const STEPS: { step: Step; name: string }[] = [
   { step: "address", name: "Location" },
   { step: "masjid", name: "Masjid" },
   { step: "weekly", name: "Weekly prayers" },
+  { step: "optional", name: "Optional" },
 ];
 
 export function masjidLabel(settings: Settings): string {
@@ -62,7 +65,8 @@ export function Setup({ initial, onFinished }: Props) {
   function next(saved: Settings) {
     setSettings(saved);
     if (step === "address") setStep("masjid");
-    else if (step === "masjid" && saved.main_masjid_choice !== "home") setStep("weekly");
+    else if (step === "masjid") setStep(saved.main_masjid_choice === "home" ? "optional" : "weekly");
+    else if (step === "weekly") setStep("optional");
     else void finish();
   }
 
@@ -71,6 +75,7 @@ export function Setup({ initial, onFinished }: Props) {
   function back() {
     if (step === "masjid") setStep("address");
     if (step === "weekly") setStep("masjid");
+    if (step === "optional") setStep(atHome ? "masjid" : "weekly");
   }
 
   return (
@@ -97,7 +102,7 @@ export function Setup({ initial, onFinished }: Props) {
 
         <main className="setup-question">
           <div className="question-top">
-            {step === "masjid" || step === "weekly" ? (
+            {step === "masjid" || step === "weekly" || step === "optional" ? (
               <button type="button" className="back" onClick={back}>
                 ← Back
               </button>
@@ -116,8 +121,9 @@ export function Setup({ initial, onFinished }: Props) {
           )}
           {step === "masjid" && <MasjidStep page settings={settings} onSaved={saved} submitLabel="Next" />}
           {step === "weekly" && (
-            <WeeklyStep page initial={settings.weekly} masjidLabel={masjidLabel(settings)} onSaved={saved} submitLabel="Finish" />
+            <WeeklyStep page initial={settings.weekly} masjidLabel={masjidLabel(settings)} onSaved={saved} submitLabel="Next" />
           )}
+          {step === "optional" && <OptionalStep page settings={settings} onSaved={saved} submitLabel="Finish" canSkip />}
           {step === "finish" && (
             <section aria-labelledby="finish-title">
               <h1 id="finish-title">{error ? "Something went wrong" : "Filling your Prayers calendar…"}</h1>

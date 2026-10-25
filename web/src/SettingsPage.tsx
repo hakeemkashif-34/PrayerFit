@@ -3,13 +3,14 @@
 
 import { useState, type ReactNode } from "react";
 import { api, ApiError, SIGN_IN_URL } from "./api";
-import { asrName, masjidName, methodName, PRAYER_NAMES, PRAYERS, WEEKDAYS } from "./labels";
+import { asrName, colourName, earlyText, GOOGLE_COLOURS, masjidName, methodName, PRAYER_NAMES, PRAYERS, WEEKDAYS } from "./labels";
 import { OsmFooter } from "./OsmFooter";
 import { masjidLabel } from "./Setup";
 import { JumuahStep } from "./steps/JumuahStep";
 import { LocationStep } from "./steps/LocationStep";
 import { MasjidStep } from "./steps/MasjidStep";
 import { MethodsStep } from "./steps/MethodsStep";
+import { OptionalStep } from "./steps/OptionalStep";
 import { WeeklyStep } from "./steps/WeeklyStep";
 import type { CalendarUpdate, Editable, SaveResponse, Settings } from "./types";
 
@@ -124,14 +125,26 @@ export function SettingsPage({ email, initial, initialCalendar, onSignedOut }: P
           {settings.jumuah_masjids.length === 0 ? (
             <p>None picked</p>
           ) : (
-            <ul className="plain">
+            <ol className="plain">
               {settings.jumuah_masjids.map((m) => (
                 <li key={m.id}>
                   {masjidName(m)} <span className="hint">· {m.iqamah_status}</span>
                 </li>
               ))}
-            </ul>
+            </ol>
           )}
+        </Card>
+
+        <Card title="Extras" step="optional" editing={editing} onEdit={setEditing}
+          edit={<OptionalStep settings={settings} onSaved={saved}
+            onCancel={settings.missing.includes("optional") ? undefined : cancel} canSkip={settings.missing.includes("optional")} />}>
+          <p>{earlyText(settings.arrive_early_minutes)}</p>
+          <p>
+            Prayer colour: <ColourName id={settings.prayer_color_id} />
+          </p>
+          <p>
+            Drive colour: <ColourName id={settings.drive_color_id} />
+          </p>
         </Card>
 
         <div className="actions">
@@ -142,6 +155,16 @@ export function SettingsPage({ email, initial, initialCalendar, onSignedOut }: P
       </main>
       <OsmFooter />
     </div>
+  );
+}
+
+function ColourName({ id }: { id: string | null }) {
+  const hex = GOOGLE_COLOURS.find((c) => c.id === id)?.hex;
+  return (
+    <span className="colour-name">
+      <span className={hex ? "swatch" : "swatch none"} style={hex ? { background: hex } : undefined} aria-hidden="true" />
+      {colourName(id)}
+    </span>
   );
 }
 
