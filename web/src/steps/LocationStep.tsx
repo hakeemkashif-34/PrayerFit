@@ -98,7 +98,6 @@ export function LocationStep({ current, page = false, onSaved, onKeep, keepLabel
   return (
     <section aria-labelledby="location-title">
       <Heading id="location-title">What's your location?</Heading>
-      <p className="hint">Prayer times depend on where you are. Your address is stored encrypted.</p>
       {current && (
         <div className="current">
           <p>
@@ -111,7 +110,9 @@ export function LocationStep({ current, page = false, onSaved, onKeep, keepLabel
           )}
         </div>
       )}
-      <label htmlFor="location">{current ? "Or search for a new address" : "Start typing your address"}</label>
+      <label htmlFor="location" className="visually-hidden">
+        Address
+      </label>
       <div className="combobox">
         <input
           id="location"
@@ -125,7 +126,7 @@ export function LocationStep({ current, page = false, onSaved, onKeep, keepLabel
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="200 Kanata Ave, Ottawa"
+          placeholder={current ? "Search for a new address" : "Start typing your address"}
           maxLength={200}
           disabled={saving}
         />
@@ -156,12 +157,6 @@ export function LocationStep({ current, page = false, onSaved, onKeep, keepLabel
           {error}
         </p>
       )}
-      <p className="credit">
-        Search by Photon. Map data from{" "}
-        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
-          © OpenStreetMap contributors
-        </a>
-      </p>
     </section>
   );
 }
