@@ -71,9 +71,9 @@ def save_day(db: Session, user_id: uuid.UUID, day: DailyPrayerTimes) -> list[Pra
         }
         db.execute(
             insert(PrayerEvent)
-            .values(id=uuid.uuid4(), user_id=user_id, local_date=day.date, prayer=name, **values)
+            .values(id=uuid.uuid4(), user_id=user_id, local_date=day.date, prayer=name, kind="prayer", **values)
             .on_conflict_do_update(
-                index_elements=["user_id", "local_date", "prayer"], set_=values
+                index_elements=["user_id", "local_date", "prayer", "kind"], set_=values
             )
         )
     db.commit()

@@ -149,10 +149,11 @@ def save_window(
                         user_id=user_id,
                         local_date=local_date,
                         prayer=planned.prayer,
+                        kind="prayer",
                         sync_status="pending",
                         **planned.values(),
                     )
-                    .on_conflict_do_nothing(index_elements=["user_id", "local_date", "prayer"])
+                    .on_conflict_do_nothing(index_elements=["user_id", "local_date", "prayer", "kind"])
                 )
                 continue
             if row.starts_at <= now:
