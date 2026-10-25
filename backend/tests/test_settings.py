@@ -355,13 +355,14 @@ def test_finish_needs_every_answer(signed_in, osm):
 
 
 def test_setup_is_4_questions(signed_in, osm, fake_google):
-    # No methods step and no Jumuah step: defaults are used.
+    # No methods step and no Jumuah step: the methods use the defaults, and
+    # the main masjid becomes the Jumuah masjid.
     response = setup_through_api(signed_in, osm)
 
     settings = response.json()["settings"]
     assert settings["setup_complete"] is True
     assert (settings["method"], settings["asr_method"]) == ("isna", "standard")
-    assert settings["jumuah_masjids"] == []
+    assert [m["name"] for m in settings["jumuah_masjids"]] == ["Kanata Muslim Association"]
     assert osm.requests  # the location came from Photon
     events = fake_google.live_events(fake_google.calendars_of("user-a")[0].id)
     assert events[0]["description"].startswith("Calculated (ISNA, standard Asr)")
@@ -445,7 +446,12 @@ def test_settings_belong_to_one_user(fake_google, osm, set_today, db):
         assert {r.user_id for r in session.scalars(select(WeeklyMasjidPrayers))} == {
             session.scalars(select(UserSettings.user_id).where(UserSettings.setup_completed_at.isnot(None))).one()
         }
-        assert session.scalars(select(UserJumuahMasjid)).all() == []  # not part of setup any more
+        # Only Alice's main masjid, added as her Jumuah masjid. Nothing for Bob.
+        alice_id = session.scalars(select(UserSettings.user_id).where(UserSettings.setup_completed_at.isnot(None))).one()
+        jumuah = session.scalars(select(UserJumuahMasjid)).all()
+        assert [(j.user_id, j.position) for j in jumuah] == [(alice_id, 0)]
+        alice_main = session.scalars(select(UserSettings.main_masjid_id).where(UserSettings.user_id == alice_id)).one()
+        assert jumuah[0].masjid_id == alice_main
 
 
 def test_reading_settings_saves_nothing(signed_in, db):

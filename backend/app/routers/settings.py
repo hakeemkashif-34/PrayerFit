@@ -34,6 +34,7 @@ from app.update_jobs import queue_update, run_update
 from app.user_settings import (
     PRAYERS,
     find_settings,
+    follow_main_masjid,
     asr_method_of,
     get_settings,
     jumuah_masjids,
@@ -466,7 +467,9 @@ class MainMasjidRequest(BaseModel):
 @router.put("/settings/main-masjid", response_model=SaveResponse)
 def save_main_masjid(request: MainMasjidRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> SaveResponse:
     row = get_settings(db, user.id)
+    old_main_id = row.main_masjid_id if row.main_masjid_choice == "masjid" else None
     if request.choice == "home":
+        follow_main_masjid(db, row, old_main_id, None)
         row.main_masjid_choice = "home"
         row.main_masjid_id = None
         row.main_masjid_short_name = None
@@ -478,6 +481,7 @@ def save_main_masjid(request: MainMasjidRequest, user: UserDep, db: DbDep, http:
     if row.main_masjid_id != masjid.id:
         # A short name belongs to one masjid. Picking the same one again keeps it.
         row.main_masjid_short_name = None
+    follow_main_masjid(db, row, old_main_id, masjid.id)
     row.main_masjid_choice = "masjid"
     row.main_masjid_id = masjid.id
     return _saved(db, http, user, now)

@@ -7,7 +7,7 @@ and only decrypted here, when the app needs them.
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.auth.crypto import decrypt, encrypt
@@ -95,6 +95,28 @@ def jumuah_masjids(db: Session, user_id: uuid.UUID) -> list[Masjid]:
             .order_by(UserJumuahMasjid.position, Masjid.name)
         )
     )
+
+
+def follow_main_masjid(
+    db: Session, row: UserSettings, old_main_id: uuid.UUID | None, new_main_id: uuid.UUID | None
+) -> None:
+    """Keep the main masjid as the first Jumuah masjid, so users don't pick it twice.
+
+    1. A first main masjid, with no Jumuah masjids yet: it becomes the Jumuah masjid.
+    2. The Jumuah list was only the old main masjid: the new one takes its place.
+       Going to "I pray at home" empties it, so skipping the masjid means no Jumuah.
+    3. Anything else means the user chose their Jumuah list themselves, so it's left alone.
+    Doesn't commit.
+    """
+    if old_main_id == new_main_id:
+        return
+    current = [m.id for m in jumuah_masjids(db, row.user_id)]
+    if current and current != [old_main_id]:
+        return
+    db.execute(delete(UserJumuahMasjid).where(UserJumuahMasjid.user_id == row.user_id))
+    if new_main_id is not None:
+        db.add(UserJumuahMasjid(user_id=row.user_id, masjid_id=new_main_id, position=0))
+        row.jumuah_saved = True
 
 
 def usable_masjid(db: Session, user_id: uuid.UUID, masjid_id: uuid.UUID) -> Masjid | None:
