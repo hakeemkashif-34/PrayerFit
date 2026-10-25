@@ -20,7 +20,10 @@ export type Prayer = "fajr" | "dhuhr" | "asr" | "maghrib" | "isha";
 
 export type WeekdayPrayers = { weekday: number } & Record<Prayer, boolean>;
 
-export type Step = "address" | "methods" | "masjid" | "weekly" | "jumuah";
+// The 3 setup questions, in order.
+export type Step = "address" | "masjid" | "weekly";
+// Everything the settings page can edit. Methods and Jumuah aren't in setup for now.
+export type Editable = Step | "methods" | "jumuah";
 
 export type Settings = {
   setup_complete: boolean;
@@ -28,8 +31,9 @@ export type Settings = {
   address: string | null;
   place_name: string | null;
   time_zone: string | null;
-  method: string | null;
-  asr_method: string | null;
+  // The defaults (isna, standard) until the user picks others.
+  method: string;
+  asr_method: string;
   main_masjid_choice: "masjid" | "home" | null;
   main_masjid: Masjid | null;
   main_masjid_short_name: string | null;
@@ -50,11 +54,13 @@ export type SaveResponse = {
   calendar: CalendarUpdate | null;
 };
 
-export type FoundAddress = {
-  place_name: string;
-  latitude: number;
-  longitude: number;
-  time_zone: string;
+export type LocationSuggestion = {
+  index: number;
+  label: string;
+};
+
+export type Suggestions = {
+  suggestions: LocationSuggestion[];
   credit: string;
   credit_url: string;
 };

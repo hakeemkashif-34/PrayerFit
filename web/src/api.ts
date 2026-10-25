@@ -2,7 +2,7 @@
 // The session cookie is HttpOnly, so this code never sees it. The browser
 // sends it because the website and the API are the same site.
 
-import type { CalendarUpdate, FoundAddress, Me, Nearby, SaveResponse, Settings } from "./types";
+import type { CalendarUpdate, Me, Nearby, SaveResponse, Settings, Suggestions } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -29,9 +29,10 @@ function messageFrom(status: number, detail: unknown): string {
   return `Something went wrong (error ${status}). Try again.`;
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     method,
+    signal,
     credentials: "same-origin",
     headers: body === undefined ? {} : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -50,8 +51,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const api = {
   me: () => request<Me>("GET", "/api/me"),
   settings: () => request<Settings>("GET", "/api/settings"),
-  searchAddress: (address: string) => request<FoundAddress>("POST", "/api/setup/address/search", { address }),
-  saveAddress: (address: string) => request<SaveResponse>("PUT", "/api/settings/address", { address }),
+  // signal lets the website cancel a search when the user types again.
+  suggestLocations: (query: string, signal?: AbortSignal) =>
+    request<Suggestions>("POST", "/api/setup/location/suggest", { query }, signal),
+  saveLocation: (query: string, index: number) =>
+    request<SaveResponse>("PUT", "/api/settings/location", { query, index }),
   saveMethods: (method: string, asr_method: string) =>
     request<SaveResponse>("PUT", "/api/settings/methods", { method, asr_method }),
   nearbyMasjids: () => request<Nearby>("GET", "/api/masjids/nearby"),
