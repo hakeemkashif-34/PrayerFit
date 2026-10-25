@@ -13,6 +13,7 @@ import base64
 import hashlib
 import json
 import secrets
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import urlencode
@@ -21,6 +22,7 @@ import httpx2
 
 from app.config import get_google_settings
 from app.google_errors import GoogleError, GoogleTemporaryError, ReauthRequired
+from app.http_client import log_failure, transport_reason
 
 AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -93,10 +95,16 @@ def authorization_url(state: str, code_challenge: str) -> str:
 
 
 def _post_to_token_endpoint(http: httpx2.Client, data: dict[str, str]) -> httpx2.Response:
+    started = time.monotonic()
     try:
         response = http.post(TOKEN_URL, data=data)
     except httpx2.TransportError as error:
-        raise GoogleTemporaryError(f"Couldn't reach Google: {error}") from error
+        reason = transport_reason(error)
+        log_failure("Google sign-in", reason, started)
+        raise GoogleTemporaryError(f"Couldn't reach Google: {reason}") from error
+    if response.status_code != 200:
+        # Only the status. The body can't hold tokens on an error, but there's no need to log it.
+        log_failure("Google sign-in", f"status {response.status_code}", started)
     if response.status_code == 429 or response.status_code >= 500:
         raise GoogleTemporaryError(f"Google token endpoint answered {response.status_code}")
     return response

@@ -13,13 +13,15 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import get_app_settings
 from app.db import get_engine
+from app.geo.errors import OsmServiceError
 from app.google_errors import CalendarAccessMissing, ReauthRequired
-from app.routers import auth, prayer_times, prayers
+from app.routers import auth, prayer_times, prayers, settings
 
 app = FastAPI(title="Muslim Calendar API")
 app.include_router(prayer_times.router)
 app.include_router(auth.router)
 app.include_router(prayers.router)
+app.include_router(settings.router)
 
 
 @app.exception_handler(ReauthRequired)
@@ -30,6 +32,8 @@ def ask_to_sign_in_again(request: Request, error: ReauthRequired) -> JSONRespons
         content={
             "detail": {
                 "message": "Google sign-in expired. Sign in again.",
+                # The website shows "Sign in again" instead of an error for this one.
+                "reason": "google_sign_in_expired",
                 "login_url": "/auth/google/login",
             }
         },
@@ -43,10 +47,17 @@ def ask_for_calendar_access(request: Request, error: CalendarAccessMissing) -> J
         content={
             "detail": {
                 "message": "Sign in again and allow calendar access.",
+                "reason": "calendar_access_missing",
                 "login_url": "/auth/google/login",
             }
         },
     )
+
+
+@app.exception_handler(OsmServiceError)
+def osm_unavailable(request: Request, error: OsmServiceError) -> JSONResponse:
+    # 503: OpenStreetMap is busy or down, so try again later.
+    return JSONResponse(status_code=503, content={"detail": {"message": str(error)}})
 
 
 # Methods that change something. GET requests must never change data.

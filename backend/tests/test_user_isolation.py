@@ -3,8 +3,7 @@
 from datetime import date
 
 from tests.conftest import new_client, sign_in
-
-OTTAWA = {"latitude": 45.4215, "longitude": -75.6972, "timezone": "America/Toronto"}
+from tests.setup_helpers import save_setup
 
 
 def test_users_only_see_their_own_events(fake_google, set_today, db):
@@ -12,14 +11,16 @@ def test_users_only_see_their_own_events(fake_google, set_today, db):
     with new_client() as alice, new_client() as bob:
         sign_in(alice, fake_google, sub="alice", email="alice@example.com")
         sign_in(bob, fake_google, sub="bob", email="bob@example.com")
+        save_setup(db, sub="alice")
+        save_setup(db, sub="bob")
 
-        alice_ids = {e["app_event_id"] for e in alice.post("/prayers/today", json=OTTAWA).json()["events"]}
+        alice_ids = {e["app_event_id"] for e in alice.post("/prayers/today").json()["events"]}
 
         # Bob hasn't added anything, so he sees nothing, not Alice's events.
         assert bob.get("/prayers/today/events").json() == []
         assert bob.get("/me").json()["email"] == "bob@example.com"
 
-        bob_ids = {e["app_event_id"] for e in bob.post("/prayers/today", json=OTTAWA).json()["events"]}
+        bob_ids = {e["app_event_id"] for e in bob.post("/prayers/today").json()["events"]}
         assert alice_ids.isdisjoint(bob_ids)
         assert {e["app_event_id"] for e in alice.get("/prayers/today/events").json()} == alice_ids
         assert {e["app_event_id"] for e in bob.get("/prayers/today/events").json()} == bob_ids
@@ -30,9 +31,11 @@ def test_each_user_gets_their_own_calendar_with_their_own_token(fake_google, set
     with new_client() as alice, new_client() as bob:
         sign_in(alice, fake_google, sub="alice", email="alice@example.com")
         sign_in(bob, fake_google, sub="bob", email="bob@example.com")
-        alice.post("/prayers/today", json=OTTAWA)
+        save_setup(db, sub="alice")
+        save_setup(db, sub="bob")
+        alice.post("/prayers/today")
         requests_before_bob = len(fake_google.requests)
-        bob.post("/prayers/today", json=OTTAWA)
+        bob.post("/prayers/today")
 
     alice_calendar = fake_google.calendars_of("alice")[0]
     bob_calendar = fake_google.calendars_of("bob")[0]

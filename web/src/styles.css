@@ -1,0 +1,678 @@
+/* Mobile first: one column, large tap targets. Wider screens get two columns
+   on the landing and setup pages. Colours stay simple: one green, greys. */
+
+:root {
+  --green: #1f5f4a;
+  --green-dark: #164536;
+  --green-soft: #e7f2ed;
+  --text: #17201c;
+  --muted: #5c6862;
+  --faint: #8a948f;
+  --line: #dde3e0;
+  --background: #f6f8f7;
+  --card: #ffffff;
+  --error: #a32020;
+  --warning-bg: #fff4dc;
+
+  /* Plus Jakarta Sans, served from our own site (see main.tsx). */
+  --font: "Plus Jakarta Sans Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--background);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+/* ---- Type ---- */
+
+h1,
+h2,
+h3 {
+  color: var(--text);
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1.2;
+  margin: 0 0 12px;
+}
+
+h2 {
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0 0 8px;
+}
+
+p {
+  margin: 0 0 12px;
+}
+
+strong {
+  font-weight: 650;
+}
+
+.hint,
+.muted {
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.lead {
+  font-size: 1.1875rem;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 34ch;
+}
+
+@media (min-width: 760px) {
+  h1 {
+    font-size: 2rem;
+  }
+}
+
+/* ---- Page frames ---- */
+
+.page {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 32px 16px 48px;
+}
+
+.page.narrow {
+  max-width: 440px;
+  padding-top: 64px;
+}
+
+.top {
+  margin-bottom: 24px;
+}
+
+.top h1 {
+  margin-bottom: 4px;
+}
+
+/* Pages with the OpenStreetMap footer: the footer sits at the bottom. */
+.page-with-footer {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-with-footer > :first-child {
+  flex: 1;
+}
+
+.site-footer {
+  padding: 24px 16px 32px;
+  text-align: center;
+  font-size: 0.8125rem;
+}
+
+.site-footer a {
+  color: var(--faint);
+  text-decoration: none;
+}
+
+.site-footer a:hover {
+  text-decoration: underline;
+}
+
+/* ---- Landing page: welcome on the left, sign-in card on the right ---- */
+
+.landing {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 48px 16px;
+  display: grid;
+  gap: 32px;
+  align-items: center;
+  /* Keeps the two parts together in the middle instead of spread apart. */
+  align-content: center;
+  min-height: 100vh;
+}
+
+.welcome h1 {
+  font-size: 2.5rem;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  margin-bottom: 16px;
+}
+
+.card.sign-in {
+  padding: 28px;
+}
+
+.card.sign-in h2 {
+  font-size: 1.25rem;
+}
+
+@media (min-width: 760px) {
+  .landing {
+    grid-template-columns: 1.2fr 1fr;
+    gap: 64px;
+  }
+
+  .welcome h1 {
+    font-size: 3.25rem;
+  }
+}
+
+/* ---- Setup: the steps on the left, the question on the right ---- */
+
+.setup {
+  max-width: 1000px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 24px 16px 32px;
+}
+
+/* On a phone the step list is hidden, and "Setup · Step X of 3" shows instead. */
+.setup-steps {
+  display: none;
+}
+
+.setup-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin-bottom: 20px;
+}
+
+.setup-steps ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.setup-steps li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.setup-steps .dot {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 2px solid var(--line);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  flex: none;
+}
+
+.setup-steps li.current {
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.setup-steps li.current .dot {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+
+.setup-steps li.done .dot {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.setup-steps li.skipped {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.question-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 44px;
+  margin-bottom: 16px;
+}
+
+.phone-progress {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+@media (min-width: 760px) {
+  .setup {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 64px;
+    padding-top: 64px;
+  }
+
+  .setup-steps {
+    display: block;
+  }
+
+  .phone-progress {
+    display: none;
+  }
+
+  .setup-question {
+    max-width: 620px;
+  }
+}
+
+button.back {
+  background: none;
+  color: var(--green);
+  padding: 8px 0;
+  min-height: 0;
+  font-weight: 600;
+}
+
+button.back:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+/* ---- Cards ---- */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgb(23 32 28 / 0.04);
+}
+
+.card.setting {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.card.setting h2 {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.card.setting p {
+  margin-bottom: 4px;
+}
+
+/* ---- Forms ---- */
+
+label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  margin: 16px 0 6px;
+}
+
+input[type="text"],
+input:not([type]) {
+  width: 100%;
+  font-size: 1rem;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+}
+
+input:not([type]):focus,
+input[type="text"]:focus {
+  outline: 2px solid var(--green);
+  outline-offset: 1px;
+  border-color: var(--green);
+}
+
+input::placeholder {
+  color: var(--faint);
+}
+
+fieldset {
+  border: none;
+  padding: 0;
+  margin: 16px 0;
+}
+
+legend {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+label.choice {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  font-weight: normal;
+  font-size: 1rem;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  margin: 10px 0;
+  cursor: pointer;
+}
+
+label.choice:has(input:checked) {
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+
+label.choice input {
+  margin-top: 4px;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  accent-color: var(--green);
+}
+
+label.choice span {
+  display: flex;
+  flex-direction: column;
+}
+
+label.choice strong {
+  font-weight: 650;
+}
+
+label.choice small {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+/* The closest masjid stands out. */
+label.choice.closest {
+  border-color: var(--green);
+  border-width: 2px;
+}
+
+.badge {
+  align-self: flex-start;
+  background: var(--green);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-bottom: 6px;
+}
+
+.indent {
+  padding: 0 0 8px 34px;
+}
+
+/* ---- Buttons ---- */
+
+button,
+.button {
+  display: inline-block;
+  font-weight: 650;
+  font-size: 1rem;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 22px;
+  min-height: 48px;
+  background: var(--green);
+  color: #fff;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+button:hover,
+.button:hover {
+  background: var(--green-dark);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.secondary {
+  background: #fff;
+  color: var(--green);
+  border: 1px solid var(--green);
+}
+
+button.secondary:hover {
+  background: var(--green-soft);
+}
+
+button.small {
+  min-height: 40px;
+  padding: 8px 16px;
+  font-size: 0.9375rem;
+}
+
+button.link {
+  background: none;
+  border: none;
+  color: var(--green);
+  padding: 0;
+  min-height: 0;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.button.google {
+  width: 100%;
+  text-align: center;
+  line-height: 24px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+/* ---- Messages ---- */
+
+.error {
+  color: var(--error);
+  margin-top: 12px;
+}
+
+.notice {
+  background: var(--green-soft);
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+
+.notice.warning {
+  background: var(--warning-bg);
+}
+
+fieldset .notice,
+fieldset .searching {
+  margin: 10px 0;
+}
+
+/* ---- Location: the saved place and the address dropdown ---- */
+
+.current {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  background: var(--green-soft);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin: 16px 0;
+}
+
+.current p {
+  margin: 0;
+}
+
+.combobox {
+  position: relative;
+  margin-top: 20px;
+}
+
+ul.suggestions {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgb(23 32 28 / 0.12);
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 10;
+}
+
+ul.suggestions li {
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+ul.suggestions li.active,
+ul.suggestions li[role="option"]:hover {
+  background: var(--green-soft);
+}
+
+ul.suggestions li.empty {
+  color: var(--muted);
+  cursor: default;
+}
+
+/* ---- Weekly grid: prayers are rows, days are columns ---- */
+
+table.grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+  margin-top: 16px;
+}
+
+table.grid th,
+table.grid td {
+  text-align: center;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+table.grid thead th {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+table.grid th[scope="row"] {
+  text-align: left;
+  font-weight: 650;
+}
+
+table.grid input {
+  width: 24px;
+  height: 24px;
+  accent-color: var(--green);
+}
+
+table.grid abbr {
+  text-decoration: none;
+}
+
+/* ---- Lists and helpers ---- */
+
+ul.plain {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+ul.plain li {
+  padding: 2px 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- Masjid search ---- */
+
+ul.suggestions .option {
+  display: flex;
+  flex-direction: column;
+}
+
+ul.suggestions .option small {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.small-line {
+  font-size: 0.8125rem;
+  margin: 8px 0 0;
+}
+
+.picked-masjid {
+  justify-content: space-between;
+}
+
+ul.picked-list {
+  margin: 16px 0 4px;
+}
+
+ul.picked-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+/* "Skip" is a quiet link at the end of the buttons. */
+.actions .skip {
+  align-self: center;
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 500;
+}

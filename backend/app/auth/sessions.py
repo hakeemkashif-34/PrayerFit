@@ -74,5 +74,5 @@ def current_user(request: Request, db: Annotated[DbSession, Depends(get_db)]) ->
             return user
     raise HTTPException(
         status_code=401,
-        detail={"message": "Not signed in.", "login_url": "/auth/google/login"},
+        detail={"message": "Not signed in.", "reason": "not_signed_in", "login_url": "/auth/google/login"},
     )

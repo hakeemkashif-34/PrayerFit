@@ -38,6 +38,27 @@ def _required(name: str) -> str:
     return value
 
 
+@dataclass(frozen=True)
+class OsmSettings:
+    """Photon, a free search built on OpenStreetMap data. It asks apps to say who they are."""
+
+    contact_email: str
+    photon_url: str
+
+    @property
+    def user_agent(self) -> str:
+        # A stock library User-Agent doesn't say who to contact.
+        return f"MuslimCalendar/0.4 (+mailto:{self.contact_email})"
+
+
+@lru_cache
+def get_osm_settings() -> OsmSettings:
+    return OsmSettings(
+        contact_email=_required("OSM_CONTACT_EMAIL"),
+        photon_url=_optional("PHOTON_URL", "https://photon.komoot.io").rstrip("/"),
+    )
+
+
 @lru_cache
 def get_google_settings() -> GoogleSettings:
     return GoogleSettings(

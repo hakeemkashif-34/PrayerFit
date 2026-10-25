@@ -6,11 +6,14 @@ See [Muslim_Calendar_App.md](Muslim_Calendar_App.md) for the full product descri
 
 ## Stack
 
-1. Backend: Python and FastAPI
-2. Database: Postgres, with SQLAlchemy and Alembic for migrations
-3. Sign-in: Google, done on the server with PKCE
-4. Runs with Docker Compose
-5. Tests: pytest, run by GitHub Actions on every push and pull request
+1. Website: React and TypeScript, built with Vite, served by nginx
+2. Backend: Python and FastAPI
+3. Database: Postgres, with SQLAlchemy and Alembic for migrations
+4. Nightly job: its own worker service, same code as the backend
+5. Sign-in: Google, done on the server with PKCE
+6. Addresses and masjids: the free Photon search, built on OpenStreetMap data
+7. Runs with Docker Compose
+8. Tests: pytest for the backend, Playwright for the website, both run by GitHub Actions on every push and pull request
 
 ## Run it with Docker
 
@@ -19,15 +22,28 @@ cp .env.example .env        # then edit the values
 docker compose up --build
 ```
 
-Docker runs the database migrations (`alembic upgrade head`) before starting the server.
+Open http://localhost:8000. That's the website.
 
-Open http://localhost:8000/health. You should see `{"status":"ok","database":"ok"}`.
+Docker Compose starts 4 services:
+
+| Service | What it does |
+|---|---|
+| `web` | nginx. Serves the website and passes `/api/...` and `/auth/...` to the backend. The only service the browser talks to. |
+| `backend` | FastAPI. Runs the database migrations (`alembic upgrade head`) before it starts. |
+| `worker` | The nightly job. Checks every minute whose 3:00 am has come. |
+| `db` | Postgres. |
+
+The website and the API share one address (`http://localhost:8000`), so the browser treats them as the same site. That's what lets the session cookie and the Origin check work.
+
+Open http://localhost:8000/api/health. You should see `{"status":"ok","database":"ok"}`.
 
 To see the error case, stop the database with `docker compose stop db` and refresh. You should get a 503 error and `{"status":"error","database":"unreachable"}`. Start it again with `docker compose start db`.
 
+http://localhost:8000/api/docs lists every endpoint and lets you try them in the browser.
+
 ## Prayer times
 
-Open http://localhost:8000/prayer-times?latitude=45.4215&longitude=-75.6972&date=2026-10-24 to get Ottawa's prayer times for that day.
+Open http://localhost:8000/api/prayer-times?latitude=45.4215&longitude=-75.6972&date=2026-10-24 to get Ottawa's prayer times for that day.
 
 | Parameter | Required | Default | Example |
 |---|---|---|---|
@@ -38,11 +54,11 @@ Open http://localhost:8000/prayer-times?latitude=45.4215&longitude=-75.6972&date
 | `asr_method` | no | `standard` | `standard`, `hanafi` |
 | `timezone` | no | `DEFAULT_TIMEZONE` from `.env`, or `America/Toronto` | `America/Edmonton` |
 
-Every time comes back with where it came from (`"source": "calculated"`, the method, and the Asr method). http://localhost:8000/docs lists every endpoint and lets you try them in the browser.
+Every time comes back with where it came from (`"source": "calculated"`, the method, and the Asr method).
 
 ## Google Calendar
 
-I sign in with Google and the app adds today's 5 prayers to a calendar called "Prayers" that it creates in my Google account. It only asks for `openid`, `email`, and `calendar.app.created`, which lets it manage calendars it made itself and nothing else. No Gmail, and it can't see my other calendars.
+I sign in with Google and the app keeps the next 14 days of prayers in a calendar called "Prayers" that it creates in my Google account. It only asks for `openid`, `email`, and `calendar.app.created`, which lets it manage calendars it made itself and nothing else. No Gmail, and it can't see my other calendars.
 
 ### 1. Set up Google Cloud (once)
 
@@ -62,7 +78,9 @@ I sign in with Google and the app adds today's 5 prayers to a calendar called "P
    b) Authorized redirect URIs: `http://localhost:8000/auth/google/callback`
    c) Click **Create** and copy the client ID and client secret. Google only shows the secret once, so save it (or download the JSON).
 
-In Testing mode, Google expires refresh tokens after 7 days. When that happens the app answers 401 with `"Google sign-in expired. Sign in again."` and a link to sign in. That's expected, not a bug.
+The redirect URI is the same as in milestone 3. nginx passes `/auth/...` straight to the backend, so nothing in Google Cloud has to change.
+
+In Testing mode, Google expires refresh tokens after 7 days. When that happens the website shows a **Sign in again** button instead of an error. That's expected, not a bug.
 
 ### 2. Fill in `.env`
 
@@ -74,7 +92,10 @@ TOKEN_ENCRYPTION_KEY=<generated, see below>
 APP_ORIGIN=http://localhost:8000
 COOKIE_SECURE=true
 SESSION_DAYS=30
+OSM_CONTACT_EMAIL=<your email>
 ```
+
+`OSM_CONTACT_EMAIL` goes in the User-Agent of every request to Photon. It asks apps to give a way to contact the owner.
 
 Make the encryption key with:
 
@@ -83,31 +104,78 @@ docker compose build backend
 docker compose run --rm --no-deps backend python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-### 3. Sign in and add today's prayers
+The same key encrypts Google tokens and home addresses. If it's lost or changed, everyone has to sign in and enter their address again.
+
+### 3. Go through setup
 
 1. `docker compose up --build`
-2. In the browser, open http://localhost:8000/auth/google/login (type it in the address bar; the "Try it out" button in `/docs` can't follow a redirect to Google).
+2. Open http://localhost:8000 and click **Sign in with Google**.
 3. Pick your test account. Google warns that the app isn't verified. Click **Continue**. Leave the calendar box ticked and allow.
-4. You land on http://localhost:8000/docs, signed in.
-5. Open `GET /me` > **Try it out** > **Execute**. You should see your email and `"calendar_access": true`.
-6. Open `POST /prayers/today` > **Try it out**. The example body is Ottawa. Change the latitude, longitude, and time zone if you want, then **Execute**.
-7. Open Google Calendar. A new calendar called **Prayers** has today's Fajr, Dhuhr, Asr, Maghrib, and Isha, each 15 minutes long. Each description says where the time came from, like `Calculated (ISNA, standard Asr)`.
-8. Run `POST /prayers/today` again. Still 5 events, not 10.
+4. You land back on the website, on step 1 of 3. The 3 steps are listed on the left (on a phone, "Setup · Step 1 of 3" is at the top). Each question has its own page and a **Back** button.
+5. **What's your location?** Start typing your address. Suggestions show up in a dropdown once you stop typing. Pick yours. The time zone comes from the location. Postal codes aren't shown or saved, since OpenStreetMap's are often wrong in Canada.
+6. **Which masjid do you usually go to?** Start typing its name. Suggestions show the masjid's name and its distance from home, closest first. If yours doesn't come up, type its address instead and pick that. You can give it a short name like `KMA` for the calendar. Press **Skip** if you pray at home: every prayer is at home and the next page is skipped.
+7. **Which prayers do you usually pray at the masjid?** Tick them in the grid: prayers down the side, Monday to Sunday across the top. Anything left unticked is at home, so ticking nothing means every prayer is at home. This page is skipped if you pressed **Skip**.
+8. Press **Finish**. The calendar fills straight away, in about 10 to 20 seconds.
+9. Setup uses ISNA and standard Asr, and no Jumuah masjids. You can change both on the settings page.
+10. Open Google Calendar. The **Prayers** calendar has today and the next 13 days: 70 events, like `Fajr at home` and `Dhuhr at KMA`. Each description says where the time came from. Masjid events also say the iqamah times aren't added yet, so they show the calculated time.
+
+### 4. Change a setting
+
+On the settings page, press **Edit** next to any setting, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
+
+If you move to another time zone, the Prayers calendar's time zone changes too.
+
+## Nightly job
+
+The `worker` service updates every user's calendar at 3:00 am in their own time zone. It adds the newest day, fixes any times that changed, and never deletes past prayers. Not 2:00 am, because 2:00 am doesn't exist on the spring daylight saving day.
+
+Each job is saved with an ID like `nightly:<user id>:2026-10-24` before it runs, so a retry or a second worker can't run it twice. If the worker was off at 3:00 am, it catches up when it starts. If one user's Google sign-in expired, their job is marked `needs_sign_in` and everyone else still gets updated.
+
+To run it now, for testing:
+
+```bash
+docker compose exec worker python -m app.worker run-now --email you@gmail.com
+```
+
+It prints something like `nightly:...:2026-10-24: done, 0 events sent to Google`. Run it again and it says `Already ran today. Add --force to run it again.` With `--force` it runs again and sends 0 events when nothing changed. Leave out `--email` to run it for every user.
+
+See the jobs with:
+
+```bash
+docker compose exec db psql -U muslim_calendar -c "SELECT id, status, attempts, events_sent FROM nightly_jobs ORDER BY created_at"
+```
+
+## Endpoints
+
+Through nginx, every endpoint below is under `/api` (like `/api/me`), except the `/auth/...` ones.
 
 | Endpoint | What it does |
 |---|---|
 | `GET /auth/google/login` | Starts sign-in (open it in the browser) |
-| `GET /auth/google/callback` | Google sends you back here |
+| `GET /auth/google/callback` | Google sends you back here, then to the website |
 | `POST /auth/logout` | Signs out |
-| `GET /me` | Who's signed in, and whether Google needs a new sign-in |
-| `POST /prayers/today` | Adds today's 5 prayers to the Prayers calendar. Safe to run again |
+| `GET /me` | Who's signed in, whether Google needs a new sign-in, and whether setup is done |
+| `GET /settings` | Your saved setup answers |
+| `POST /setup/location/suggest` | Up to 5 address suggestions from Photon for what's typed so far. Saves nothing |
+| `PUT /settings/location` | Saves the suggestion the user picked (encrypted) and its time zone |
+| `PUT /settings/methods` | Saves the calculation method and Asr method (settings page only) |
+| `POST /setup/masjid/suggest` | Up to 5 masjids from Photon for what's typed so far, closest to home first, with distances. Adds addresses near home when no masjid matches. Saves nothing |
+| `POST /masjids/from-suggestion` | Saves the picked suggestion as a masjid, for the main masjid or Jumuah |
+| `PUT /settings/main-masjid` | Saves the main masjid and its short name, or "home" (Skip) |
+| `PUT /settings/weekly` | Saves the weekly grid (7 days) |
+| `PUT /settings/jumuah` | Saves the Jumuah masjids (settings page only) |
+| `POST /setup/finish` | Finishes setup and fills the next 14 days. The website calls it after the last question |
+| `POST /calendar/sync` | Sends anything still waiting. Safe to run again |
+| `POST /prayers/today` | Updates today's 5 prayers from your saved settings. Safe to run again |
 | `GET /prayers/today/events` | Your saved events for today |
 
-POST requests need an `Origin` header matching `APP_ORIGIN`. Browsers send it on their own. With curl, add `-H "Origin: http://localhost:8000"`.
+POST and PUT requests need an `Origin` header matching `APP_ORIGIN`. Browsers send it on their own. With curl, add `-H "Origin: http://localhost:8000"`.
 
 ## Run the tests
 
-The tests need a real Postgres. The easiest way is to start only the database from Docker Compose.
+### Backend
+
+The backend tests need a real Postgres. The easiest way is to start only the database from Docker Compose.
 
 ```bash
 cp .env.example .env            # skip if you already have one
@@ -123,10 +191,21 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `311 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `432 passed`.
 
-The tests never call the real Google. They use a fake Google (`tests/fake_google.py`) and fake keys, so no Google settings are needed to run them.
+The tests never call the real Google or Photon. They use fakes (`tests/fake_google.py` and `tests/fake_photon.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`249 passed, 62 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`266 passed, 166 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
+
+### Website
+
+```bash
+cd web
+npm ci
+npx playwright install chromium   # once
+npx playwright test
+```
+
+You should see `60 passed`: 30 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.

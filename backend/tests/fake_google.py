@@ -224,6 +224,16 @@ class FakeGoogle:
                 200, json={"id": calendar.id, "summary": calendar.summary, "timeZone": calendar.time_zone}
             )
 
+        # PATCH /calendars/{id}
+        if request.method == "PATCH" and len(parts) == 2:
+            if "timeZone" in body:
+                calendar.time_zone = body["timeZone"]
+            if "summary" in body:
+                calendar.summary = body["summary"]
+            return httpx2.Response(
+                200, json={"id": calendar.id, "summary": calendar.summary, "timeZone": calendar.time_zone}
+            )
+
         # POST /calendars/{id}/events
         if request.method == "POST" and parts[2:] == ["events"]:
             failure = self._event_write_failure()

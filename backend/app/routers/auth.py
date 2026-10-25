@@ -7,7 +7,7 @@ from typing import Annotated
 import httpx2
 from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
@@ -19,8 +19,8 @@ from app.auth.tokens import save_tokens
 from app.config import get_app_settings
 from app.db import get_db
 from app.google_errors import GoogleError
-from app.google_http import get_google_http
-from app.models import GoogleToken, User
+from app.http_client import get_http
+from app.models import GoogleToken, User, UserSettings
 
 router = APIRouter(tags=["sign-in"])
 
@@ -53,8 +53,14 @@ def login() -> RedirectResponse:
     return response
 
 
-def _sign_in_failed(message: str) -> JSONResponse:
-    response = JSONResponse(status_code=400, content={"detail": message})
+def _sign_in_failed(code: str) -> RedirectResponse:
+    """Send the browser back to the website's sign-in screen with the reason.
+
+    The code is one of: cancelled, expired, state, google. The website
+    turns each into its own message. Only fixed codes go in the URL, so
+    nobody can make a link that shows their own text on the sign-in page.
+    """
+    response = RedirectResponse(f"/?sign_in_error={code}", status_code=303)
     response.delete_cookie(FLOW_COOKIE, path=FLOW_COOKIE_PATH)
     return response
 
@@ -63,7 +69,7 @@ def _sign_in_failed(message: str) -> JSONResponse:
 def callback(
     request: Request,
     db: Annotated[DbSession, Depends(get_db)],
-    http: Annotated[httpx2.Client, Depends(get_google_http)],
+    http: Annotated[httpx2.Client, Depends(get_http)],
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
@@ -73,26 +79,26 @@ def callback(
     # sign-in can only be finished once.
     flow_cookie = request.cookies.get(FLOW_COOKIE)
     if error:
-        return _sign_in_failed(f"Google sign-in was cancelled or failed: {error}")
+        return _sign_in_failed("cancelled")
     if not flow_cookie:
-        return _sign_in_failed("Sign-in expired or was already used. Start again at /auth/google/login.")
+        return _sign_in_failed("expired")
     try:
         flow = json.loads(decrypt(flow_cookie.encode(), max_age_seconds=FLOW_MAX_AGE))
     except (InvalidToken, ValueError):
-        return _sign_in_failed("Sign-in expired or was changed. Start again at /auth/google/login.")
+        return _sign_in_failed("expired")
     # compare_digest takes the same time whether or not the start matches.
     if not state or not secrets.compare_digest(state, flow["state"]):
-        return _sign_in_failed("State doesn't match. Start again at /auth/google/login.")
+        return _sign_in_failed("state")
     if not code:
-        return _sign_in_failed("Google didn't send a sign-in code.")
+        return _sign_in_failed("google")
 
     try:
         tokens = google_oauth.exchange_code(http, code, flow["verifier"])
         if not tokens.id_token:
             raise GoogleError("Google didn't send an ID token")
         identity = google_oauth.read_id_token(tokens.id_token)
-    except GoogleError as failure:
-        return _sign_in_failed(str(failure))
+    except GoogleError:
+        return _sign_in_failed("google")
 
     user = db.scalars(select(User).where(User.google_sub == identity.sub)).first()
     if user is None:
@@ -102,7 +108,8 @@ def callback(
     user.email = identity.email
     save_tokens(db, user.id, tokens)
 
-    response = RedirectResponse("/docs", status_code=303)
+    # Back to the website, which shows setup or the settings page.
+    response = RedirectResponse("/", status_code=303)
     start_session(db, user.id, response)
     db.commit()
     response.delete_cookie(FLOW_COOKIE, path=FLOW_COOKIE_PATH)
@@ -121,6 +128,8 @@ class Me(BaseModel):
     # True when the user has to sign in again before calendar updates work.
     google_sign_in_needed: bool
     calendar_access: bool
+    # False until the setup questions are answered and finished.
+    setup_complete: bool
 
 
 @router.get("/me", response_model=Me)
@@ -129,8 +138,10 @@ def me(
     db: Annotated[DbSession, Depends(get_db)],
 ) -> Me:
     tokens = db.scalars(select(GoogleToken).where(GoogleToken.user_id == user.id)).first()
+    settings = db.scalars(select(UserSettings).where(UserSettings.user_id == user.id)).first()
     return Me(
         email=user.email,
         google_sign_in_needed=tokens is None or tokens.needs_reauth,
         calendar_access=tokens is not None and google_oauth.has_calendar_scope(tokens.scopes),
+        setup_complete=settings is not None and settings.setup_completed_at is not None,
     )

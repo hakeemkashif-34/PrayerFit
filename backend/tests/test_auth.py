@@ -48,14 +48,21 @@ def test_token_request_sends_a_verifier_that_matches_the_challenge(client, fake_
     assert base64.urlsafe_b64encode(digest).rstrip(b"=").decode() == google_query["code_challenge"]
 
 
-def test_successful_sign_in_creates_the_user_and_goes_to_docs(client, fake_google, db):
+def _assert_sent_back_with(response, code: str) -> None:
+    """A failed sign-in goes back to the website's sign-in screen with a reason code."""
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/?sign_in_error={code}"
+
+
+def test_successful_sign_in_creates_the_user_and_goes_to_the_website(client, fake_google, db):
     response = sign_in(client, fake_google, sub="user-a", email="a@example.com")
 
-    assert response.headers["location"] == "/docs"
+    assert response.headers["location"] == "/"
     assert client.get("/me").json() == {
         "email": "a@example.com",
         "google_sign_in_needed": False,
         "calendar_access": True,
+        "setup_complete": False,
     }
     with DbSession(db) as session:
         assert session.scalars(select(User.email)).all() == ["a@example.com"]
@@ -67,8 +74,7 @@ def test_wrong_state_is_rejected(client, fake_google, db):
 
     response = client.get("/auth/google/callback", params={"code": code, "state": "not-the-state"})
 
-    assert response.status_code == 400
-    assert "State doesn't match" in response.json()["detail"]
+    _assert_sent_back_with(response, "state")
     assert fake_google.token_requests == []  # the code was never used
     with DbSession(db) as session:
         assert session.scalars(select(User)).all() == []
@@ -80,7 +86,7 @@ def test_missing_state_is_rejected(client, fake_google):
 
     response = client.get("/auth/google/callback", params={"code": code})
 
-    assert response.status_code == 400
+    _assert_sent_back_with(response, "state")
 
 
 def test_callback_without_the_flow_cookie_is_rejected(client, fake_google):
@@ -93,7 +99,7 @@ def test_callback_without_the_flow_cookie_is_rejected(client, fake_google):
             "/auth/google/callback", params={"code": code, "state": google_query["state"]}
         )
 
-    assert response.status_code == 400
+    _assert_sent_back_with(response, "expired")
 
 
 def test_a_sign_in_flow_can_only_be_used_once(client, fake_google):
@@ -108,8 +114,7 @@ def test_a_sign_in_flow_can_only_be_used_once(client, fake_google):
     second = client.get(
         "/auth/google/callback", params={"code": code_again, "state": google_query["state"]}
     )
-    assert second.status_code == 400
-    assert "already used" in second.json()["detail"]
+    _assert_sent_back_with(second, "expired")
 
 
 def test_failed_callback_also_clears_the_flow(client, fake_google):
@@ -120,7 +125,7 @@ def test_failed_callback_also_clears_the_flow(client, fake_google):
     retry = client.get("/auth/google/callback", params={"code": code, "state": google_query["state"]})
 
     assert client.cookies.get("oauth_flow") is None
-    assert retry.status_code == 400
+    _assert_sent_back_with(retry, "expired")
 
 
 def test_cancelled_sign_in_is_rejected_and_clears_the_flow(client):
@@ -128,8 +133,7 @@ def test_cancelled_sign_in_is_rejected_and_clears_the_flow(client):
 
     response = client.get("/auth/google/callback", params={"error": "access_denied"})
 
-    assert response.status_code == 400
-    assert "access_denied" in response.json()["detail"]
+    _assert_sent_back_with(response, "cancelled")
     assert client.cookies.get("oauth_flow") is None
 
 
@@ -154,6 +158,8 @@ def test_me_needs_a_session(client):
 
     assert response.status_code == 401
     assert response.json()["detail"]["login_url"] == "/auth/google/login"
+    # The website uses this to show "Sign in with Google".
+    assert response.json()["detail"]["reason"] == "not_signed_in"
 
 
 def test_made_up_session_cookie_is_rejected(client):

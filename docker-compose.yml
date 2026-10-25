@@ -1,5 +1,24 @@
-# Runs the backend and Postgres together:  docker compose up --build
+# Runs everything:  docker compose up --build
+# Then open http://localhost:8000
 # Values come from .env (copy .env.example to .env first).
+#
+#   web     nginx: the website, and the only service the browser talks to
+#   backend FastAPI, reached through web at /api and /auth
+#   worker  the nightly job (same image as backend)
+#   db      Postgres
+
+x-backend-environment: &backend-environment
+  DATABASE_URL: ${DATABASE_URL}
+  DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+  GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
+  TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}
+  APP_ORIGIN: ${APP_ORIGIN}
+  COOKIE_SECURE: ${COOKIE_SECURE}
+  SESSION_DAYS: ${SESSION_DAYS}
+  OSM_CONTACT_EMAIL: ${OSM_CONTACT_EMAIL}
+  PHOTON_URL: ${PHOTON_URL:-}
 
 services:
   db:
@@ -22,22 +41,31 @@ services:
 
   backend:
     build: ./backend
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
-      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}
-      APP_ORIGIN: ${APP_ORIGIN}
-      COOKIE_SECURE: ${COOKIE_SECURE}
-      SESSION_DAYS: ${SESSION_DAYS}
-    ports:
-      - "8000:8000"
+    environment: *backend-environment
+    # No ports: the browser reaches the backend through web, so the
+    # website and the API count as the same site.
     depends_on:
       # Wait until Postgres passes its healthcheck, not just until it starts.
       db:
         condition: service_healthy
+
+  worker:
+    build: ./backend
+    command: ["python", "-m", "app.worker"]
+    environment: *backend-environment
+    depends_on:
+      db:
+        condition: service_healthy
+      # The backend runs the migrations when it starts.
+      backend:
+        condition: service_started
+
+  web:
+    build: ./web
+    ports:
+      - "8000:80"
+    depends_on:
+      - backend
 
 volumes:
   db-data:
