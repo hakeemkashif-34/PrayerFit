@@ -1,6 +1,7 @@
 """Made-up MAWAQIT pages for tests, built the way a real page holds its data.
 
-The real KMA page (saved in fixtures/mawaqit/) is the main parser test.
+KMA's real page (fixtures/mawaqit/kma_page.html, in test_mawaqit_kma.py)
+is the main parser test.
 These let a test change one value, like an impossible time, without
 editing the saved page.
 """
