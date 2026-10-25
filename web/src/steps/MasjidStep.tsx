@@ -70,7 +70,11 @@ export function MasjidStep({ settings, page = false, submitLabel = "Save", onSav
           </button>
         </p>
       )}
-      {!nearby && !loadError && <p className="hint">Finding masjids near you…</p>}
+      {!nearby && !loadError && (
+        <p className="hint" role="status">
+          Searching for masjids nearby. This can take up to a minute.
+        </p>
+      )}
       {nearby && (
         <fieldset>
           <legend className="hint">Within {nearby.radius_km} km, closest first</legend>

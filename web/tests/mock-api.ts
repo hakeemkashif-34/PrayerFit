@@ -71,6 +71,8 @@ export class MockApi {
   settings: Settings = emptySettings();
   nearby: Nearby = { radius_km: 15, masjids: [KMA, STITTSVILLE, UNNAMED], typed_by_you: [], ...CREDIT };
   requests: Recorded[] = [];
+  // How long the masjid search takes to answer, in milliseconds.
+  nearbyDelayMs = 0;
   // Make the next call to this path answer with this error.
   failNext: Record<string, { status: number; detail: unknown }> = {};
 
@@ -142,6 +144,7 @@ export class MockApi {
         Object.assign(s, { method: body.method, asr_method: body.asr_method });
         return json(200, this.saved());
       case "GET /api/masjids/nearby":
+        if (this.nearbyDelayMs) await new Promise((resolve) => setTimeout(resolve, this.nearbyDelayMs));
         return json(200, this.nearby);
       case "PUT /api/settings/main-masjid": {
         if (body.choice === "home") {

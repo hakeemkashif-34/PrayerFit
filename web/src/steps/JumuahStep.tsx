@@ -50,7 +50,11 @@ export function JumuahStep({ settings, onSaved, onCancel }: Props) {
           </button>
         </p>
       )}
-      {!nearby && !loadError && <p className="hint">Finding masjids near you…</p>}
+      {!nearby && !loadError && (
+        <p className="hint" role="status">
+          Searching for masjids nearby. This can take up to a minute.
+        </p>
+      )}
       {nearby && (
         <fieldset>
           <legend>Masjids within {nearby.radius_km} km</legend>

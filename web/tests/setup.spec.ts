@@ -181,3 +181,16 @@ test("answers saved before but never finished fill the calendar on the next visi
   await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
 });
+
+test("a slow masjid search says it can take up to a minute", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  api.nearbyDelayMs = 1500; // Overpass can take 40 seconds or more for real
+  await api.install(page);
+  await page.goto("/");
+
+  await pickHome(page);
+
+  await expect(page.getByText("Searching for masjids nearby. This can take up to a minute.")).toBeVisible();
+  await expect(page.getByText("1.1 km away")).toBeVisible();
+  await expect(page.getByText("Searching for masjids nearby. This can take up to a minute.")).toHaveCount(0);
+});
