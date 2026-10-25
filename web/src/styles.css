@@ -1,21 +1,29 @@
-/* Mobile first: one column, large tap targets. Wider screens just get more margin. */
+/* Mobile first: one column, large tap targets. Wider screens get two columns
+   on the landing and setup pages. Colours stay simple: one green, greys. */
 
 :root {
   --green: #1f5f4a;
   --green-dark: #164536;
-  --text: #1d2420;
-  --muted: #5b6660;
-  --line: #d9e0dc;
-  --background: #f5f7f6;
+  --green-soft: #e7f2ed;
+  --text: #17201c;
+  --muted: #5c6862;
+  --faint: #8a948f;
+  --line: #dde3e0;
+  --background: #f6f8f7;
   --card: #ffffff;
   --error: #a32020;
   --warning-bg: #fff4dc;
-  --notice-bg: #e5f2ec;
+
+  /* Plus Jakarta Sans, served from our own site (see main.tsx). */
+  --font: "Plus Jakarta Sans Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: light;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  line-height: 1.5;
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.6;
   color: var(--text);
   background: var(--background);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 * {
@@ -27,24 +35,34 @@ body {
   background: var(--background);
 }
 
-.page {
-  max-width: 560px;
-  margin: 0 auto;
-  padding: 24px 16px 48px;
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
-.page.narrow {
-  max-width: 440px;
-  padding-top: 64px;
+/* ---- Type ---- */
+
+h1,
+h2,
+h3 {
+  color: var(--text);
+  letter-spacing: -0.02em;
+  text-wrap: balance;
 }
 
 h1 {
-  font-size: 1.6rem;
-  margin: 0 0 8px;
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1.2;
+  margin: 0 0 12px;
 }
 
 h2 {
-  font-size: 1.15rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.35;
   margin: 0 0 8px;
 }
 
@@ -52,78 +70,326 @@ p {
   margin: 0 0 12px;
 }
 
+strong {
+  font-weight: 650;
+}
+
 .hint,
 .muted {
   color: var(--muted);
-  font-size: 0.92rem;
+  font-size: 0.9375rem;
 }
 
-.progress {
+.lead {
+  font-size: 1.1875rem;
+  line-height: 1.55;
   color: var(--muted);
-  margin-bottom: 12px;
+  max-width: 34ch;
 }
+
+@media (min-width: 760px) {
+  h1 {
+    font-size: 2rem;
+  }
+}
+
+/* ---- Page frames ---- */
+
+.page {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 32px 16px 48px;
+}
+
+.page.narrow {
+  max-width: 440px;
+  padding-top: 64px;
+}
+
+.top {
+  margin-bottom: 24px;
+}
+
+.top h1 {
+  margin-bottom: 4px;
+}
+
+/* Pages with the OpenStreetMap footer: the footer sits at the bottom. */
+.page-with-footer {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-with-footer > :first-child {
+  flex: 1;
+}
+
+.site-footer {
+  padding: 24px 16px 32px;
+  text-align: center;
+  font-size: 0.8125rem;
+}
+
+.site-footer a {
+  color: var(--faint);
+  text-decoration: none;
+}
+
+.site-footer a:hover {
+  text-decoration: underline;
+}
+
+/* ---- Landing page: welcome on the left, sign-in card on the right ---- */
+
+.landing {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 48px 16px;
+  display: grid;
+  gap: 32px;
+  align-items: center;
+  /* Keeps the two parts together in the middle instead of spread apart. */
+  align-content: center;
+  min-height: 100vh;
+}
+
+.welcome h1 {
+  font-size: 2.5rem;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  margin-bottom: 16px;
+}
+
+.card.sign-in {
+  padding: 28px;
+}
+
+.card.sign-in h2 {
+  font-size: 1.25rem;
+}
+
+@media (min-width: 760px) {
+  .landing {
+    grid-template-columns: 1.2fr 1fr;
+    gap: 64px;
+  }
+
+  .welcome h1 {
+    font-size: 3.25rem;
+  }
+}
+
+/* ---- Setup: the steps on the left, the question on the right ---- */
+
+.setup {
+  max-width: 1000px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 24px 16px 32px;
+}
+
+/* On a phone the step list is hidden, and "Setup · Step X of 3" shows instead. */
+.setup-steps {
+  display: none;
+}
+
+.setup-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin-bottom: 20px;
+}
+
+.setup-steps ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.setup-steps li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.setup-steps .dot {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 2px solid var(--line);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  flex: none;
+}
+
+.setup-steps li.current {
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.setup-steps li.current .dot {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+
+.setup-steps li.done .dot {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.setup-steps li.skipped {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.question-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 44px;
+  margin-bottom: 16px;
+}
+
+.phone-progress {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+@media (min-width: 760px) {
+  .setup {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 64px;
+    padding-top: 64px;
+  }
+
+  .setup-steps {
+    display: block;
+  }
+
+  .phone-progress {
+    display: none;
+  }
+
+  .setup-question {
+    max-width: 620px;
+  }
+}
+
+button.back {
+  background: none;
+  color: var(--green);
+  padding: 8px 0;
+  min-height: 0;
+  font-weight: 600;
+}
+
+button.back:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+/* ---- Cards ---- */
 
 .card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 16px;
+  border-radius: 14px;
+  padding: 20px;
   margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgb(23 32 28 / 0.04);
 }
 
 .card.setting {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
+  gap: 16px;
+}
+
+.card.setting h2 {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
 }
 
 .card.setting p {
   margin-bottom: 4px;
 }
 
+/* ---- Forms ---- */
+
 label {
   display: block;
   font-weight: 600;
-  margin: 12px 0 4px;
+  font-size: 0.9375rem;
+  margin: 16px 0 6px;
 }
 
 input[type="text"],
 input:not([type]) {
   width: 100%;
-  font: inherit;
-  padding: 12px;
+  font-size: 1rem;
+  padding: 14px 16px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: #fff;
+  color: var(--text);
+}
+
+input:not([type]):focus,
+input[type="text"]:focus {
+  outline: 2px solid var(--green);
+  outline-offset: 1px;
+  border-color: var(--green);
+}
+
+input::placeholder {
+  color: var(--faint);
 }
 
 fieldset {
   border: none;
   padding: 0;
-  margin: 0 0 16px;
+  margin: 16px 0;
 }
 
 legend {
-  font-weight: 700;
+  font-weight: 600;
   margin-bottom: 4px;
 }
 
 label.choice {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   align-items: flex-start;
   font-weight: normal;
-  padding: 12px;
+  font-size: 1rem;
+  padding: 14px 16px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  margin: 8px 0;
+  border-radius: 12px;
+  background: #fff;
+  margin: 10px 0;
   cursor: pointer;
 }
 
 label.choice:has(input:checked) {
   border-color: var(--green);
-  background: var(--notice-bg);
+  background: var(--green-soft);
 }
 
 label.choice input {
@@ -131,6 +397,7 @@ label.choice input {
   width: 20px;
   height: 20px;
   flex: none;
+  accent-color: var(--green);
 }
 
 label.choice span {
@@ -138,18 +405,48 @@ label.choice span {
   flex-direction: column;
 }
 
-.indent {
-  padding: 0 0 8px 32px;
+label.choice strong {
+  font-weight: 650;
 }
+
+label.choice small {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+/* The closest masjid stands out. */
+label.choice.closest {
+  border-color: var(--green);
+  border-width: 2px;
+}
+
+.badge {
+  align-self: flex-start;
+  background: var(--green);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-bottom: 6px;
+}
+
+.indent {
+  padding: 0 0 8px 34px;
+}
+
+/* ---- Buttons ---- */
 
 button,
 .button {
   display: inline-block;
-  font: inherit;
-  font-weight: 600;
+  font-weight: 650;
+  font-size: 1rem;
   border: none;
-  border-radius: 8px;
-  padding: 12px 20px;
+  border-radius: 10px;
+  padding: 12px 22px;
   min-height: 48px;
   background: var(--green);
   color: #fff;
@@ -163,7 +460,7 @@ button:hover,
 }
 
 button:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: default;
 }
 
@@ -173,9 +470,14 @@ button.secondary {
   border: 1px solid var(--green);
 }
 
+button.secondary:hover {
+  background: var(--green-soft);
+}
+
 button.small {
   min-height: 40px;
   padding: 8px 16px;
+  font-size: 0.9375rem;
 }
 
 button.link {
@@ -184,113 +486,8 @@ button.link {
   color: var(--green);
   padding: 0;
   min-height: 0;
-  text-decoration: underline;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.error {
-  color: var(--error);
-  margin-top: 12px;
-}
-
-.notice {
-  background: var(--notice-bg);
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.notice.warning {
-  background: var(--warning-bg);
-}
-
-.place {
   font-weight: 600;
-}
-
-.credit {
-  font-size: 0.8rem;
-  color: var(--muted);
-  margin: 16px 0 0;
-}
-
-.credit a {
-  color: inherit;
-}
-
-table.grid {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-
-table.grid th,
-table.grid td {
-  text-align: center;
-  padding: 8px 2px;
-  border-bottom: 1px solid var(--line);
-}
-
-table.grid th[scope="row"] {
-  text-align: left;
-}
-
-table.grid input {
-  width: 24px;
-  height: 24px;
-}
-
-ul.plain {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-}
-
-/* Landing page: welcome on the left, sign-in card on the right. Stacked on a phone. */
-.landing {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 48px 16px;
-  display: grid;
-  gap: 24px;
-  align-items: center;
-  /* Keeps the two parts together in the middle instead of spread apart. */
-  align-content: center;
-  min-height: 100vh;
-}
-
-@media (min-width: 760px) {
-  .landing {
-    grid-template-columns: 1.2fr 1fr;
-    gap: 48px;
-  }
-}
-
-.welcome h1 {
-  font-size: 2.2rem;
-  line-height: 1.2;
-}
-
-.lead {
-  font-size: 1.15rem;
-  color: var(--muted);
-}
-
-.card.sign-in {
-  padding: 24px;
+  text-decoration: underline;
 }
 
 .button.google {
@@ -299,68 +496,60 @@ ul.plain {
   line-height: 24px;
 }
 
-/* One question per page during setup. */
-.page.question {
-  max-width: 640px;
-}
-
-.question h1 {
-  font-size: 1.5rem;
-  line-height: 1.3;
-  margin-bottom: 8px;
-}
-
-.question-top {
+.actions {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  min-height: 48px;
-  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
 }
 
-.question-top .progress {
-  margin: 0;
+/* ---- Messages ---- */
+
+.error {
+  color: var(--error);
+  margin-top: 12px;
 }
 
-button.back {
-  background: none;
-  color: var(--green);
-  padding: 8px 0;
+.notice {
+  background: var(--green-soft);
+  border-radius: 10px;
+  padding: 12px 16px;
 }
 
-button.back:hover {
-  background: none;
-  text-decoration: underline;
+.notice.warning {
+  background: var(--warning-bg);
 }
+
+/* ---- Location: the saved place and the address dropdown ---- */
 
 .current {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 16px;
   align-items: center;
-  background: var(--notice-bg);
-  border-radius: 8px;
-  padding: 12px;
-  margin: 12px 0;
+  background: var(--green-soft);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin: 16px 0;
 }
 
 .current p {
   margin: 0;
 }
 
-/* The address dropdown. */
 .combobox {
   position: relative;
+  margin-top: 20px;
 }
 
 ul.suggestions {
   list-style: none;
-  margin: 4px 0 0;
-  padding: 4px 0;
+  margin: 6px 0 0;
+  padding: 6px;
   background: #fff;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: 0 6px 20px rgb(0 0 0 / 0.1);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgb(23 32 28 / 0.12);
   position: absolute;
   left: 0;
   right: 0;
@@ -369,12 +558,13 @@ ul.suggestions {
 
 ul.suggestions li {
   padding: 12px;
+  border-radius: 8px;
   cursor: pointer;
 }
 
 ul.suggestions li.active,
 ul.suggestions li[role="option"]:hover {
-  background: var(--notice-bg);
+  background: var(--green-soft);
 }
 
 ul.suggestions li.empty {
@@ -382,23 +572,60 @@ ul.suggestions li.empty {
   cursor: default;
 }
 
-/* The closest masjid stands out. */
-label.choice.closest {
-  border-color: var(--green);
-  border-width: 2px;
+/* ---- Weekly grid: prayers are rows, days are columns ---- */
+
+table.grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+  margin-top: 16px;
 }
 
-.badge {
-  align-self: flex-start;
-  background: var(--green);
-  color: #fff;
-  font-size: 0.75rem;
+table.grid th,
+table.grid td {
+  text-align: center;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+table.grid thead th {
+  font-size: 0.8125rem;
   font-weight: 700;
-  border-radius: 999px;
-  padding: 2px 8px;
-  margin-bottom: 4px;
+  color: var(--muted);
+}
+
+table.grid th[scope="row"] {
+  text-align: left;
+  font-weight: 650;
+}
+
+table.grid input {
+  width: 24px;
+  height: 24px;
+  accent-color: var(--green);
 }
 
 table.grid abbr {
   text-decoration: none;
+}
+
+/* ---- Lists and helpers ---- */
+
+ul.plain {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+ul.plain li {
+  padding: 2px 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
