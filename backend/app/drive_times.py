@@ -1,4 +1,7 @@
-"""Each user's drive time to each of their masjids, saved per user and masjid.
+"""Each user's commute time to each of their masjids.
+
+The user's own time (user_commute_times) wins. Otherwise it's a driving
+estimate from OpenRouteService, saved per user and masjid.
 
 A drive time is only asked again when:
 1. There isn't one saved yet.
@@ -8,16 +11,18 @@ So a nightly update for an unchanged user makes no OpenRouteService calls.
 """
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import httpx2
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.auth.crypto import keyed_hash
 from app.config import get_ors_settings
 from app.geo.ors import NO_ROUTE, Route, drive_time, rounded
-from app.models import Masjid, UserDriveTime
+from app.models import Masjid, UserCommuteTime, UserDriveTime
 
 KEEP_FOR = timedelta(days=30)
 
@@ -62,4 +67,41 @@ def drive_seconds(
         )
         db.commit()
         found[masjid.id] = values["seconds"]
+    return found
+
+
+@dataclass(frozen=True)
+class Commute:
+    seconds: int | None  # None when unknown, so there's no commute block
+    # "user" (their own time), "ors" (OpenRouteService), or None when unknown.
+    source: str | None
+
+
+def commute_times(
+    db: Session,
+    http: httpx2.Client,
+    user_id: uuid.UUID,
+    home: tuple[float, float],
+    masjids: list[Masjid],
+    now: datetime,
+    overrides: dict[uuid.UUID, int | None] | None = None,
+) -> dict[uuid.UUID, Commute]:
+    """The commute to each masjid. OpenRouteService is only asked for masjids
+    with no time of the user's own. overrides are unsaved times from a form
+    the user is still filling in (None clears one)."""
+    own = {
+        row.masjid_id: row.minutes
+        for row in db.scalars(select(UserCommuteTime).where(UserCommuteTime.user_id == user_id))
+    }
+    for masjid_id, minutes in (overrides or {}).items():
+        if minutes is None:
+            own.pop(masjid_id, None)
+        else:
+            own[masjid_id] = minutes
+    found = {m.id: Commute(own[m.id] * 60, "user") for m in masjids if m.id in own}
+    rest = [m for m in masjids if m.id not in own]
+    drives = drive_seconds(db, http, user_id, home, rest, now) if rest else {}
+    for masjid in rest:
+        seconds = drives.get(masjid.id)
+        found[masjid.id] = Commute(seconds, "ors" if seconds is not None else None)
     return found

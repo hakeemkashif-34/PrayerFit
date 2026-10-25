@@ -25,14 +25,37 @@ DEFAULT_ASR_METHOD = AsrMethod.STANDARD
 # The optional step's defaults, used when it's skipped. Users who saved
 # the step before these existed keep what they have.
 DEFAULT_ARRIVE_EARLY_MINUTES = 5
+DEFAULT_JUMUAH_ARRIVE_EARLY_MINUTES = 5
 DEFAULT_COLOR_ID = "10"  # Basil, Google Calendar's green
+
+
+def user_masjids(db: Session, row: UserSettings) -> list[Masjid]:
+    """The main masjid (if any), then the Jumuah masjids, each once."""
+    found: list[Masjid] = []
+    if row.main_masjid_choice == "masjid" and row.main_masjid_id is not None:
+        found.append(db.get(Masjid, row.main_masjid_id))
+    for masjid in jumuah_masjids(db, row.user_id):
+        if all(m.id != masjid.id for m in found):
+            found.append(masjid)
+    return found
+
+
+def _empty(user_id: uuid.UUID) -> UserSettings:
+    # Column defaults only apply on insert, so an unsaved row needs them set here.
+    return UserSettings(
+        user_id=user_id,
+        jumuah_saved=False,
+        optional_saved=False,
+        arrive_early_minutes=0,
+        jumuah_arrive_early_minutes=DEFAULT_JUMUAH_ARRIVE_EARLY_MINUTES,
+    )
 
 
 def get_settings(db: Session, user_id: uuid.UUID) -> UserSettings:
     """This user's settings row, made empty the first time."""
     row = db.scalars(select(UserSettings).where(UserSettings.user_id == user_id)).first()
     if row is None:
-        row = UserSettings(user_id=user_id, jumuah_saved=False, optional_saved=False, arrive_early_minutes=0)
+        row = _empty(user_id)
         db.add(row)
         db.flush()
     return row
@@ -42,9 +65,7 @@ def find_settings(db: Session, user_id: uuid.UUID) -> UserSettings:
     """This user's settings, or an unsaved empty row. For reading only:
     GET requests must never change data."""
     row = db.scalars(select(UserSettings).where(UserSettings.user_id == user_id)).first()
-    return row if row is not None else UserSettings(
-        user_id=user_id, jumuah_saved=False, optional_saved=False, arrive_early_minutes=0
-    )
+    return row if row is not None else _empty(user_id)
 
 
 def save_location(row: UserSettings, label: str, latitude: float, longitude: float, time_zone: str) -> None:
@@ -182,10 +203,15 @@ def masjid_label(masjid: Masjid, short_name: str | None) -> str:
     return short_name or masjid.name or "the masjid"
 
 
-def load_setup(db: Session, user_id: uuid.UUID) -> Setup | None:
-    """The user's setup, or None if setup isn't finished."""
+def load_setup(db: Session, user_id: uuid.UUID, finished: bool = True) -> Setup | None:
+    """The user's setup, or None if setup isn't finished.
+
+    finished=False is for the Jumuah chooser during setup: it only needs a location.
+    """
     row = db.scalars(select(UserSettings).where(UserSettings.user_id == user_id)).first()
-    if row is None or row.setup_completed_at is None or missing_steps(db, row):
+    if row is None or row.location_encrypted is None or row.time_zone is None:
+        return None
+    if finished and (row.setup_completed_at is None or missing_steps(db, row)):
         return None
     latitude, longitude = read_location(row)
     masjid = None
