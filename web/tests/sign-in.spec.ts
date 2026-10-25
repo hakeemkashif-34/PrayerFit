@@ -11,6 +11,8 @@ test("signed-out users see the welcome and a Sign in with Google card", async ({
   await expect(button).toBeVisible();
   await expect(button).toHaveAttribute("href", "/auth/google/login");
   await expect(page.getByText("Never Gmail")).toBeVisible();
+  // No OpenStreetMap data on this page, so no credit footer.
+  await expect(page.getByRole("contentinfo")).toHaveCount(0);
 });
 
 test("the welcome is on the left on a computer, and on top on a phone", async ({ page }, info) => {

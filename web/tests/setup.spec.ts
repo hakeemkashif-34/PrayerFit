@@ -3,6 +3,16 @@ import { HOME_PLACE, KMA, MockApi } from "./mock-api";
 
 const LOCATION = "What's your location?";
 const MASJID = "Here are the masjids closest to you. Which one do you go to?";
+const STEP_NAMES = ["Location", "Masjid", "Weekly prayers"];
+
+// The current step is highlighted in the list on a computer, and named in
+// one line at the top on a phone.
+async function expectStep(page: Page, number: number) {
+  await expect(page.locator('[aria-current="step"]')).toContainText(STEP_NAMES[number - 1]);
+  const phoneLine = page.getByText(`Setup · Step ${number} of 3`);
+  if (test.info().project.name === "phone") await expect(phoneLine).toBeVisible();
+  else await expect(page.getByRole("complementary", { name: "Setup steps" })).toBeVisible();
+}
 
 async function pickHome(page: Page) {
   await page.getByRole("combobox").pressSequentially("200 Kanata", { delay: 30 });
@@ -16,9 +26,13 @@ test("the full setup: location, masjid, weekly grid, then a filled calendar", as
 
   // 1. Location, with suggestions as the user types.
   await expect(page.getByRole("heading", { level: 1, name: LOCATION })).toBeVisible();
-  await expect(page.getByText("Step 1 of 3")).toBeVisible();
+  await expectStep(page, 1);
   await expect(page.getByRole("button", { name: "← Back" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "© OpenStreetMap contributors" })).toBeVisible();
+  // Just the question: no extra lines, and the credit is in the footer.
+  await expect(page.getByText("Your address is stored encrypted")).toHaveCount(0);
+  await expect(page.getByText("Prayer times depend on where you are")).toHaveCount(0);
+  await expect(page.getByRole("main").getByText("OpenStreetMap contributors")).toHaveCount(0);
+  await expect(page.getByRole("contentinfo").getByRole("link", { name: "© OpenStreetMap contributors" })).toBeVisible();
 
   // Fewer than 3 characters never searches.
   const box = page.getByRole("combobox");
@@ -37,7 +51,8 @@ test("the full setup: location, masjid, weekly grid, then a filled calendar", as
 
   // 2. Masjid: closest first and highlighted, with distances.
   await expect(page.getByRole("heading", { level: 1, name: MASJID })).toBeVisible();
-  await expect(page.getByText("Step 2 of 3")).toBeVisible();
+  await expectStep(page, 2);
+  await expect(page.getByRole("main").getByText("OpenStreetMap contributors")).toHaveCount(0);
   const names = page.locator("label.choice strong");
   await expect(names).toHaveText([
     "Kanata Muslim Association", "Stittsville Masjid", "No name on OpenStreetMap", "My masjid isn't listed", "I pray at home",
@@ -53,7 +68,7 @@ test("the full setup: location, masjid, weekly grid, then a filled calendar", as
 
   // 3. Weekly grid: prayers are rows, days are columns.
   await expect(page.getByRole("heading", { level: 1, name: "Which prayers do you usually pray at KMA?" })).toBeVisible();
-  await expect(page.getByText("Step 3 of 3")).toBeVisible();
+  await expectStep(page, 3);
   await expect(page.locator("table.grid thead th")).toHaveText(["Prayer", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
   await expect(page.locator("table.grid tbody th")).toHaveText(["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"]);
   await expect(page.getByRole("checkbox")).toHaveCount(35);
@@ -85,7 +100,7 @@ test("Back goes to the previous question with the answer kept", async ({ page })
   await pickHome(page);
   await page.getByRole("radio", { name: /Stittsville Masjid/ }).check();
   await page.getByRole("button", { name: "Next" }).click();
-  await expect(page.getByText("Step 3 of 3")).toBeVisible();
+  await expectStep(page, 3);
 
   await page.getByRole("button", { name: "← Back" }).click();
   await expect(page.getByRole("heading", { level: 1, name: MASJID })).toBeVisible();
@@ -97,7 +112,7 @@ test("Back goes to the previous question with the answer kept", async ({ page })
 
   // Next keeps the saved location without saving it again.
   await page.getByRole("button", { name: "Next" }).click();
-  await expect(page.getByText("Step 2 of 3")).toBeVisible();
+  await expectStep(page, 2);
   expect(api.calls("PUT", "/api/settings/location")).toHaveLength(1);
 });
 
@@ -193,4 +208,52 @@ test("a slow masjid search says it can take up to a minute", async ({ page }) =>
   await expect(page.getByText("Searching for masjids nearby. This can take up to a minute.")).toBeVisible();
   await expect(page.getByText("1.1 km away")).toBeVisible();
   await expect(page.getByText("Searching for masjids nearby. This can take up to a minute.")).toHaveCount(0);
+});
+
+test("setup looks like the landing page: steps on the left on a computer, one line on a phone", async ({ page }, info) => {
+  await new MockApi().signedIn().install(page);
+  await page.goto("/");
+
+  const steps = page.getByRole("complementary", { name: "Setup steps" });
+  const question = page.getByRole("heading", { level: 1, name: LOCATION });
+  await expect(question).toBeVisible();
+  if (info.project.name === "phone") {
+    await expect(steps).toBeHidden();
+    await expect(page.getByText("Setup · Step 1 of 3")).toBeVisible();
+  } else {
+    await expect(steps.getByRole("heading", { name: "Setup" })).toBeVisible();
+    await expect(steps.getByRole("listitem")).toHaveText([/Location/, /Masjid/, /Weekly prayers/]);
+    await expect(steps.locator('[aria-current="step"]')).toHaveText(/Location/);
+    await expect(page.getByText("Setup · Step 1 of 3")).toBeHidden();
+    const left = await steps.boundingBox();
+    const right = await question.boundingBox();
+    expect(right!.x).toBeGreaterThan(left!.x + left!.width - 1);
+  }
+});
+
+test("suggestions never show postal codes", async ({ page }) => {
+  await new MockApi().signedIn().install(page);
+  await page.goto("/");
+
+  await page.getByRole("combobox").pressSequentially("200 Kanata", { delay: 30 });
+
+  await expect(page.getByRole("option").first()).toHaveText(HOME_PLACE);
+  await expect(page.getByRole("listbox")).not.toContainText("K2T");
+});
+
+test("the page uses Plus Jakarta Sans from our own site", async ({ page }) => {
+  const fontRequests: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes(".woff2")) fontRequests.push(r.url());
+  });
+  await new MockApi().signedIn().install(page);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1, name: LOCATION })).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+
+  const family = await page.getByRole("heading", { level: 1 }).evaluate((h) => getComputedStyle(h).fontFamily);
+  expect(family).toContain("Plus Jakarta Sans");
+  expect(await page.evaluate(() => document.fonts.check('16px "Plus Jakarta Sans Variable"'))).toBe(true);
+  expect(fontRequests.length).toBeGreaterThan(0);
+  expect(fontRequests.every((url) => url.startsWith("http://localhost:4173/assets/"))).toBe(true);
 });

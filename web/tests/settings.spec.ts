@@ -13,6 +13,8 @@ test("the settings page shows every saved setting with an Edit button", async ({
   await expect(page.getByText("ISNA, Standard Asr")).toBeVisible();
   await expect(page.getByText("Monday: Dhuhr, Isha")).toBeVisible();
   await expect(page.getByText("Saturday: all at home")).toBeVisible();
+  // The page shows OpenStreetMap data, so the credit is in its footer.
+  await expect(page.getByRole("contentinfo").getByRole("link", { name: "© OpenStreetMap contributors" })).toBeVisible();
 });
 
 test("editing a setting saves it and says what changed in the calendar", async ({ page }) => {

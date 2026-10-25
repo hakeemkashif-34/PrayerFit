@@ -16,7 +16,7 @@ export const KMA: Masjid = {
 export const STITTSVILLE: Masjid = { ...KMA, id: "22222222-2222-2222-2222-222222222222", name: "Stittsville Masjid", address: null, distance_km: 5.6 };
 export const UNNAMED: Masjid = { ...KMA, id: "33333333-3333-3333-3333-333333333333", name: null, address: null, distance_km: 12.4 };
 
-export const HOME_PLACE = "200 Kanata Avenue, Ottawa, Ontario, K2T 1K8, Canada";
+export const HOME_PLACE = "200 Kanata Avenue, Ottawa, Ontario, Canada";
 // Every place the pretend Photon knows, Canada first like the backend sends them.
 export const PLACES = [
   HOME_PLACE,
