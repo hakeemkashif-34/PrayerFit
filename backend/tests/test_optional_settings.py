@@ -123,7 +123,7 @@ def test_changing_how_early_sends_only_drive_blocks(set_up, db, fake_google, ors
     response = set_up.put("/settings/optional", json={"arrive_early_minutes": 15, "short_name": "KMA"})
     changed = fake_google.writes()[before:]
     assert response.json()["calendar"]["sent"] == len(changed) > 0
-    assert {w.body["summary"] for w in changed} == {"Drive to KMA"}
+    assert {w.body["summary"] for w in changed} == {"Commute to KMA"}
 
 
 def test_changing_the_prayer_colour_sends_only_prayer_blocks(set_up, fake_google, ors_key):
@@ -132,7 +132,7 @@ def test_changing_the_prayer_colour_sends_only_prayer_blocks(set_up, fake_google
     set_up.put("/settings/optional", json={"prayer_color_id": "3", "short_name": "KMA"})
     changed = fake_google.writes()[before:]
     assert changed and all(w.body["colorId"] == "3" for w in changed)
-    assert not any(w.body["summary"].startswith("Drive") for w in changed)
+    assert not any(w.body["summary"].startswith("Commute") for w in changed)
 
 
 def test_changing_the_short_name_renames_the_events(set_up, fake_google):

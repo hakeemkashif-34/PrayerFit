@@ -182,9 +182,10 @@ def _masjid_events(
                 source_description="OpenRouteService",
                 place="masjid",
                 masjid_id=where.masjid.id,
-                summary=f"Drive to {where.label}",
+                summary=f"Commute to {where.label}",
                 description=(
-                    f"{drive_minutes(where.drive_seconds)} min drive (OpenRouteService, no live traffic). {arriving}"
+                    f"{drive_minutes(where.drive_seconds)} min commute "
+                    f"(driving estimate from OpenRouteService, no live traffic). {arriving}"
                 ),
                 color_id=setup.drive_color_id,
                 # A popup when it's time to leave.

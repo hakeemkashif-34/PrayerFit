@@ -40,7 +40,7 @@ def test_jumuah_replaces_friday_dhuhr(db, http, user, fake_google, ors_key):
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
     assert friday(fake_google) == [
-        "Fajr at home", "Drive to KMA", "Jumuah at KMA", "Asr at home", "Maghrib at home", "Drive to KMA", "Isha at KMA",
+        "Fajr at home", "Commute to KMA", "Jumuah at KMA", "Asr at home", "Maghrib at home", "Commute to KMA", "Isha at KMA",
     ]
     events = google_events(fake_google)
     jumuah = titled(events, FRIDAY, "Jumuah at KMA")
@@ -77,7 +77,7 @@ def test_unknown_drive_times_use_the_listed_order(db, http, user, fake_google, f
     refresh(db, http, user, NOW)
     events = google_events(fake_google)
     assert clock(titled(events, FRIDAY, "Jumuah at Stittsville Masjid")) == "13:15"
-    assert not [e for e in on(events, FRIDAY) if e["summary"].startswith("Drive")]
+    assert not [e for e in on(events, FRIDAY) if e["summary"].startswith("Commute")]
 
 
 def test_no_usable_jumuah_times_follows_the_weekly_grid(db, http, fake_google, fake_mawaqit):
@@ -140,7 +140,7 @@ def test_only_jumuah_is_60_minutes(db, http, user, fake_google):
         return int((end - start).total_seconds() // 60)
 
     events = google_events(fake_google)
-    prayers = [e for e in events if not e["summary"].startswith("Drive")]
+    prayers = [e for e in events if not e["summary"].startswith("Commute")]
     assert {minutes(e) for e in prayers if e["summary"].startswith("Jumuah")} == {60}
     assert {minutes(e) for e in prayers if not e["summary"].startswith("Jumuah")} == {15}
     # Two Fridays in the window, so 2 Jumuah blocks.
