@@ -204,6 +204,16 @@ export class MockApi {
         return json(200, picked.masjid);
       }
       case "PUT /api/settings/main-masjid": {
+        // Like the backend's follow_main_masjid: the main masjid is the first
+        // Jumuah masjid, unless the user changed the Jumuah list themselves.
+        const oldMain = s.main_masjid_choice === "masjid" ? s.main_masjid?.id ?? null : null;
+        const newMain = body.choice === "home" ? null : body.masjid_id;
+        const jumuahIds = s.jumuah_masjids.map((m) => m.id);
+        if (oldMain !== newMain && (jumuahIds.length === 0 || (jumuahIds.length === 1 && jumuahIds[0] === oldMain))) {
+          const picked = newMain ? this.savedMasjids.get(newMain) : undefined;
+          s.jumuah_masjids = picked ? [picked] : [];
+          if (picked) s.jumuah_saved = true;
+        }
         if (body.choice === "home") {
           Object.assign(s, { main_masjid_choice: "home", main_masjid: null, main_masjid_short_name: null });
         } else {

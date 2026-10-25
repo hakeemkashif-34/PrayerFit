@@ -39,8 +39,8 @@ export function JumuahStep({ settings, onSaved, onCancel }: Props) {
     <form onSubmit={save} aria-labelledby="jumuah-title">
       <h2 id="jumuah-title">Where can you go for Jumuah?</h2>
       <p className="hint">
-        Add every masjid that works, your favourite first. Each Friday, your calendar picks the Jumuah with the
-        shortest drive, then the earliest time.
+        Your main masjid is added for you. Add every other masjid that works, your favourite first. Each Friday,
+        your calendar picks the Jumuah with the shortest drive, then the earliest time.
       </p>
       {picked.length > 0 && (
         <ul className="plain picked-list">

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { finishedSettings, GOOGLE_CALENDAR, MockApi } from "./mock-api";
+import { finishedSettings, GOOGLE_CALENDAR, KMA, MockApi } from "./mock-api";
 
 test("the settings page shows every saved setting with an Edit button", async ({ page }) => {
   await new MockApi().signedIn(finishedSettings()).install(page);
@@ -184,6 +184,39 @@ test("cancel leaves the extras as they were", async ({ page }) => {
 
   await expect(page.getByRole("region", { name: "Extras" })).toContainText("Arrive 5 min before iqamah");
   expect(api.calls("PUT", "/api/settings/optional")).toHaveLength(0);
+});
+
+test("a new main masjid takes the old one's place as the Jumuah masjid", async ({ page }) => {
+  const api = new MockApi().signedIn({ ...finishedSettings(), jumuah_masjids: [KMA] });
+  await api.install(page);
+  await page.goto("/");
+  const jumuah = page.getByRole("region", { name: "Jumuah masjids" });
+  await expect(jumuah.getByRole("listitem")).toHaveText([/^Kanata Muslim Association/]);
+
+  await page.getByRole("button", { name: "Edit main masjid" }).click();
+  await page.getByRole("button", { name: "Change" }).click();
+  await page.getByRole("combobox").pressSequentially("Stittsville", { delay: 30 });
+  await page.getByRole("option", { name: /^Stittsville Masjid/ }).click();
+  await page.getByRole("button", { name: "Save" }).click();
+
+  await expect(jumuah.getByRole("listitem")).toHaveText([/^Stittsville Masjid/]);
+});
+
+test("a Jumuah list the user chose stays when the main masjid changes", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings()); // Jumuah: KMA and Stittsville
+  await api.install(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Edit main masjid" }).click();
+  await page.getByRole("button", { name: "Change" }).click();
+  await page.getByRole("combobox").pressSequentially("Stittsville", { delay: 30 });
+  await page.getByRole("option", { name: /^Stittsville Masjid/ }).click();
+  await page.getByRole("button", { name: "Save" }).click();
+
+  await expect(page.getByRole("region", { name: "Main masjid" })).toContainText("Stittsville Masjid");
+  await expect(page.getByRole("region", { name: "Jumuah masjids" }).getByRole("listitem")).toHaveText([
+    /^Kanata Muslim Association/, /^Stittsville Masjid/,
+  ]);
 });
 
 test("I pray at home on the settings page moves every prayer home", async ({ page }) => {
