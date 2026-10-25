@@ -123,7 +123,9 @@ export function ColourPicker({ label, value, onChange }: Props) {
               role="option"
               aria-selected={index === selected}
               className={index === active ? "active" : undefined}
-              onMouseEnter={() => setActive(index)}
+              // Move, not enter: a list opening under a resting pointer
+              // would otherwise steal the highlight from the keyboard.
+              onMouseMove={() => setActive(index)}
               onClick={() => pick(index)}
             >
               <Swatch hex={option.hex} chosen={index === selected} />
