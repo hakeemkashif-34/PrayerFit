@@ -520,6 +520,11 @@ button.link {
   background: var(--warning-bg);
 }
 
+fieldset .notice,
+fieldset .searching {
+  margin: 10px 0;
+}
+
 /* ---- Location: the saved place and the address dropdown ---- */
 
 .current {

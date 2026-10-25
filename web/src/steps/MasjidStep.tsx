@@ -54,6 +54,8 @@ export function MasjidStep({ settings, page = false, submitLabel = "Save", onSav
   }
 
   const options = [...(nearby?.masjids ?? []), ...(nearby?.typed_by_you ?? [])];
+  const saved = settings.main_masjid;
+  if (saved && !options.some((m) => m.id === saved.id)) options.push(saved);
   const atAMasjid = choice !== "" && choice !== HOME;
   const picked = options.find((m) => m.id === choice);
   const fullName = choice === CUSTOM ? customName.trim() || "your masjid" : picked ? masjidName(picked) : "your masjid";
@@ -61,59 +63,60 @@ export function MasjidStep({ settings, page = false, submitLabel = "Save", onSav
   return (
     <form onSubmit={save} aria-labelledby="masjid-title">
       <Heading id="masjid-title">Here are the masjids closest to you. Which one do you go to?</Heading>
-      {loadError && (
-        <p className="error" role="alert">
-          {loadError}{" "}
-          <button type="button" className="link" onClick={retry}>
-            Try again
-          </button>
-        </p>
-      )}
-      {!nearby && !loadError && (
-        <p className="hint" role="status">
-          Searching for masjids nearby. This can take up to a minute.
-        </p>
-      )}
-      {nearby && (
-        <fieldset>
-          <legend className="hint">Within {nearby.radius_km} km, closest first</legend>
-          {nearby.masjids.length === 0 && <p className="hint">No masjids found on OpenStreetMap near you.</p>}
-          {options.map((m, i) => (
-            <label key={m.id} className={i === 0 && m.distance_km !== null ? "choice closest" : "choice"}>
-              <input type="radio" name="masjid" value={m.id} checked={choice === m.id} onChange={() => pick(m.id)} />
-              <span>
-                {i === 0 && m.distance_km !== null && <span className="badge">Closest</span>}
-                <strong>{masjidName(m)}</strong>
-                <small>
-                  {m.distance_km !== null ? `${m.distance_km} km away` : "Added by you"}
-                  {m.address ? ` · ${m.address}` : ""}
-                </small>
-                <small className="muted">{m.iqamah_status}</small>
-              </span>
-            </label>
-          ))}
-          <label className="choice">
-            <input type="radio" name="masjid" value={CUSTOM} checked={choice === CUSTOM} onChange={() => pick(CUSTOM)} />
+      {/* The 2 fallback choices below always show, so the masjid search never blocks setup. */}
+      <fieldset>
+        <legend className="hint">
+          {nearby ? `Within ${nearby.radius_km} km, closest first` : "Masjids within 15 km, closest first"}
+        </legend>
+        {!nearby && !loadError && (
+          <p className="hint searching" role="status">
+            Searching for masjids nearby. This can take up to a minute.
+          </p>
+        )}
+        {loadError && (
+          <p className="notice warning" role="alert">
+            {loadError} You can still type your masjid in or choose "I pray at home".{" "}
+            <button type="button" className="link" onClick={retry}>
+              Search again
+            </button>
+          </p>
+        )}
+        {nearby && nearby.masjids.length === 0 && <p className="hint">No masjids found on OpenStreetMap near you.</p>}
+        {options.map((m, i) => (
+          <label key={m.id} className={i === 0 && m.distance_km !== null ? "choice closest" : "choice"}>
+            <input type="radio" name="masjid" value={m.id} checked={choice === m.id} onChange={() => pick(m.id)} />
             <span>
-              <strong>My masjid isn't listed</strong>
+              {i === 0 && m.distance_km !== null && <span className="badge">Closest</span>}
+              <strong>{masjidName(m)}</strong>
+              <small>
+                {m.distance_km !== null ? `${m.distance_km} km away` : m.source === "user" ? "Added by you" : "Your saved masjid"}
+                {m.address ? ` · ${m.address}` : ""}
+              </small>
+              <small className="muted">{m.iqamah_status}</small>
             </span>
           </label>
-          {choice === CUSTOM && (
-            <div className="indent">
-              <label htmlFor="custom-name">Masjid name</label>
-              <input id="custom-name" value={customName} onChange={(e) => setCustomName(e.target.value)} required maxLength={200} />
-              <label htmlFor="custom-address">Masjid address</label>
-              <input id="custom-address" value={customAddress} onChange={(e) => setCustomAddress(e.target.value)} required maxLength={300} />
-            </div>
-          )}
-          <label className="choice">
-            <input type="radio" name="masjid" value={HOME} checked={choice === HOME} onChange={() => pick(HOME)} />
-            <span>
-              <strong>I pray at home</strong>
-            </span>
-          </label>
-        </fieldset>
-      )}
+        ))}
+        <label className="choice">
+          <input type="radio" name="masjid" value={CUSTOM} checked={choice === CUSTOM} onChange={() => pick(CUSTOM)} />
+          <span>
+            <strong>My masjid isn't listed</strong>
+          </span>
+        </label>
+        {choice === CUSTOM && (
+          <div className="indent">
+            <label htmlFor="custom-name">Masjid name</label>
+            <input id="custom-name" value={customName} onChange={(e) => setCustomName(e.target.value)} required maxLength={200} />
+            <label htmlFor="custom-address">Masjid address</label>
+            <input id="custom-address" value={customAddress} onChange={(e) => setCustomAddress(e.target.value)} required maxLength={300} />
+          </div>
+        )}
+        <label className="choice">
+          <input type="radio" name="masjid" value={HOME} checked={choice === HOME} onChange={() => pick(HOME)} />
+          <span>
+            <strong>I pray at home</strong>
+          </span>
+        </label>
+      </fieldset>
       {atAMasjid && (
         <div>
           <label htmlFor="short-name">Short name for your calendar (optional)</label>

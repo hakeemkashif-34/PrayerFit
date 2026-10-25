@@ -257,3 +257,68 @@ test("the page uses Plus Jakarta Sans from our own site", async ({ page }) => {
   expect(fontRequests.length).toBeGreaterThan(0);
   expect(fontRequests.every((url) => url.startsWith("http://localhost:4173/assets/"))).toBe(true);
 });
+
+test("a failed masjid search still shows the 2 fallback choices, so setup can carry on", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  api.failNext["/api/masjids/nearby"] = {
+    status: 503,
+    detail: { message: "OpenStreetMap's masjid search is busy right now. Try again in a few minutes." },
+  };
+  await api.install(page);
+  await page.goto("/");
+
+  await pickHome(page);
+
+  await expect(page.getByRole("alert")).toContainText("busy right now");
+  await expect(page.getByRole("alert")).toContainText('You can still type your masjid in or choose "I pray at home".');
+  await expect(page.getByRole("radio")).toHaveCount(2);
+  await expect(page.getByRole("radio", { name: "My masjid isn't listed" })).toBeVisible();
+  await page.getByRole("radio", { name: "I pray at home" }).check();
+  await page.getByRole("button", { name: "Next" }).click();
+
+  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
+  expect(api.calls("PUT", "/api/settings/main-masjid")[0].body).toEqual({ choice: "home" });
+});
+
+test("a typed-in masjid works while the masjid search is down", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  api.failNext["/api/masjids/nearby"] = { status: 503, detail: { message: "OpenStreetMap's masjid search is busy right now." } };
+  await api.install(page);
+  await page.goto("/");
+
+  await pickHome(page);
+  await page.getByRole("radio", { name: "My masjid isn't listed" }).check();
+  await page.getByLabel("Masjid name").fill("Kanata Muslim Association");
+  await page.getByLabel("Masjid address").fill("351 Sandhill Rd");
+  await page.getByRole("button", { name: "Next" }).click();
+
+  await expect(page.getByRole("heading", { level: 1, name: /Which prayers do you usually pray at/ })).toBeVisible();
+});
+
+test("Search again tries the masjid search one more time", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  api.failNext["/api/masjids/nearby"] = { status: 503, detail: { message: "OpenStreetMap's masjid search is busy right now." } };
+  await api.install(page);
+  await page.goto("/");
+
+  await pickHome(page);
+  await page.getByRole("button", { name: "Search again" }).click();
+
+  await expect(page.getByText("1.1 km away")).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(api.calls("GET", "/api/masjids/nearby")).toHaveLength(2);
+});
+
+test("the fallback choices work before a slow masjid search finishes", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  api.nearbyDelayMs = 10_000;
+  await api.install(page);
+  await page.goto("/");
+
+  await pickHome(page);
+  await expect(page.getByText("Searching for masjids nearby. This can take up to a minute.")).toBeVisible();
+  await page.getByRole("radio", { name: "I pray at home" }).check();
+  await page.getByRole("button", { name: "Next" }).click();
+
+  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
+});
