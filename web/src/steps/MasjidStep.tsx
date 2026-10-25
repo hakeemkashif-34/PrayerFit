@@ -1,6 +1,6 @@
 // Question 2: "Which masjid do you usually go to?" A search box like the
-// location step (see MasjidSearch), an optional short name for the
-// calendar, and a small "Skip" link. Skipping means every prayer is at home.
+// location step (see MasjidSearch), and a small "Skip" link. Skipping
+// means every prayer is at home. The short name is in the optional step.
 
 import { useState, type FormEvent } from "react";
 import { api, ApiError } from "../api";
@@ -21,16 +21,9 @@ type Props = {
 
 export function MasjidStep({ settings, page = false, submitLabel = "Save", skipLabel = "Skip", onSaved, onCancel }: Props) {
   const [picked, setPicked] = useState<Masjid | null>(settings.main_masjid);
-  const [shortName, setShortName] = useState(settings.main_masjid_short_name ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const Heading = page ? "h1" : "h2";
-
-  // A short name belongs to one masjid, so picking another one clears it.
-  function choose(masjid: Masjid) {
-    setPicked(masjid);
-    setShortName(masjid.id === settings.main_masjid?.id ? (settings.main_masjid_short_name ?? "") : "");
-  }
 
   async function run(save: () => Promise<SaveResponse>) {
     setBusy(true);
@@ -46,12 +39,10 @@ export function MasjidStep({ settings, page = false, submitLabel = "Save", skipL
   function save(event: FormEvent) {
     event.preventDefault();
     if (!picked) return;
-    const short_name = shortName.trim() || undefined;
-    void run(() => api.saveMainMasjid({ choice: "masjid", masjid_id: picked.id, short_name }));
+    void run(() => api.saveMainMasjid({ choice: "masjid", masjid_id: picked.id }));
   }
 
   const skip = () => void run(() => api.saveMainMasjid({ choice: "home" }));
-  const shownName = shortName.trim() || picked?.name || "the masjid";
 
   return (
     <form onSubmit={save} aria-labelledby="masjid-title">
@@ -68,25 +59,7 @@ export function MasjidStep({ settings, page = false, submitLabel = "Save", skipL
           </button>
         </div>
       ) : (
-        <MasjidSearch onPicked={choose} />
-      )}
-
-      {picked && (
-        <div>
-          <label htmlFor="short-name">Short name for your calendar (optional)</label>
-          <input
-            id="short-name"
-            value={shortName}
-            onChange={(e) => setShortName(e.target.value)}
-            placeholder="KMA"
-            maxLength={40}
-          />
-          <p className="hint">
-            {picked.name
-              ? `Events will say "Dhuhr at ${shownName}".`
-              : `This masjid has no name on the map. Give it one so events say where, like "Dhuhr at KMA".`}
-          </p>
-        </div>
+        <MasjidSearch onPicked={setPicked} />
       )}
 
       {error && (
