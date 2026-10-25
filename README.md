@@ -117,7 +117,7 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 5. **What's your location?** Start typing your address. Suggestions show up in a dropdown once you stop typing. Pick yours. The time zone comes from the location. Postal codes aren't shown or saved, since OpenStreetMap's are often wrong in Canada.
 6. **Which masjid do you usually go to?** Start typing its name. Suggestions show the masjid's name and its distance from home, closest first. If yours doesn't come up, type its address instead and pick that. Press **Skip** if you pray at home: every prayer is at home and the next page is skipped.
 7. **Which prayers do you usually pray at the masjid?** Tick them in the grid: prayers down the side, Monday to Sunday across the top. Anything left unticked is at home, so ticking nothing means every prayer is at home. This page is skipped if you pressed **Skip**.
-8. **A few extras** (optional): how many minutes before iqamah you want to arrive (0 to 30), a short name like `KMA` for the masjid, and a Google Calendar colour for prayer blocks and for drive blocks. Press **Skip** to use the defaults: 0 minutes, the masjid's full name, and the calendar's own colour.
+8. **A few extras** (optional): how many minutes before iqamah you want to arrive (a whole number from 0 to 30), a short name like `KMA` for the masjid, and a Google Calendar colour for prayer blocks and for drive blocks. The step starts with the defaults filled in: 5 minutes early, the masjid's full name, and Basil (Google's green) for both colours. Press **Skip** to use them. Nothing is written to Google Calendar until you save or skip this step.
 9. Press **Finish**. The page says "Adding your prayers to Google Calendar..." while the calendar fills, in about 10 to 20 seconds. Then the same tab opens Google Calendar for the account you signed in with. If the update fails, you stay on the Settings page, which says what went wrong and has **Try again**.
 10. Setup uses ISNA and standard Asr, and your main masjid becomes your Jumuah masjid. You can change both on the Settings page, where you can also remove the Jumuah masjid or add others. Skipping the masjid step means no Jumuah masjids.
 11. In Google Calendar, the **Prayers** calendar has today and the next 13 days, like `Fajr at home` and `Dhuhr at KMA`. Each description says where the time came from. Until your masjid is linked to MAWAQIT (below), masjid prayers use the calculated time and say the iqamah isn't available.
@@ -243,11 +243,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `611 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `629 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`351 passed, 260 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`351 passed, 278 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
@@ -260,4 +260,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `78 passed`: 39 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `90 passed`: 45 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.

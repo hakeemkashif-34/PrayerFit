@@ -806,14 +806,15 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 
 ### 12. The optional step
 
-1. A 4th setup step after the weekly grid, with a **Skip** button. Skip saves the defaults: 0 minutes, no short name, and no colours.
-2. **How early**: a dropdown from 0 to 30 minutes.
-3. **Short name**: moved here from the masjid step. It only shows when there's a main masjid. Picking the same masjid again keeps it, and picking a different one clears it, on the backend now too.
-4. **Colours**: Google Calendar has 11 fixed event colours, with IDs "1" to "11" and names like Peacock and Tomato. A normal `<select>` can't show a coloured dot in its options, so `ColourPicker.tsx` is a small listbox: a button that opens a list, with arrow keys, Enter, and Escape. "Calendar colour" (no colour) is the default.
-5. `user_settings.optional_saved` says whether the step was answered. The migration sets it to true for everyone who already finished setup, so nobody is sent back to setup.
-6. The settings page has an **Extras** card with the same step.
-7. The footer credits OpenRouteService next to OpenStreetMap.
-8. **Like Google's own colour menu**: the colours are in the order Google lists them (Tomato, Flamingo, Tangerine, and so on), each a round dot with Google's name, and the chosen one has a tick. The tick is drawn with CSS (`::after`), so a screen reader reads "Peacock", not "✓ Peacock". `aria-selected` says which one is chosen.
+1. A 4th setup step after the weekly grid, with a **Skip** button. The defaults are 5 minutes early, no short name, and Basil (Google's green, colour ID "10") for both prayer and drive blocks. They're filled in when the step opens, and Skip saves them. They live in one place on each side: `DEFAULT_ARRIVE_EARLY_MINUTES` and `DEFAULT_COLOR_ID` in `user_settings.py`, and `DEFAULT_ARRIVE_EARLY` and `DEFAULT_COLOUR` in `labels.ts`. Users who saved the step before keep what they had: only new answers get the new defaults, and no migration changes old rows.
+2. **How early**: a number box, whole numbers from 0 to 30. The website checks it when you press Finish or Save, and shows "Enter a whole number of minutes from 0 to 30." for anything else (31, -1, 2.5, or empty). The form has `noValidate`, so the browser's own bubble doesn't show instead. The backend checks again with `strict=True`, so 2.5, 5.0, or "5" is refused, not rounded.
+3. **Nothing reaches Google before this step is done.** Saving the earlier questions never touches Google, because the calendar is only updated once `setup_completed_at` is set, and `POST /setup/finish` refuses to set it until the optional step is answered. The website calls it straight after this step, then sends the user to Google Calendar. `test_nothing_reaches_google_until_setup_finishes` checks that the fake Google got no requests at all until then.
+4. **Short name**: moved here from the masjid step. It only shows when there's a main masjid. Picking the same masjid again keeps it, and picking a different one clears it, on the backend now too.
+5. **Colours**: Google Calendar has 11 fixed event colours, with IDs "1" to "11" and names like Peacock and Tomato. A normal `<select>` can't show a coloured dot in its options, so `ColourPicker.tsx` is a small listbox: a button that opens a list, with arrow keys, Enter, and Escape. "Calendar colour" (no colour, so the Prayers calendar's own) is still the first choice.
+6. `user_settings.optional_saved` says whether the step was answered. The migration sets it to true for everyone who already finished setup, so nobody is sent back to setup.
+7. The settings page has an **Extras** card with the same step.
+8. The footer credits OpenRouteService next to OpenStreetMap.
+9. **Like Google's own colour menu**: the colours are in the order Google lists them (Tomato, Flamingo, Tangerine, and so on), each a round dot with Google's name, and the chosen one has a tick. The tick is drawn with CSS (`::after`), so a screen reader reads "Peacock", not "✓ Peacock". `aria-selected` says which one is chosen.
 
 ### 13. After setup: straight to Google Calendar
 
@@ -839,6 +840,6 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 
 ### 15. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`611 passed`) and `npx playwright test` in `web` (`78 passed`).
+1. **Tests**: `pytest` in `backend` (`629 passed`) and `npx playwright test` in `web` (`90 passed`).
 2. **For real**: get a free ORS key and put it in `.env`. Then follow "Masjid times from MAWAQIT" in the README to link KMA, and run `run-now --force`. In Google Calendar: masjid prayers at KMA's iqamah, home prayers at KMA's adhan, each with its source, a drive block with a reminder before each masjid prayer, Jumuah on Friday if KMA is a Jumuah masjid, and the colours picked in Extras.
 3. **Checks I couldn't do here**: reading KMA's live MAWAQIT page (only the saved copy), a real ORS key, and `authuser` with an email on the real Google Calendar. All 3 hosts were blocked where I built this.
