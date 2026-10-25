@@ -23,6 +23,10 @@ PRAYERS = ("fajr", "dhuhr", "asr", "maghrib", "isha")
 STEPS = ("address", "masjid", "weekly", "optional")
 DEFAULT_METHOD = CalculationMethod.ISNA
 DEFAULT_ASR_METHOD = AsrMethod.STANDARD
+# The optional step's defaults, used when it's skipped. Users who saved
+# the step before these existed keep what they have.
+DEFAULT_ARRIVE_EARLY_MINUTES = 5
+DEFAULT_COLOR_ID = "10"  # Basil, Google Calendar's green
 
 
 def get_settings(db: Session, user_id: uuid.UUID) -> UserSettings:

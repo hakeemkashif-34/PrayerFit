@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import MasjidSource, UpdateJob
+from app.models import MasjidSource, UpdateJob, UserSettings
 from tests.calendar_helpers import fetch, google_events
 from tests.conftest import sign_in
 from tests.masjid_helpers import link, masjid_id, user_id
@@ -49,8 +49,26 @@ def test_skipping_uses_the_defaults(signed_in, fake_photon):
     setup_through_api(signed_in, fake_photon, finish=False)
     settings = signed_in.put("/settings/optional", json={}).json()["settings"]
     assert settings["missing"] == []
-    assert (settings["arrive_early_minutes"], settings["prayer_color_id"], settings["drive_color_id"]) == (0, None, None)
+    # 5 minutes early, and Basil (Google's green, ID "10") for both.
+    assert (settings["arrive_early_minutes"], settings["prayer_color_id"], settings["drive_color_id"]) == (5, "10", "10")
     assert settings["main_masjid_short_name"] is None
+
+
+def test_calendar_colour_can_still_be_picked(signed_in, fake_photon):
+    setup_through_api(signed_in, fake_photon, finish=False)
+    body = {"arrive_early_minutes": 0, "prayer_color_id": None, "drive_color_id": None}
+    settings = signed_in.put("/settings/optional", json=body).json()["settings"]
+    assert (settings["arrive_early_minutes"], settings["prayer_color_id"], settings["drive_color_id"]) == (0, None, None)
+
+
+def test_existing_answers_arent_changed_by_the_new_defaults(set_up, db):
+    # Saved before the defaults changed: 0 minutes and the calendar's colour.
+    with Session(db) as session:
+        row = session.scalars(select(UserSettings)).one()
+        row.arrive_early_minutes, row.prayer_color_id, row.drive_color_id = 0, None, None
+        session.commit()
+    settings = set_up.get("/settings").json()
+    assert (settings["arrive_early_minutes"], settings["prayer_color_id"], settings["drive_color_id"]) == (0, None, None)
 
 
 @pytest.mark.parametrize(
@@ -58,6 +76,10 @@ def test_skipping_uses_the_defaults(signed_in, fake_photon):
     [
         {"arrive_early_minutes": 31},
         {"arrive_early_minutes": -1},
+        {"arrive_early_minutes": 2.5},
+        {"arrive_early_minutes": 5.0},
+        {"arrive_early_minutes": "5"},
+        {"arrive_early_minutes": None},
         {"prayer_color_id": "12"},
         {"drive_color_id": "0"},
         {"prayer_color_id": "red"},
@@ -155,3 +177,30 @@ def test_the_masjid_shows_where_its_times_come_from(set_up, db, http, fake_mawaq
     assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == (
         "MAWAQIT times are more than 7 days old, so calculated times are used"
     )
+
+
+def test_nothing_reaches_google_until_setup_finishes(signed_in, fake_photon, fake_google):
+    # Every question, including the optional step, but not finished yet.
+    setup_through_api(signed_in, fake_photon, finish=False)
+    assert [r for r in fake_google.requests if "/calendar/" in r.path] == []
+    assert fake_google.calendars == {}
+    # Changing an answer before finishing doesn't write either.
+    signed_in.put("/settings/optional", json={"arrive_early_minutes": 10})
+    assert fake_google.requests == []
+
+    # Finishing is the first calendar update: the calendar is made and filled.
+    response = signed_in.post("/setup/finish")
+    assert response.json()["calendar"]["status"] == "updated"
+    assert fake_google.writes()
+    assert all(e.get("colorId") == "10" for e in google_events(fake_google))
+
+
+def test_finish_is_refused_before_the_optional_step(signed_in, fake_photon, fake_google, db):
+    setup_through_api(signed_in, fake_photon, finish=False)
+    with Session(db) as session:
+        session.scalars(select(UserSettings)).one().optional_saved = False
+        session.commit()
+    response = signed_in.post("/setup/finish")
+    assert response.status_code == 409
+    assert response.json()["detail"]["missing"] == ["optional"]
+    assert fake_google.requests == []

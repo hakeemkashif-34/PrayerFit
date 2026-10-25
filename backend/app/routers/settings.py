@@ -33,6 +33,8 @@ from app.prayer_times import DEFAULT_TIMEZONE, AsrMethod, CalculationMethod
 from app.update_jobs import queue_update, run_update
 from app.user_settings import (
     PRAYERS,
+    DEFAULT_ARRIVE_EARLY_MINUTES,
+    DEFAULT_COLOR_ID,
     find_settings,
     follow_main_masjid,
     asr_method_of,
@@ -542,14 +544,15 @@ def save_jumuah(request: JumuahRequest, user: UserDep, db: DbDep, http: HttpDep,
 
 
 class OptionalRequest(BaseModel):
-    """Skip sends the defaults: 0 minutes, no short name, and no colours."""
+    """A field left out gets its default: 5 minutes early, no short name, and Basil."""
 
-    arrive_early_minutes: int = Field(default=0, ge=0, le=30)
+    # strict: a whole number only. 2.5 or "5" is refused, not rounded.
+    arrive_early_minutes: int = Field(default=DEFAULT_ARRIVE_EARLY_MINUTES, ge=0, le=30, strict=True)
     # Like "KMA". Only kept when there's a main masjid.
     short_name: str | None = Field(default=None, max_length=40)
-    # Empty uses the Prayers calendar's own colour.
-    prayer_color_id: ColorId | None = None
-    drive_color_id: ColorId | None = None
+    # null uses the Prayers calendar's own colour.
+    prayer_color_id: ColorId | None = DEFAULT_COLOR_ID
+    drive_color_id: ColorId | None = DEFAULT_COLOR_ID
 
 
 @router.put("/settings/optional", response_model=SaveResponse)
