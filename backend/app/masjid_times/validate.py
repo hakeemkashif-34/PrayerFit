@@ -31,9 +31,12 @@ def clock_time(value: object, what: str) -> time:
 def iqamah_time(value: object, adhan: time, what: str) -> time | None:
     """An iqamah as a clock time ("20:15") or minutes after adhan ("+10").
 
-    Empty means the masjid didn't publish one, so it stays empty.
+    Empty means the masjid didn't publish one, so it stays empty. So does
+    "+0": KMA's page has it for Asr and Isha from February to October,
+    the months it hadn't set times for yet, while its other months have
+    real times. Taking it as "iqamah at the adhan" would make one up.
     """
-    if value is None or (isinstance(value, str) and value.strip() in ("", "-")):
+    if value is None or (isinstance(value, str) and value.strip() in ("", "-", "+0")):
         return None
     if isinstance(value, str) and (after := AFTER_ADHAN.match(value.strip())):
         total = minutes(adhan) + int(after.group(1))

@@ -136,3 +136,15 @@ def test_the_page_script_is_only_read_as_data():
     html = page(conf())
     assert "never-run" in html
     assert conf_data(html)["name"] == "Test Masjid"
+
+
+def test_plus_zero_means_no_iqamah_was_published():
+    data = set_day(conf(), 10, 25, iqamah=["+15", "13:00", "+0", "+5", "+0"])
+    first = read(data)[0]
+    assert first.iqamah["asr"] is None and first.iqamah["isha"] is None
+    assert first.iqamah["maghrib"] == time(18, 5)
+
+
+def test_jumuah_at_dhuhr_time_has_no_set_slots():
+    days = read(conf(jumuaAsDuhr=True))
+    assert all(d.jumuah == () for d in days)

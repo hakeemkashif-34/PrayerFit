@@ -12,7 +12,10 @@ What confData holds (only these parts are used):
 - iqamaCalendar: 12 months. Each maps a day to 5 iqamah values, either a
   clock time ("20:15") or minutes after adhan ("+10").
 - jumua, jumua2, jumua3: Friday prayer times, empty when not used.
+- jumuaAsDuhr: true when Jumuah is at Dhuhr time instead of set times.
 - iqamaEnabled: false when the masjid publishes no iqamah times.
+
+"+0" in iqamaCalendar is read as "no iqamah published" (see validate.py).
 
 MAWAQIT can block this at any time. When it does, the app keeps the last
 good times for up to 7 days, then falls back to calculated times.
@@ -130,6 +133,9 @@ def _month_table(data: dict, key: str, month: int) -> dict:
 
 
 def jumuah_slots(data: dict) -> tuple[time, ...]:
+    if data.get("jumuaAsDuhr") is True:
+        # No set Jumuah times on the page, so none are made up.
+        return ()
     slots = []
     for key in ("jumua", "jumua2", "jumua3"):
         value = data.get(key)
