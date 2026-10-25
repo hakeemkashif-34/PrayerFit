@@ -162,7 +162,7 @@ What it changes in the calendar:
 
 1. **Masjid prayers** use the masjid's iqamah, like `KMA iqamah (MAWAQIT, updated Oct 25, 2026)`. A day with no iqamah uses the calculated start time and says so. An iqamah is never made up. `+0` on a MAWAQIT page means the iqamah is at the adhan time: KMA uses it for Asr and Isha on days when its set time would come before the adhan. If a page sets `fajrFixationComparedToShuruq`, Fajr's iqamah isn't used and the worker logs it, since that setting's format isn't known.
 2. **Home prayers** use the main masjid's adhan time, like `KMA adhan time (MAWAQIT)`.
-3. **Jumuah**: on Fridays, if you have Jumuah masjids on the Settings page (your main masjid is added for you), Dhuhr becomes `Jumuah at <masjid>` at the slot with the shortest drive, then the earliest time.
+3. **Jumuah**: on Fridays, if you have Jumuah masjids on the Settings page (your main masjid is added for you), Dhuhr becomes `Jumuah at <masjid>` at the slot with the shortest drive, then the earliest time. The Jumuah block is 60 minutes long, for the khutbah and the prayer. Every other prayer block is 15 minutes.
 4. **Freshness**: times read in the last 24 hours are fresh. Up to 7 days old, they're still used, and the description says they may be out of date. Older than that, calculated times are used.
 
 MAWAQIT can block this at any time. After a 403, a 429, or 3 failed reads in a row, the app waits 24 hours before trying that masjid again, and keeps the last good times in the meantime.
@@ -243,11 +243,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `629 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `631 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`351 passed, 278 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`352 passed, 279 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 

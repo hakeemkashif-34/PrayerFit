@@ -789,7 +789,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 1. **The picker** (`jumuah.py`) is a pure function. Input: every Jumuah slot from the user's Jumuah masjids for that Friday, the drive time to each, "how early", and busy times. Output: the slot and the reason.
 2. **The rule**: drop slots whose drive or prayer overlaps a busy time, pick the masjid with the shortest drive, then its earliest slot. Masjids with an unknown drive time go after known ones, in the order the user listed them.
 3. Busy times are always empty until milestone 7 adds commitments, but the tests already check them.
-4. **In the calendar**: on a Friday where a slot is picked, the Dhuhr row becomes "Jumuah at <masjid>" with its drive block. If the user has Jumuah masjids but none has usable Jumuah times, Dhuhr follows the weekly grid, and the description says Jumuah times aren't available. No Jumuah masjids means a normal Friday.
+4. **In the calendar**: on a Friday where a slot is picked, the Dhuhr row becomes "Jumuah at <masjid>" with its drive block. The Jumuah block is 60 minutes long (`JUMUAH_LENGTH` in `prayer_sync.py`), since it has the khutbah before the prayer. Every other prayer block stays 15 minutes. The picker checks the whole 60 minutes against busy times, so a commitment at 2:00 pm rules out a 1:30 pm Jumuah. If the user has Jumuah masjids but none has usable Jumuah times, Dhuhr follows the weekly grid, and the description says Jumuah times aren't available. No Jumuah masjids means a normal Friday.
 5. **The main masjid is the first Jumuah masjid** (`follow_main_masjid` in `user_settings.py`), so users don't pick it twice:
    a) Picking a main masjid with no Jumuah masjids yet adds it.
    b) If the Jumuah list is only the old main masjid, a new main masjid takes its place. Choosing "I pray at home" empties it. That way picking a masjid, going Back, and pressing Skip still means no Jumuah.
@@ -840,6 +840,6 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 
 ### 15. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`629 passed`) and `npx playwright test` in `web` (`90 passed`).
+1. **Tests**: `pytest` in `backend` (`631 passed`) and `npx playwright test` in `web` (`90 passed`).
 2. **For real**: get a free ORS key and put it in `.env`. Then follow "Masjid times from MAWAQIT" in the README to link KMA, and run `run-now --force`. In Google Calendar: masjid prayers at KMA's iqamah, home prayers at KMA's adhan, each with its source, a drive block with a reminder before each masjid prayer, Jumuah on Friday if KMA is a Jumuah masjid, and the colours picked in Extras.
 3. **Checks I couldn't do here**: reading KMA's live MAWAQIT page (only the saved copy), a real ORS key, and `authuser` with an email on the real Google Calendar. All 3 hosts were blocked where I built this.
