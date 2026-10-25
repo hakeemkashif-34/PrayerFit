@@ -28,7 +28,9 @@ router = APIRouter(tags=["prayers"])
 
 class PrayerEventResponse(BaseModel):
     prayer: str
-    title: str  # like "Dhuhr at KMA"
+    # "prayer", or "drive" for the drive block before a masjid prayer.
+    kind: str
+    title: str  # like "Dhuhr at KMA" or "Drive to KMA"
     starts_at: datetime  # in the event's own time zone
     ends_at: datetime
     time_zone: str
@@ -47,6 +49,7 @@ def _event_response(row: PrayerEvent) -> PrayerEventResponse:
     zone = ZoneInfo(row.time_zone)
     return PrayerEventResponse(
         prayer=row.prayer,
+        kind=row.kind,
         title=row.summary or row.prayer.capitalize(),
         starts_at=row.starts_at.astimezone(zone),
         ends_at=row.ends_at.astimezone(zone),
@@ -116,4 +119,5 @@ def list_today_events(
 ) -> list[PrayerEventResponse]:
     """Your saved events for today, from the database. Only ever your own."""
     today = _user_today(db, user.id, now)
-    return [_event_response(row) for row in rows_for_dates(db, user.id, [today])]
+    rows = rows_for_dates(db, user.id, [today])
+    return [_event_response(row) for row in rows if row.sync_status != "deleted"]
