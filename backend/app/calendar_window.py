@@ -24,7 +24,8 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.auth.tokens import get_access_token
-from app.drive_times import drive_seconds
+from app.busy_times import busy_on
+from app.drive_times import commute_times
 from app.geo.timezones import masjid_time_zone
 from app.event_plan import MasjidContext, PlannedEvent, drive_event_id, plan_day
 from app.google_calendar import GoogleCalendar
@@ -67,13 +68,22 @@ class MasjidInputs:
     jumuah: list[MasjidContext]
 
 
-def masjid_inputs(db: Session, http: httpx2.Client, setup: Setup, dates: list[date], now: datetime) -> MasjidInputs:
+def masjid_inputs(
+    db: Session,
+    http: httpx2.Client,
+    setup: Setup,
+    dates: list[date],
+    now: datetime,
+    commute_overrides: dict[uuid.UUID, int | None] | None = None,
+) -> MasjidInputs:
     masjids: list[Masjid] = []
     for masjid in ([setup.masjid] if setup.masjid else []) + list(setup.jumuah_masjids):
         if all(m.id != masjid.id for m in masjids):
             masjids.append(masjid)
     times = load_masjid_times(db, [m.id for m in masjids], dates, now)
-    drives = drive_seconds(db, http, setup.user_id, (setup.latitude, setup.longitude), masjids, now)
+    commutes = commute_times(
+        db, http, setup.user_id, (setup.latitude, setup.longitude), masjids, now, commute_overrides
+    )
 
     def context(masjid: Masjid) -> MasjidContext:
         return MasjidContext(
@@ -81,7 +91,8 @@ def masjid_inputs(db: Session, http: httpx2.Client, setup: Setup, dates: list[da
             label=setup.label_for(masjid),
             time_zone=masjid_time_zone(masjid),
             times=times.get(masjid.id),
-            drive_seconds=drives.get(masjid.id),
+            drive_seconds=commutes[masjid.id].seconds,
+            commute_source=commutes[masjid.id].source or "ors",
             jumuah_minutes=masjid.jumuah_minutes,
         )
 
@@ -207,7 +218,15 @@ def refresh_calendar(
             first_day = now.astimezone(ZoneInfo(setup.time_zone)).date()
         dates = window_dates(first_day, days)
         inputs = masjid_inputs(db, http, setup, dates, now)
-        save_window(db, user_id, plan_window(setup, dates, inputs), dates, now)
+        # Busy times are only needed for Jumuah, and only the coming Friday
+        # has Jumuah times. One free/busy call, nothing saved.
+        friday = next_friday(dates[0])
+        busy = (
+            busy_on(db, http, user_id, friday, setup.time_zone).busy
+            if setup.jumuah_masjids and friday in dates
+            else []
+        )
+        save_window(db, user_id, plan_window(setup, dates, inputs, busy), dates, now)
 
         # Get (or refresh) the token first, so a dead sign-in is reported
         # before any Google call. The rows above stay saved either way.

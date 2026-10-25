@@ -1,7 +1,8 @@
 """The only code that talks to the Google Calendar API.
 
-It has exactly 6 calls: create a calendar, look one up, change its time
-zone, add an event, update an event, and delete an event. Delete is only
+It has exactly 7 calls: create a calendar, look one up, change its time
+zone, add an event, update an event, delete an event, and ask when the
+user is busy. Delete is only
 ever used for drive blocks the app made (see prayer_sync.delete_drive_block).
 There's nothing here that lists or changes the user's other calendars, so
 the app can't touch them by mistake. The calendar.app.created scope would
@@ -114,3 +115,12 @@ class GoogleCalendar:
     def delete_event(self, calendar_id: str, event_id: str) -> None:
         path = f"{self._calendar_path(calendar_id)}/events/{quote(event_id, safe='')}"
         self._request("DELETE", path)
+
+    def free_busy(self, time_min: str, time_max: str) -> dict:
+        """When the user's primary calendar is busy, between 2 RFC 3339 times.
+
+        Only "primary" is asked for, so the app's own Prayers calendar is
+        never counted. Google only sends start and end times, never titles.
+        """
+        body = {"timeMin": time_min, "timeMax": time_max, "items": [{"id": "primary"}]}
+        return self._request("POST", "/freeBusy", body)

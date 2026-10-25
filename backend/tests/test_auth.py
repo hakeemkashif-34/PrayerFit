@@ -25,13 +25,15 @@ def test_login_sends_the_browser_to_google_with_pkce(client):
     assert google_query["access_type"] == "offline"
 
 
-def test_login_asks_only_for_the_three_scopes(client):
+def test_login_asks_only_for_the_four_scopes(client):
     google_query = start_sign_in(client)
 
     assert google_query["scope"].split() == [
         "openid",
         "email",
         "https://www.googleapis.com/auth/calendar.app.created",
+        # Only when the user is busy, never what their events are.
+        "https://www.googleapis.com/auth/calendar.freebusy",
     ]
     assert "gmail" not in google_query["scope"]
     assert "https://www.googleapis.com/auth/calendar " not in google_query["scope"] + " "
@@ -62,6 +64,7 @@ def test_successful_sign_in_creates_the_user_and_goes_to_the_website(client, fak
         "email": "a@example.com",
         "google_sign_in_needed": False,
         "calendar_access": True,
+        "busy_access": True,
         "setup_complete": False,
     }
     with DbSession(db) as session:
@@ -212,3 +215,17 @@ def test_unticked_calendar_access_is_reported(client, fake_google):
     sign_in(client, fake_google, scopes="openid https://www.googleapis.com/auth/userinfo.email")
 
     assert client.get("/me").json()["calendar_access"] is False
+
+
+def test_a_user_from_before_free_busy_is_told_to_allow_it(client, fake_google):
+    from tests.fake_google import OLD_SCOPES
+
+    sign_in(client, fake_google, scopes=OLD_SCOPES)
+    me = client.get("/me").json()
+    assert me["calendar_access"] is True
+    assert me["busy_access"] is False
+    assert me["google_sign_in_needed"] is False  # everything else still works
+
+    # Signing in again asks for every scope, and this time they allow it.
+    sign_in(client, fake_google)
+    assert client.get("/me").json()["busy_access"] is True

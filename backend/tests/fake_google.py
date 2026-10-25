@@ -20,7 +20,12 @@ from urllib.parse import parse_qs, unquote
 import httpx2
 
 CLIENT_ID = "test-client-id.apps.googleusercontent.com"
-SCOPES = "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.app.created"
+SCOPES = (
+    "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.app.created "
+    "https://www.googleapis.com/auth/calendar.freebusy"
+)
+# What a user who signed in before milestone 5 granted: no free/busy.
+OLD_SCOPES = "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.app.created"
 CALENDAR_API = "/calendar/v3"
 
 
@@ -88,6 +93,10 @@ class FakeGoogle:
         # or "timeout_after_write" (Google saves it but the answer never arrives).
         self.fail_event_write: dict[int, str | int] = {}
         self._event_writes = 0
+        # Busy times in each user's primary calendar, as (start, end) RFC 3339 strings.
+        self.busy: dict[str, list[tuple[str, str]]] = {}
+        # Set to a status code (like 500) to make free/busy fail.
+        self.freebusy_failure: int | None = None
 
     # ---- Things tests call to set up a scene ----
 
@@ -119,7 +128,8 @@ class FakeGoogle:
         return [e for e in events if e.get("status") != "cancelled"]
 
     def writes(self) -> list[Recorded]:
-        return [r for r in self.requests if r.method != "GET"]
+        # Free/busy is a POST, but it only reads.
+        return [r for r in self.requests if r.method != "GET" and not r.path.endswith("/freeBusy")]
 
     # ---- The transport the app's HTTP client uses ----
 
@@ -210,6 +220,10 @@ class FakeGoogle:
                 200, json={"id": calendar_id, "summary": body["summary"], "timeZone": body["timeZone"]}
             )
 
+        # POST /freeBusy
+        if request.method == "POST" and parts == ["freeBusy"]:
+            return self._free_busy(sub, body)
+
         if len(parts) < 2 or parts[0] != "calendars":
             raise AssertionError(f"The app called a Calendar API path the fake doesn't know: {raw_path}")
 
@@ -271,6 +285,23 @@ class FakeGoogle:
             return httpx2.Response(204)
 
         raise AssertionError(f"The app called a Calendar API path the fake doesn't know: {raw_path}")
+
+    def _free_busy(self, sub: str, body: dict) -> httpx2.Response:
+        if self.freebusy_failure is not None:
+            return httpx2.Response(self.freebusy_failure, json={"error": {"code": self.freebusy_failure}})
+        start, end = body["timeMin"], body["timeMax"]
+        calendars = {}
+        for item in body["items"]:
+            if item["id"] == "primary":
+                busy = [{"start": s, "end": e} for s, e in self.busy.get(sub, [])]
+                calendars["primary"] = {"busy": busy}
+        # Like a real answer that also has another calendar in it. The app must ignore it.
+        for calendar in self.calendars_of(sub):
+            calendars[calendar.id] = {"busy": [{"start": start, "end": end}]}
+        return httpx2.Response(200, json={"kind": "calendar#freeBusy", "timeMin": start, "timeMax": end, "calendars": calendars})
+
+    def freebusy_requests(self) -> list[Recorded]:
+        return [r for r in self.requests if r.path.endswith("/freeBusy")]
 
     def deletes(self) -> list[Recorded]:
         return [r for r in self.requests if r.method == "DELETE"]
