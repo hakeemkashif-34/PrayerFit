@@ -496,16 +496,17 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    e) `nginx.conf` and `Dockerfile`: build the site, then serve it with nginx, which also passes API calls to the backend.
    f) `tests/`: Playwright tests with a mocked API (`mock-api.ts`).
 2. **`backend/app/geo/`**: finding places.
-   a) `photon.py`: address suggestions as the user types.
+   a) `photon.py`: address and masjid suggestions as the user types.
    b) `timezones.py`: location to time zone, offline.
-   c) `overpass.py`: masjids near a location.
-   d) `throttle.py`: spaces out calls to those free services.
+   c) `distance.py`: straight-line distance between two points.
+   d) `throttle.py`: spaces out calls to Photon.
 3. **`backend/app/user_settings.py`**: reads and saves setup answers, and decrypts the address.
 4. **`backend/app/routers/settings.py`**: the setup and settings endpoints.
 5. **`backend/app/calendar_window.py`**: works out the next 14 days of events and sends only the ones that changed.
 6. **`backend/app/nightly.py`** and **`backend/app/worker.py`**: the nightly job and the worker service that runs it.
 7. **`backend/app/http_client.py`**: was `google_http.py`. Renamed because OpenStreetMap calls use it too.
-8. **`backend/alembic/versions/0002_settings_masjids_jobs.py`**: the new tables.
+8. **`backend/alembic/versions/0002_settings_masjids_jobs.py`**: the new tables. `0003_drop_overpass_cache.py` drops the Overpass cache (see section 5).
+9. **`web/src/SuggestBox.tsx`**: the search box with typing suggestions, used for the location, the masjid, and Jumuah masjids.
 
 ### 2. One site: nginx in front of everything
 
@@ -524,15 +525,15 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 1. **`user_settings`**: one row per user.
    a) The address the user picked and its coordinates are both **encrypted** with the same Fernet key as the Google tokens. Coordinates point to a home just as well as an address does, so they're encrypted too.
    b) The time zone is plain text. The nightly job needs it to know when 3:00 am is.
-   c) Each answer is empty until its step is saved. `missing_steps` lists what's left: `address`, `masjid`, and `weekly` (not for "I pray at home").
+   c) Each answer is empty until its step is saved. `missing_steps` lists what's left: `address`, `masjid`, and `weekly` (not after **Skip**, which saves "home").
    d) `method` and `asr_method` stay empty until changed on the settings page. Empty means the defaults, ISNA and standard (`method_of` and `asr_method_of`). Jumuah starts with no masjids. Setup doesn't ask about either for now, but the code and anything saved are kept.
-2. **`masjids`**: OpenStreetMap masjids (with `osm_type` and `osm_id`) and typed-in ones (with `created_by_user_id`).
-   a) OpenStreetMap masjids are public, so every user can see them. Typed-in ones are only shown to the user who typed them.
-   b) Nothing is made up. A masjid with no name on OpenStreetMap has an empty name and shows as "No name on OpenStreetMap". The address is only what OpenStreetMap's `addr:*` tags say. No times are stored yet.
+2. **`masjids`**: masjids users picked. Ones Photon found on OpenStreetMap have `osm_type` and `osm_id`. Ones picked by their address have `created_by_user_id`.
+   a) OpenStreetMap masjids are public, so any user can pick them. One picked by its address is only usable by the user who picked it.
+   b) Nothing is made up. A masjid picked by its address has no name, just the address the user picked, so the website asks for a short name. The address of an OpenStreetMap masjid is only what Photon sent. No times are stored yet.
    c) OSM IDs are only unique within a type (a node and a way can share a number), so the unique key is `(osm_type, osm_id)`.
 3. **`weekly_masjid_prayers`**: 7 rows per user, one per weekday, each with 5 true/false columns. 0 is Monday, the same as Python's `date.weekday()`.
 4. **`user_jumuah_masjids`**: links a user to each Jumuah masjid. A user can have several, or none.
-5. **`geocode_cache`**, **`overpass_cache`**, **`api_throttle`**: see sections 4 and 5.
+5. **`geocode_cache`** and **`api_throttle`**: see sections 4 and 5.
 6. **`nightly_jobs`**: see section 7.
 7. **New `prayer_events` columns**: `place` (`home` or `masjid`), `masjid_id`, `summary` (the title), `description`, and `synced_hash`.
 
@@ -552,7 +553,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 3. **`throttle.py`**: the last call time lives in one Postgres row.
    a) A caller locks the row (`SELECT ... FOR UPDATE`), waits until enough time has passed, writes the new time, and commits.
    b) Anyone else blocks on the lock until then.
-   c) Using Postgres instead of a Python variable means the limit holds across every process. Overpass uses the same code with 1 second.
+   c) Using Postgres instead of a Python variable means the limit holds across every process.
 4. **Picking saves it**: `POST /setup/location/suggest` returns each suggestion with its place in the list. Picking one calls `PUT /settings/location` with the text and that number. The backend reads the answer from the cache, so the saved location is exactly what the user saw, and the browser never sends coordinates.
 5. **The dropdown is a combobox**: the input has `role="combobox"` and the list has `role="listbox"`, so screen readers announce it. Up and down arrows move through the list, Enter picks, and Escape closes it.
 6. **Keeping the address private**:
@@ -561,33 +562,24 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    c) Error messages never include it. A timeout error from httpx can include the URL, so the app shows its own message instead.
    d) The cache key is an **HMAC** of the text (a hash mixed with the secret key), and the cached answer is encrypted. Without the key, someone can't check a guess like "is 123 Main St in here?" Partly typed addresses are cached too, so this matters even more than before.
    e) `test_address_never_shows_up_in_logs` captures every log line during a full setup and checks the address isn't there. I checked the test works by turning the httpx2 logger back on: it failed.
-7. **Failure logs**: when Google, Photon, or Overpass fails, `log_failure` in `http_client.py` writes one line like `Overpass failed: status 504 after 41.2 s` or `Photon failed: timeout after 10.0 s`.
+7. **Failure logs**: when Google or Photon fails, `log_failure` in `http_client.py` writes one line like `Photon failed: status 502 after 0.4 s` or `Google Calendar PUT failed: timeout after 10.0 s`.
    a) The reason is only the status code, "timeout", or "connection error". Never the error's own text, because httpx2 puts the URL in it, and the URL holds the address or location.
    b) Google's 404 and 409 answers aren't logged. The code expects them (a deleted calendar, an event that already exists).
    c) Tests check each kind of failure is logged with its time, and that no address, coordinates, or calendar ID is in the log.
 
-### 5. Time zone and nearby masjids
+### 5. Time zone and the masjid
 
 1. **Time zone**: `timezonefinder` has the world's time zone borders inside the package, so it works offline and costs nothing. Ottawa gives `America/Toronto`, Regina gives `America/Regina` (no daylight saving).
-2. **Overpass** is OpenStreetMap's free query service. The query asks for every node, way, or relation tagged `amenity=place_of_worship` and `religion=muslim` near a point. `out center` gives a middle point for buildings drawn as shapes.
-3. **Privacy and caching with a grid**:
-   a) The location is rounded to 2 decimal places (about 1 km). Overpass only ever gets that rounded point, never the home.
-   b) The query radius is 17 km around the cell's centre. Any point in a cell is under 0.8 km from the centre, so every home in the cell gets its full 15 km.
-   c) Each cell's results are cached for 30 days, since masjids rarely change. Neighbours in the same cell share one Overpass call.
-   d) The exact distance is worked out on the server from the real location, kept if 15 km or less, and sorted closest first.
-4. **Distance** is the haversine formula: the straight-line distance over the Earth's curve. Ottawa to Toronto comes out at about 352 km, which the tests check. No ratings, just name and distance.
-5. If every Overpass server is busy or down, the user sees "OpenStreetMap's masjid search is busy right now. Try again in a few minutes." (see point 7).
-6. **Overpass gets 60 seconds**: on my laptop, a real Overpass query for Kanata took 40.5 seconds and still worked. Google and Photon keep the usual 10 seconds, so Overpass passes its own `timeout=60` on that one request.
-   a) The chain has to wait longest at the front: the browser waits forever, nginx waits 120 seconds for `/api/`, and the backend gives each Overpass server up to 60 and all of them together up to 100. If nginx waited less than the backend, the user would get nginx's error even though the backend was about to answer.
-   b) While it waits, the masjid step says "Searching for masjids nearby. This can take up to a minute."
-   c) `test_overpass_call_uses_a_60_second_timeout` reads the timeout httpx2 put on the actual request. I checked it fails when the `timeout=60` is taken out.
-
-7. **Setup never waits on Overpass**: on my laptop, overpass-api.de answered 502 in 0.4 s and overpass.private.coffee didn't answer within 60 s. Public servers go down, so:
-   a) **Backup servers**: `OVERPASS_URLS` in `.env` is a list, tried in order. A 429, a 5xx, a timeout, or a connection error moves on to the next server. A 400 doesn't, because it means our query is wrong and every server would say the same. The default list is the public servers on the OpenStreetMap wiki: overpass-api.de (FOSSGIS), maps.mail.ru (VK Maps), and overpass.private.coffee.
-   b) **A time budget**: each server gets up to 60 seconds, but all of them together get at most 100, so the backend always answers before nginx's 120. A server isn't asked with under 5 seconds left.
-   c) **Started early**: saving the location adds a FastAPI background task that runs the masjid search after the response is sent. By the time the user has read the masjid question, it's usually cached. The task gets its own database session and HTTP client, because the request's are closed by then. A failure is only logged.
-   d) **One search per cell**: a Postgres advisory lock on the cell (`app/locks.py`, the same helper the calendar uses per user). If the masjid page asks while the background search is running, it waits and then reads the cache instead of asking Overpass again. If the search it waited for failed, it says so straight away instead of starting another one that could outlast nginx.
-   e) **The fallback choices always show**: "My masjid isn't listed" and "I pray at home" are on the page while it searches and after a failure, with a "Search again" button. Setup can always carry on.
+2. **The masjid is a search box too**: "Which masjid do you usually go to?" works like the location step. Photon is asked for places of worship only (`osm_tag=amenity:place_of_worship`), biased toward the user's saved location.
+   a) **Closest first**: the backend asks for 10, works out each one's straight-line distance from home (the haversine formula in `distance.py`), sorts by it, and keeps 5. Each suggestion shows its name and distance, like "Kanata Muslim Association, 1.1 km away".
+   b) **Privacy**: Photon gets the home rounded to 2 decimal places (about 1 km), never the exact location. The exact distance is worked out on our server.
+   c) **Cached per area**: the cache key includes the rounded home, since "Kanata Masjid" means different places in different cities.
+   d) **Same fair use** as the location step: a 400 ms pause, at least 3 characters, at most 5 suggestions, the cache, our User-Agent, and spaced-out calls.
+   e) **A masjid not on the map**: if no place of worship matches, or the text has a number in it (house numbers do), addresses near home are added to the list, marked "Address". Picking one saves it with no name, so the website asks for a short name. Most searches stay at one Photon call.
+   f) **Photon can't filter by religion**: churches are places of worship too. Since the user types the masjid's name, that's enough to find it. Places of worship with no name are left out, because they can't be told apart. The address search covers them.
+   g) **Picking saves it**: `POST /masjids/from-suggestion` reads the same cached search and saves the masjid. One from OpenStreetMap is saved by its `(osm_type, osm_id)`, so 2 users picking KMA share one row. The main masjid and Jumuah masjids both use it.
+   h) **Skip**: a small link instead of "I pray at home". It saves "home", so every prayer is at home and the weekly grid is skipped.
+3. **What I tried first, and why I took it out**: the first version listed every masjid within 15 km from OpenStreetMap's Overpass service. On my laptop it took 40 seconds one day, and the next day overpass-api.de answered 502 and another public server didn't answer at all. I added backup servers, a background search, and a 30 day cache, but setup still depended on a slow, unreliable service. Photon answers in well under a second, and the user knows their masjid's name, so searching for it is faster for them too. I removed Overpass completely: the code, the cache table (migration `0003`), the `OVERPASS_URLS` setting, and its tests.
 
 ### 6. The 14-day window
 
@@ -647,12 +639,12 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 3. **One question per page**: `Setup.tsx` keeps which question it's on. It starts at the first unanswered one.
    a) **Back** goes to the previous question with its answer kept.
    b) A saved location shows with a **Next** button, so going back and forward doesn't search again.
-   c) After the masjid question, "I pray at home" skips the grid.
+   c) After the masjid question, **Skip** skips the grid.
    d) Straight after the last answer, the website calls `POST /setup/finish` and shows "Filling your Prayers calendar…". There's no extra button to press.
-   e) **Matches the landing page**: on a computer, a "Setup" heading and the 3 steps (Location, Masjid, Weekly prayers) are on the left, with the current one highlighted (`aria-current="step"`, so screen readers say it too) and finished ones ticked. The question is on the right. On a phone the list is hidden and "Setup · Step X of 3" shows at the top instead. Weekly prayers is crossed out for "I pray at home".
+   e) **Matches the landing page**: on a computer, a "Setup" heading and the 3 steps (Location, Masjid, Weekly prayers) are on the left, with the current one highlighted (`aria-current="step"`, so screen readers say it too) and finished ones ticked. The question is on the right. On a phone the list is hidden and "Setup · Step X of 3" shows at the top instead. Weekly prayers is crossed out after **Skip**.
    f) **Just the question**: the location page only says "What's your location?". The box still has a label for screen readers, hidden on screen.
 4. **Same code for setup and Edit**: each step takes `onSaved`, and a `page` flag that makes its question the page's main heading in setup. The settings page shows the step inside the card being edited.
-5. **The closest masjid** is first in the list, with a "Closest" badge and a thicker border.
+5. **One search box for everything**: `SuggestBox.tsx` holds the waiting, cancelling, and keyboard code once. The location step, the masjid step (`MasjidSearch.tsx`), and the Jumuah editor all use it.
 6. **Short name**: belongs to one masjid, so picking a different masjid clears it. Otherwise "Dhuhr at KMA" would show for Stittsville. Playwright caught this.
 7. **Picking a masjid after "I pray at home"** opens the weekly grid straight away, with no Cancel, since the calendar needs it.
 8. **Font**: Plus Jakarta Sans, installed from npm (`@fontsource-variable/plus-jakarta-sans`). Vite copies the font files into `dist/assets/`, so our own nginx serves them. Nothing loads from Google Fonts, which would tell Google about every visitor. It's a variable font: one file covers every weight from 200 to 800. Headings use 800 with slightly tighter letter spacing, so they stand out from the 400 body text. A Playwright test checks the font is used and only comes from our own site.
@@ -661,19 +653,19 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 
 ### 9. Tests
 
-1. **`tests/fake_osm.py`**: a fake Photon and Overpass, like the fake Google. It checks the User-Agent, the Canada bias, and the query. Photon answers places whose words start with what was typed. Overpass answers only masjids within the query's radius. Any URL it doesn't know fails the test, so no test reaches the real Photon.
+1. **`tests/fake_photon.py`**: a fake Photon, like the fake Google. It checks the User-Agent, the bias, and the query, filters by `osm_tag`, and answers places whose words start with what was typed, closest to the bias point first. Any URL it doesn't know fails the test, so no test reaches the real Photon.
 2. **`tests/setup_helpers.py`**:
    a) `save_setup` writes a finished setup straight into the database, for tests that only care what happens after setup.
    b) `setup_through_api` answers the 3 questions through the real endpoints, then finishes.
-3. **`test_geo.py`**: Photon suggestions with Canada first, at most 5, nothing sent under 3 characters, duplicates dropped, its cache, failures with no address in the message, the spacing between calls, time zones for 5 cities, distances, sorting, the 15 km cut-off, the rounded cell, and the Overpass cache.
+3. **`test_geo.py`**: address suggestions with Canada first, masjid suggestions (places of worship only, closest first, the home rounded to about 1 km, addresses when no masjid matches, cached per area), at most 5, nothing sent under 3 characters, duplicates dropped, the cache, failures with no address in the message, the spacing between calls, time zones for 5 cities, and distances.
 4. **`test_settings.py`**:
    a) Each answer saves, and setup is only the 3 questions, with ISNA, standard, and no Jumuah.
    b) The address is encrypted in the raw database row and never logged.
    c) The time zone comes from the location.
-   d) A typed-in masjid saves.
+   d) Masjid suggestions show name and distance, closest first. Picking one saves it once. A masjid not on the map can be picked by its address.
    e) The weekly grid saves all 7 days.
-   f) "I pray at home" skips the grid.
-   g) Everything is scoped to one user. Bob can't see or pick Alice's typed-in masjid.
+   f) **Skip** means every prayer at home and no grid. Ticking nothing in the grid means every prayer at home too.
+   g) Everything is scoped to one user. Bob can't pick a masjid Alice picked by its address.
 5. **`test_calendar_window.py`**:
    a) 70 events with no duplicates.
    b) "at home" and "at KMA" titles.
@@ -693,15 +685,15 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    f) Retries and the 5-attempt limit.
    g) Fixing times that changed.
    h) `run-now`.
-8. **Playwright** (`web/tests/`): the landing page (side by side on a computer, stacked on a phone), "Sign in again", the full setup flow (typing with one search per pause and none under 3 characters, picking a suggestion, the closest masjid highlighted, a short name, the grid with prayers as rows, finish), Back, the arrow keys, "I pray at home", a typed-in masjid, editing the location and other settings, Cancel, and Sign out. Each test runs on a desktop and a Pixel 7 sized screen.
+8. **Playwright** (`web/tests/`): the landing page (side by side on a computer, stacked on a phone), "Sign in again", the full setup flow (typing with one search per pause and none under 3 characters, picking a location, searching for a masjid with distances, a short name, the grid with prayers as rows, finish), Back, Change, the arrow keys, Skip, a masjid picked by its address, a failed masjid search, an empty grid, editing the location, the masjid, Jumuah, and other settings, Cancel, and Sign out. Each test runs on a desktop and a Pixel 7 sized screen.
 9. **GitHub Actions** runs both: the `backend` job (pytest with Postgres) and the `web` job (type check and Playwright). Neither has any real keys.
 
 ### 10. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`450 passed`) and `npx playwright test` in `web` (`58 passed`).
+1. **Tests**: `pytest` in `backend` (`432 passed`) and `npx playwright test` in `web` (`60 passed`).
 2. **For real**: follow "Go through setup" in the README with your test Google account. The Prayers calendar should have 70 events.
 3. **Change a setting**: tick one more prayer on one weekday. The message should say 2 events were sent, and only those 2 change in Google Calendar.
 4. **Nightly job**: `docker compose exec worker python -m app.worker run-now --email you@gmail.com`, then again, then with `--force`. Still 70 events.
 5. **Checks I couldn't automate** (they need the real services):
-   a) The real Photon suggestions for your address, and the masjids near it on the real Overpass. Some may have no name on OpenStreetMap.
+   a) The real Photon suggestions for your address and your masjid. Photon can't filter by religion, so typing a masjid's name is what finds it.
    b) That nginx starts and passes `/api` and `/auth` through. I checked the Compose file with `docker compose config` and the `--root-path` setup with uvicorn directly, but there was no Docker engine where I built this.

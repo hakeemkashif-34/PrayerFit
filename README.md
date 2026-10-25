@@ -11,7 +11,7 @@ See [Muslim_Calendar_App.md](Muslim_Calendar_App.md) for the full product descri
 3. Database: Postgres, with SQLAlchemy and Alembic for migrations
 4. Nightly job: its own worker service, same code as the backend
 5. Sign-in: Google, done on the server with PKCE
-6. Addresses and nearby masjids: the free Photon and Overpass services, built on OpenStreetMap data
+6. Addresses and masjids: the free Photon search, built on OpenStreetMap data
 7. Runs with Docker Compose
 8. Tests: pytest for the backend, Playwright for the website, both run by GitHub Actions on every push and pull request
 
@@ -95,7 +95,7 @@ SESSION_DAYS=30
 OSM_CONTACT_EMAIL=<your email>
 ```
 
-`OSM_CONTACT_EMAIL` goes in the User-Agent of every request to Photon and Overpass. Both ask apps to give a way to contact the owner.
+`OSM_CONTACT_EMAIL` goes in the User-Agent of every request to Photon. It asks apps to give a way to contact the owner.
 
 Make the encryption key with:
 
@@ -113,8 +113,8 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 3. Pick your test account. Google warns that the app isn't verified. Click **Continue**. Leave the calendar box ticked and allow.
 4. You land back on the website, on step 1 of 3. The 3 steps are listed on the left (on a phone, "Setup · Step 1 of 3" is at the top). Each question has its own page and a **Back** button.
 5. **What's your location?** Start typing your address. Suggestions show up in a dropdown once you stop typing. Pick yours. The time zone comes from the location. Postal codes aren't shown or saved, since OpenStreetMap's are often wrong in Canada.
-6. **Which masjid do you go to?** The closest masjids within 15 km are listed, closest first. The search starts as soon as you pick your location, so it's usually ready by now. Pick one, type one in with **My masjid isn't listed**, or pick **I pray at home**. You can give it a short name like `KMA` for the calendar. If the public Overpass servers are all down, those last 2 choices still work, so setup never gets stuck.
-7. **Which prayers do you usually pray at the masjid?** Tick them in the grid: prayers down the side, Monday to Sunday across the top. This page is skipped if you pray at home.
+6. **Which masjid do you usually go to?** Start typing its name. Suggestions show the masjid's name and its distance from home, closest first. If yours doesn't come up, type its address instead and pick that. You can give it a short name like `KMA` for the calendar. Press **Skip** if you pray at home: every prayer is at home and the next page is skipped.
+7. **Which prayers do you usually pray at the masjid?** Tick them in the grid: prayers down the side, Monday to Sunday across the top. Anything left unticked is at home, so ticking nothing means every prayer is at home. This page is skipped if you pressed **Skip**.
 8. Press **Finish**. The calendar fills straight away, in about 10 to 20 seconds.
 9. Setup uses ISNA and standard Asr, and no Jumuah masjids. You can change both on the settings page.
 10. Open Google Calendar. The **Prayers** calendar has today and the next 13 days: 70 events, like `Fajr at home` and `Dhuhr at KMA`. Each description says where the time came from. Masjid events also say the iqamah times aren't added yet, so they show the calculated time.
@@ -157,10 +157,11 @@ Through nginx, every endpoint below is under `/api` (like `/api/me`), except the
 | `GET /me` | Who's signed in, whether Google needs a new sign-in, and whether setup is done |
 | `GET /settings` | Your saved setup answers |
 | `POST /setup/location/suggest` | Up to 5 address suggestions from Photon for what's typed so far. Saves nothing |
-| `PUT /settings/location` | Saves the suggestion the user picked (encrypted) and its time zone, then starts the masjid search in the background |
+| `PUT /settings/location` | Saves the suggestion the user picked (encrypted) and its time zone |
 | `PUT /settings/methods` | Saves the calculation method and Asr method (settings page only) |
-| `GET /masjids/nearby` | Masjids within 15 km from Overpass, closest first. Tries each server in `OVERPASS_URLS` in turn |
-| `PUT /settings/main-masjid` | Saves the main masjid, a typed-in one, or "I pray at home" |
+| `POST /setup/masjid/suggest` | Up to 5 masjids from Photon for what's typed so far, closest to home first, with distances. Adds addresses near home when no masjid matches. Saves nothing |
+| `POST /masjids/from-suggestion` | Saves the picked suggestion as a masjid, for the main masjid or Jumuah |
+| `PUT /settings/main-masjid` | Saves the main masjid and its short name, or "home" (Skip) |
 | `PUT /settings/weekly` | Saves the weekly grid (7 days) |
 | `PUT /settings/jumuah` | Saves the Jumuah masjids (settings page only) |
 | `POST /setup/finish` | Finishes setup and fills the next 14 days. The website calls it after the last question |
@@ -190,11 +191,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `450 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `432 passed`.
 
-The tests never call the real Google, Photon, or Overpass. They use fakes (`tests/fake_google.py` and `tests/fake_osm.py`) and fake keys, so no real settings are needed.
+The tests never call the real Google or Photon. They use fakes (`tests/fake_google.py` and `tests/fake_photon.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`266 passed, 184 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`266 passed, 166 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
@@ -207,4 +208,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `58 passed`: 29 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `60 passed`: 30 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
