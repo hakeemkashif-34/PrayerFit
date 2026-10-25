@@ -12,8 +12,10 @@ See [Muslim_Calendar_App.md](Muslim_Calendar_App.md) for the full product descri
 4. Nightly job: its own worker service, same code as the backend
 5. Sign-in: Google, done on the server with PKCE
 6. Addresses and masjids: the free Photon search, built on OpenStreetMap data
-7. Runs with Docker Compose
-8. Tests: pytest for the backend, Playwright for the website, both run by GitHub Actions on every push and pull request
+7. Masjid times: each masjid's public MAWAQIT page, with calculated times when it can't be read
+8. Drive times: OpenRouteService's free plan (no live traffic)
+9. Runs with Docker Compose
+10. Tests: pytest for the backend, Playwright for the website, both run by GitHub Actions on every push and pull request
 
 ## Run it with Docker
 
@@ -30,7 +32,7 @@ Docker Compose starts 4 services:
 |---|---|
 | `web` | nginx. Serves the website and passes `/api/...` and `/auth/...` to the backend. The only service the browser talks to. |
 | `backend` | FastAPI. Runs the database migrations (`alembic upgrade head`) before it starts. |
-| `worker` | The nightly job. Checks every minute whose 3:00 am has come. |
+| `worker` | Background jobs, checked every minute: the nightly job, reading MAWAQIT, and queued calendar updates. |
 | `db` | Postgres. |
 
 The website and the API share one address (`http://localhost:8000`), so the browser treats them as the same site. That's what lets the session cookie and the Origin check work.
@@ -111,13 +113,14 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 1. `docker compose up --build`
 2. Open http://localhost:8000 and click **Sign in with Google**.
 3. Pick your test account. Google warns that the app isn't verified. Click **Continue**. Leave the calendar box ticked and allow.
-4. You land back on the website, on step 1 of 3. The 3 steps are listed on the left (on a phone, "Setup · Step 1 of 3" is at the top). Each question has its own page and a **Back** button.
+4. You land back on the website, on step 1 of 4. The 4 steps are listed on the left (on a phone, "Setup · Step 1 of 4" is at the top). Each question has its own page and a **Back** button.
 5. **What's your location?** Start typing your address. Suggestions show up in a dropdown once you stop typing. Pick yours. The time zone comes from the location. Postal codes aren't shown or saved, since OpenStreetMap's are often wrong in Canada.
-6. **Which masjid do you usually go to?** Start typing its name. Suggestions show the masjid's name and its distance from home, closest first. If yours doesn't come up, type its address instead and pick that. You can give it a short name like `KMA` for the calendar. Press **Skip** if you pray at home: every prayer is at home and the next page is skipped.
+6. **Which masjid do you usually go to?** Start typing its name. Suggestions show the masjid's name and its distance from home, closest first. If yours doesn't come up, type its address instead and pick that. Press **Skip** if you pray at home: every prayer is at home and the next page is skipped.
 7. **Which prayers do you usually pray at the masjid?** Tick them in the grid: prayers down the side, Monday to Sunday across the top. Anything left unticked is at home, so ticking nothing means every prayer is at home. This page is skipped if you pressed **Skip**.
-8. Press **Finish**. The calendar fills straight away, in about 10 to 20 seconds.
-9. Setup uses ISNA and standard Asr, and no Jumuah masjids. You can change both on the settings page.
-10. Open Google Calendar. The **Prayers** calendar has today and the next 13 days: 70 events, like `Fajr at home` and `Dhuhr at KMA`. Each description says where the time came from. Masjid events also say the iqamah times aren't added yet, so they show the calculated time.
+8. **A few extras** (optional): how many minutes before iqamah you want to arrive (0 to 30), a short name like `KMA` for the masjid, and a Google Calendar colour for prayer blocks and for drive blocks. Press **Skip** to use the defaults: 0 minutes, the masjid's full name, and the calendar's own colour.
+9. Press **Finish**. The calendar fills straight away, in about 10 to 20 seconds.
+10. Setup uses ISNA and standard Asr, and no Jumuah masjids. You can change both on the settings page.
+11. Open Google Calendar. The **Prayers** calendar has today and the next 13 days, like `Fajr at home` and `Dhuhr at KMA`. Each description says where the time came from. Until your masjid is linked to MAWAQIT (below), masjid prayers use the calculated time and say the iqamah isn't available.
 
 ### 4. Change a setting
 
@@ -125,9 +128,57 @@ On the settings page, press **Edit** next to any setting, change it, and press *
 
 If you move to another time zone, the Prayers calendar's time zone changes too.
 
+## Masjid times from MAWAQIT
+
+Masjid times come from each masjid's public page on [MAWAQIT](https://mawaqit.net). Linking a masjid to its page is a command on the server, not a website button, so a user can't link the wrong page for everyone.
+
+1. Find the masjid's ID:
+
+   ```bash
+   docker compose exec backend python -m app.admin list-masjids
+   ```
+
+   Each line has the ID, the name, its MAWAQIT link (or "not linked"), and how many users picked it. A masjid only shows up once someone has picked it in setup.
+
+2. Link it to its MAWAQIT page:
+
+   ```bash
+   docker compose exec backend python -m app.admin link-mawaqit --masjid <masjid id> --url https://mawaqit.net/en/<masjid page>
+   ```
+
+   Only `https://mawaqit.net` links are accepted, and only the page name from the link is saved.
+
+3. The worker reads the page within a minute, then at most once every 6 hours. To read it now:
+
+   ```bash
+   docker compose exec backend python -m app.admin fetch-mawaqit --masjid <masjid id>
+   ```
+
+   Then `docker compose exec worker python -m app.worker run-now --force` to update calendars straight away.
+
+4. To stop using a page: `python -m app.admin unlink-mawaqit --masjid <masjid id>`. Calendars go back to calculated times.
+
+What it changes in the calendar:
+
+1. **Masjid prayers** use the masjid's iqamah, like `KMA iqamah (MAWAQIT, updated Oct 25, 2026)`. A day with no iqamah uses the calculated start time and says so. An iqamah is never made up.
+2. **Home prayers** use the main masjid's adhan time, like `KMA adhan time (MAWAQIT)`.
+3. **Jumuah**: on Fridays, if you have Jumuah masjids on the settings page, Dhuhr becomes `Jumuah at <masjid>` at the slot with the shortest drive, then the earliest time.
+4. **Freshness**: times read in the last 24 hours are fresh. Up to 7 days old, they're still used, and the description says they may be out of date. Older than that, calculated times are used.
+
+MAWAQIT can block this at any time. After a 403, a 429, or 3 failed reads in a row, the app waits 24 hours before trying that masjid again, and keeps the last good times in the meantime.
+
+## Drive times
+
+Each masjid prayer gets a **Drive to <masjid>** block before it, from when to leave until you arrive, with a popup reminder when it starts. Drive times come from [OpenRouteService](https://openrouteservice.org), which has a free plan. They're typical drive times with no live traffic.
+
+1. Sign up at https://openrouteservice.org/dev/#/signup and copy your API key.
+2. Put it in `.env` as `ORS_API_KEY=...` and restart: `docker compose up -d`.
+
+With no key, there are no drive blocks, and everything else works as before. Only the rounded coordinates of your home and your masjids are sent (about 100 m), never an address. Each drive time is saved for 30 days, or until your address or masjids change.
+
 ## Nightly job
 
-The `worker` service updates every user's calendar at 3:00 am in their own time zone. It adds the newest day, fixes any times that changed, and never deletes past prayers. Not 2:00 am, because 2:00 am doesn't exist on the spring daylight saving day.
+The `worker` service updates every user's calendar at 3:00 am in their own time zone. It adds the newest day, fixes any times that changed, and never touches past events. The only events it ever deletes are future drive blocks that aren't needed any more, like when a prayer moves home. Not 2:00 am, because 2:00 am doesn't exist on the spring daylight saving day.
 
 Each job is saved with an ID like `nightly:<user id>:2026-10-24` before it runs, so a retry or a second worker can't run it twice. If the worker was off at 3:00 am, it catches up when it starts. If one user's Google sign-in expired, their job is marked `needs_sign_in` and everyone else still gets updated.
 
@@ -161,12 +212,13 @@ Through nginx, every endpoint below is under `/api` (like `/api/me`), except the
 | `PUT /settings/methods` | Saves the calculation method and Asr method (settings page only) |
 | `POST /setup/masjid/suggest` | Up to 5 masjids from Photon for what's typed so far, closest to home first, with distances. Adds addresses near home when no masjid matches. Saves nothing |
 | `POST /masjids/from-suggestion` | Saves the picked suggestion as a masjid, for the main masjid or Jumuah |
-| `PUT /settings/main-masjid` | Saves the main masjid and its short name, or "home" (Skip) |
+| `PUT /settings/main-masjid` | Saves the main masjid, or "home" (Skip). Picking a different masjid clears its short name |
 | `PUT /settings/weekly` | Saves the weekly grid (7 days) |
-| `PUT /settings/jumuah` | Saves the Jumuah masjids (settings page only) |
+| `PUT /settings/optional` | Saves how early, the short name, and the 2 colours. Skip sends the defaults |
+| `PUT /settings/jumuah` | Saves the Jumuah masjids, in order (settings page only) |
 | `POST /setup/finish` | Finishes setup and fills the next 14 days. The website calls it after the last question |
 | `POST /calendar/sync` | Sends anything still waiting. Safe to run again |
-| `POST /prayers/today` | Updates today's 5 prayers from your saved settings. Safe to run again |
+| `POST /prayers/today` | Updates today's prayers and drive blocks from your saved settings. Safe to run again |
 | `GET /prayers/today/events` | Your saved events for today |
 
 POST and PUT requests need an `Origin` header matching `APP_ORIGIN`. Browsers send it on their own. With curl, add `-H "Origin: http://localhost:8000"`.
@@ -191,11 +243,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `432 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `591 passed`.
 
-The tests never call the real Google or Photon. They use fakes (`tests/fake_google.py` and `tests/fake_photon.py`) and fake keys, so no real settings are needed.
+The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`266 passed, 166 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`334 passed, 257 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
@@ -208,4 +260,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `60 passed`: 30 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `70 passed`: 35 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.

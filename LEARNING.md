@@ -697,3 +697,129 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 5. **Checks I couldn't automate** (they need the real services):
    a) The real Photon suggestions for your address and your masjid. Photon can't filter by religion, so typing a masjid's name is what finds it.
    b) That nginx starts and passes `/api` and `/auth` through. I checked the Compose file with `docker compose config` and the `--root-path` setup with uvicorn directly, but there was no Docker engine where I built this.
+
+## Milestone 5: MAWAQIT times, the optional step, drive time, and Jumuah
+
+### 1. Where things are
+
+1. **`backend/app/masjid_times/`**: masjid times from a masjid's own published source.
+   a) `source.py`: the small `MasjidTimesSource` interface, `DayTimes`, and the 3 kinds of error.
+   b) `mawaqit.py`: the MAWAQIT adapter. Checks links, downloads the page, and reads its data.
+   c) `validate.py`: the checks every time has to pass before anything is saved.
+   d) `freshness.py`: fresh, stale, or too old.
+   e) `store.py`: saves the times per masjid and date, and reads them back for the calendar.
+   f) `scheduler.py`: reads each linked masjid at most once every 6 hours.
+2. **`backend/app/admin.py`**: `list-masjids`, `link-mawaqit`, `unlink-mawaqit`, and `fetch-mawaqit`.
+3. **`backend/app/geo/ors.py`** and **`backend/app/drive_times.py`**: drive times from OpenRouteService, saved per user and masjid.
+4. **`backend/app/event_plan.py`**: decides which time each prayer uses, writes the descriptions, and adds drive blocks. It's a pure function.
+5. **`backend/app/event_times.py`**: the leave and arrival time maths.
+6. **`backend/app/jumuah.py`**: the Jumuah picker, also a pure function.
+7. **`backend/app/update_jobs.py`**: calendar updates queued by a settings change or a masjid time change.
+8. **`backend/alembic/versions/0004_masjid_times_drive_optional.py`**: the new tables and columns.
+9. **`web/src/steps/OptionalStep.tsx`** and **`web/src/ColourPicker.tsx`**: the 4th setup step and the colour dropdown.
+
+### 2. Shared masjids
+
+1. Masjids were already shared since milestone 4. A masjid from OpenStreetMap has one row, matched by `(osm_type, osm_id)`, and every user who picks it points at that row. A masjid typed in by address gets its own row for that user.
+2. So the times belong to the masjid. KMA's page is read once, and every user at KMA gets the same times.
+3. The only change: `user_jumuah_masjids` got a `position`, so the order the user listed their Jumuah masjids is kept. The migration numbers existing ones in name order, the order the settings page already showed.
+
+### 3. Linking a masjid to MAWAQIT
+
+1. There's no website button. I run `python -m app.admin link-mawaqit` on the server. Otherwise any user could link KMA to the wrong page and change everyone's times.
+2. **Only the page name is saved.** `slug_from_link` only accepts `https://mawaqit.net` (or `www.mawaqit.net`), drops a language part like `/en/` and a view part like `/m/`, and checks the name is lowercase letters, numbers, and hyphens. `https://mawaqit.net/en/kma-kanata` saves `kma-kanata`.
+3. The app builds the URL itself from that name, and the base URL is fixed in the code. So a saved value can never point the server at some other website.
+4. Linking a different page deletes the old page's times. Unlinking deletes the times too, and queues an update for every user of that masjid, so their calendar goes back to calculated times.
+
+### 4. Reading a MAWAQIT page
+
+1. **What's on the page**: a MAWAQIT page has the masjid's whole year in a script that starts `confData = {`. `calendar` has 12 months, each mapping a day ("1" to "31") to 6 times: Fajr, sunrise, Dhuhr, Asr, Maghrib, Isha. `iqamaCalendar` has 5 iqamah values per day. `jumua`, `jumua2`, and `jumua3` are the Friday times.
+2. **Never run it**: I find `confData =` with a regular expression and read what follows with `json.JSONDecoder().raw_decode`, which reads one JSON value and stops. The page's scripts are never run. If the data isn't plain JSON, the page is rejected.
+3. **Limits**: a 10 second timeout, and the page is read in chunks and dropped once it passes 3 MB.
+4. **Iqamah in 2 forms**: `"20:15"` is a clock time. `"+10"` means 10 minutes after that day's adhan. An empty value means the masjid didn't publish one, so it stays empty. `iqamaEnabled: false` means no iqamah at all.
+5. **Local dates**: I build each date as today plus n days, then look up its month and day. Never "plus 24 hours".
+6. **Checks** (`validate.py`): every prayer present, real clock times (`25:00` fails), adhan times in order, iqamah not before adhan, and iqamah at most 90 minutes after. An iqamah that would land after midnight is refused instead of guessed.
+7. **One bad value rejects the whole page.** A wrong time means a missed prayer, so I'd rather keep yesterday's good times than save half a broken page. The failure is logged as `MAWAQIT fetch for masjid <id> failed: <reason>`, with the masjid's ID and nothing about any user.
+8. **Time zones**: times on the page are clock times in the masjid's time zone, so the database stores them as plain clock times (`time`, not a timestamp). The offset is only added when an event is built, for that exact date. On November 1, 05:30 is 10:30 UTC. On October 31 it's 09:30 UTC.
+9. **The saved fixture**: mawaqit.net was blocked in the cloud environment I built this in, so I wrote the parser against the format and made-up pages in `tests/mawaqit_pages.py`. KMA's real page still needs to be saved from my laptop as a trimmed fixture, with a test against it.
+
+### 5. Reading each masjid every 6 hours
+
+1. **One job per masjid, not per user.** The job ID is `mawaqit:<masjid id>:<6-hour block>`, like `mawaqit:...:2026-10-25T12`. The blocks start at 00:00, 06:00, 12:00, and 18:00 UTC. The job is saved before it runs, so a second worker or a retry in the same block finds the same row and does nothing. A test has 3 users at KMA and checks MAWAQIT got 1 request.
+2. Only masjids that someone uses (as their main or Jumuah masjid) are read.
+3. **Backing off**: a 403 or 429 means MAWAQIT doesn't want us right now, so that masjid waits 24 hours (`retry_after`). 3 failures in a row (a timeout, a 500, a broken page) also wait 24 hours. One success resets the count.
+4. **What counts as a change**: a saved day whose times are now different, or the very first read. Each read also adds a new date at the far end, but that isn't a change. If it were, every masjid would "change" daily and every user's events would be rewritten every day.
+5. **A change queues an update** for every user linked to that masjid (main or Jumuah), and nobody else.
+
+### 6. Freshness
+
+1. Measured from the last read that passed every check.
+2. Under 24 hours: fresh. 24 hours to 7 days: stale, still used, and the description adds "MAWAQIT times may be out of date (last updated Oct 22, 2026)". Over 7 days: not used, so calculated times come back.
+3. **"updated" in a description is when the times last changed**, not when they were last read. Otherwise the date would move every day and every masjid event would be sent to Google every day for nothing.
+
+### 7. Which time each prayer uses
+
+1. **At the masjid**: the iqamah. With no iqamah that day, or times over 7 days old, the calculated start time, and the description says "Calculated start time (ISNA, standard Asr). KMA's iqamah time isn't available."
+2. **At home**: the main masjid's adhan time from MAWAQIT, if it's linked and usable. Otherwise the calculated time, with exactly the same description as milestone 4, so those events don't change and aren't sent again.
+3. **Never invent an iqamah.** If it isn't on the page, it isn't in the calendar.
+4. `plan_day` gets everything as arguments: the calculated times, each masjid's times and freshness, and the drive times. It doesn't touch the database or the network. That made the many cases easy to test.
+
+### 8. Drive time
+
+1. **OpenRouteService** (ORS) is built on OpenStreetMap data and has a free plan (2,000 directions a day, 40 a minute). It gives typical drive times with no live traffic, and the drive block's description says so.
+2. **Its own adapter**, like Photon: a 10 second timeout, calls spaced 1.6 seconds apart across the app, and every problem (no key, a timeout, a 429, a server error) returns "don't know". The calendar update carries on without a drive block. "No route found" is a real answer, so it's saved.
+3. **The key** goes in the `Authorization` header, never the URL, so it can't end up in a log. It's `ORS_API_KEY` in `.env`. Empty means drive times are off.
+4. **Privacy**: only coordinates, rounded to 3 decimal places (about 100 m), are sent. Never an address. The log line only has the service, the reason, and the time it took.
+5. **Saved per user and masjid** in `user_drive_times`, with a `route_key`: a keyed hash of the rounded home and masjid points. The points themselves aren't saved again. A drive time is only asked again when there isn't one, the key changed (the user moved, or picked another masjid), or it's over 30 days old. A nightly run for an unchanged user makes no ORS calls.
+
+### 9. Two blocks for each masjid prayer
+
+1. **The maths** (`event_times.py`): target = iqamah (or the calculated start). Arrival = target minus "how early". Leave = arrival minus the drive time, rounded down to the minute. Everything is done in UTC and turned back into local time, so a daylight saving change in between can't add or lose an hour. Example: Isha iqamah 8:15 pm, 5 minutes early, 14 minute drive: the drive block is 7:56 to 8:10 pm, and Isha is 8:15 to 8:30 pm.
+2. **Stable IDs**: a drive block's ID is `uuid5(<fixed namespace>, "drive:<prayer event id>")`. The same prayer always gives the same drive ID, so Google refuses a copy (409) the same way it does for prayer events. `prayer_events` got a `kind` column (`prayer` or `drive`), and the unique key is now `(user_id, local_date, prayer, kind)`.
+3. **Reminders**: drive blocks get a popup at their start. Prayer blocks still send no reminder settings.
+4. **Colours**: `colorId` is added to the event only when a colour is picked. Events from before this milestone hash the same, so they aren't sent again just because the code changed.
+5. **The only delete**: when a drive block isn't needed any more (the prayer moved home, or the drive time became unknown), a future one is marked `delete_pending` and then deleted in Google. `delete_drive_block` refuses anything that isn't a drive block or has already started. Prayer blocks and past events are never deleted. If a deleted drive block is needed again, its fixed ID gets a 409 (Google keeps deleted events as "cancelled"), and the update brings it back.
+
+### 10. Jumuah
+
+1. **The picker** (`jumuah.py`) is a pure function. Input: every Jumuah slot from the user's Jumuah masjids for that Friday, the drive time to each, "how early", and busy times. Output: the slot and the reason.
+2. **The rule**: drop slots whose drive or prayer overlaps a busy time, pick the masjid with the shortest drive, then its earliest slot. Masjids with an unknown drive time go after known ones, in the order the user listed them.
+3. Busy times are always empty until milestone 7 adds commitments, but the tests already check them.
+4. **In the calendar**: on a Friday where a slot is picked, the Dhuhr row becomes "Jumuah at <masjid>" with its drive block. If the user has Jumuah masjids but none has usable Jumuah times, Dhuhr follows the weekly grid, and the description says Jumuah times aren't available. No Jumuah masjids means a normal Friday.
+
+### 11. Update jobs
+
+1. Before, saving a setting updated the calendar right there in the request. Now it queues a job in `update_jobs` first, then runs it in the request, so the website still says "Calendar updated. 3 events sent to Google."
+2. **One row per user**, ID `update:<user id>`. Queuing again while it's waiting changes nothing, so 5 masjid changes in a row become 1 update.
+3. If it's queued again while it's running, `requested_at` moves past `started_at`, and the job goes back to `pending` when it finishes, so the newer change isn't lost.
+4. A Google error leaves the job `failed`, and the worker tries again 15 minutes later, up to 5 times.
+5. **The worker** now does 3 things every minute, each with its own `try`: nightly jobs, MAWAQIT reads, then queued updates.
+
+### 12. The optional step
+
+1. A 4th setup step after the weekly grid, with a **Skip** button. Skip saves the defaults: 0 minutes, no short name, and no colours.
+2. **How early**: a dropdown from 0 to 30 minutes.
+3. **Short name**: moved here from the masjid step. It only shows when there's a main masjid. Picking the same masjid again keeps it, and picking a different one clears it, on the backend now too.
+4. **Colours**: Google Calendar has 11 fixed event colours, with IDs "1" to "11" and names like Peacock and Tomato. A normal `<select>` can't show a coloured dot in its options, so `ColourPicker.tsx` is a small listbox: a button that opens a list, with arrow keys, Enter, and Escape. "Calendar colour" (no colour) is the default.
+5. `user_settings.optional_saved` says whether the step was answered. The migration sets it to true for everyone who already finished setup, so nobody is sent back to setup.
+6. The settings page has an **Extras** card with the same step.
+7. The footer credits OpenRouteService next to OpenStreetMap.
+
+### 13. Tests
+
+1. **New fakes**: `fake_mawaqit.py` (serves pages, can answer 403, 429, 500, time out, or send 4 MB) and `fake_ors.py` (a drive time per destination, a timeout, a 429, or no route). Both only answer their own host, and any other URL fails the test.
+2. **`test_mawaqit_parser.py`** and **`test_mawaqit_links.py`**: adhan, iqamah (clock time and "+10"), Jumuah, missing iqamah, impossible times, a missing day, a changed page format, and links that aren't mawaqit.net.
+3. **`test_mawaqit_scheduler.py`**: one fetch per masjid, at most once per 6 hours, 403 and 429 wait 24 hours, 3 failures wait 24 hours, a broken page keeps the last good data, no addresses in the logs, and a change queues updates only for linked users.
+4. **`test_freshness.py`**: the 24 hour and 7 day lines.
+5. **`test_masjid_times_calendar.py`**: iqamah for masjid prayers, adhan for home prayers, calculated times without a link, stale and too old, daylight saving in spring and fall, a MAWAQIT change sending only the 1 changed event, a broken page sending nothing, and re-running the nightly job sending nothing.
+6. **`test_drive_blocks.py`**: the 7:56 to 8:10 example, 0 and 30 minutes early, without iqamah, no drive block at home or without a drive time, stable IDs, popups only on drive blocks, colours on the right blocks, "how early" changing only drive blocks, switching a prayer home deleting only its future drive block, and leave times across daylight saving.
+7. **`test_jumuah_picker.py`** and **`test_jumuah_calendar.py`**: shortest drive, ties, busy times, unknown drive times, no slots, no Jumuah masjids, and Friday Dhuhr replaced only when a slot is picked.
+8. **`test_ors.py`**, **`test_optional_settings.py`**, **`test_update_jobs.py`**, **`test_admin.py`**, and **`test_worker.py`** cover the rest.
+9. **`test_migrations.py`**: goes back to milestone 4's tables, adds a user with a masjid, a short name, a method, and Jumuah masjids, upgrades, and checks it all survived.
+10. **Playwright**: the optional step filled in and skipped, the colour dropdown with a mouse and with the keyboard, and the settings page editing how early, the short name, colours, and Jumuah masjids in order.
+
+### 14. How to check it works
+
+1. **Tests**: `pytest` in `backend` (`591 passed`) and `npx playwright test` in `web` (`70 passed`).
+2. **For real**: get a free ORS key and put it in `.env`. Then follow "Masjid times from MAWAQIT" in the README to link KMA, and run `run-now --force`. In Google Calendar: masjid prayers at KMA's iqamah, home prayers at KMA's adhan, each with its source, a drive block with a reminder before each masjid prayer, Jumuah on Friday if KMA is a Jumuah masjid, and the colours picked in Extras.
+3. **Checks I couldn't do here**: reading KMA's real MAWAQIT page, and a real ORS key. Both hosts were blocked where I built this.
