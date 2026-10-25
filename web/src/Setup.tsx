@@ -2,7 +2,7 @@
 // weekly grid (skipped for "I pray at home"). Each page has a Back button.
 // Straight after the last answer, the calendar is filled.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { LocationStep } from "./steps/LocationStep";
 import { MasjidStep } from "./steps/MasjidStep";
@@ -27,6 +27,18 @@ export function Setup({ initial, onFinished }: Props) {
   const [error, setError] = useState("");
 
   const number = step === "finish" ? STEPS.length : STEPS.indexOf(step) + 1;
+  const started = useRef(false);
+
+  // Every question was answered last time, but the calendar wasn't filled
+  // (for example, the tab was closed). Finish now. The ref stops React's
+  // development mode from calling it twice.
+  useEffect(() => {
+    if (step === "finish" && !started.current) {
+      started.current = true;
+      void finish();
+    }
+    // Only on the first render.
+  }, []);
 
   async function finish() {
     setStep("finish");

@@ -171,3 +171,13 @@ test("a busy address search shows its message", async ({ page }) => {
 
   await expect(page.getByRole("alert")).toHaveText("The address search is busy. Try again in a minute.");
 });
+
+test("answers saved before but never finished fill the calendar on the next visit", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  api.settings = { ...api.settings, address: HOME_PLACE, place_name: HOME_PLACE, time_zone: "America/Toronto", main_masjid_choice: "home" };
+  await api.install(page);
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
+  expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
+});
