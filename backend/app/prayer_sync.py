@@ -106,6 +106,9 @@ def google_event(row: PrayerEvent) -> dict:
         "end": {"dateTime": row.ends_at.astimezone(zone).isoformat(), "timeZone": row.time_zone},
         # "confirmed" brings an event back if the user had deleted it.
         "status": "confirmed",
+        # Private: people who can see the user's calendar see "Busy", not
+        # the details. Users can change it for an event in Google Calendar.
+        "visibility": "private",
         # Private: only this app can see it. Lets later milestones match
         # Google events back to rows even if the event ID ever differs.
         "extendedProperties": {"private": {"appEventId": str(row.id)}},
