@@ -10,19 +10,18 @@
 """
 
 import uuid
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx2
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.auth.tokens import get_access_token
 from app.google_calendar import GoogleCalendar
+from app.locks import advisory_lock
 from app.models import PrayerEvent
 from app.prayer_sync import PRAYER_TITLES, PRAYERS, event_end, event_hash, send_to_google, source_description
 from app.prayer_times import DailyPrayerTimes, calculate_prayer_times
@@ -165,22 +164,13 @@ def save_window(
     db.commit()
 
 
-@contextmanager
-def user_lock(db: Session, user_id: uuid.UUID) -> Iterator[None]:
+def user_lock(db: Session, user_id: uuid.UUID):
     """Only one calendar update per user at a time.
 
     The website and the nightly job could both update the same user at
-    once. A Postgres advisory lock, held on its own connection so commits
-    in between don't release it, makes the second one wait.
+    once. The advisory lock makes the second one wait.
     """
-    key = int.from_bytes(user_id.bytes[:8], "big", signed=True)
-    with db.get_bind().connect() as lock_connection:
-        lock_connection.execute(text("SELECT pg_advisory_lock(:key)"), {"key": key})
-        try:
-            yield
-        finally:
-            lock_connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
-            lock_connection.commit()
+    return advisory_lock(db, f"calendar:{user_id}")
 
 
 @dataclass
