@@ -151,9 +151,6 @@ class UserSettings(Base):
     location_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     # Not encrypted: the nightly job needs it to know when 3:00 am is.
     time_zone: Mapped[str | None] = mapped_column(String(64))
-    # Empty means the defaults (ISNA, standard). Setup doesn't ask for now.
-    method: Mapped[str | None] = mapped_column(String(16))
-    asr_method: Mapped[str | None] = mapped_column(String(16))
     # "masjid" or "home". Empty until the masjid step is saved.
     main_masjid_choice: Mapped[str | None] = mapped_column(String(8))
     main_masjid_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -167,6 +164,14 @@ class UserSettings(Base):
     optional_saved: Mapped[bool] = mapped_column(default=False, server_default="false")
     # How many minutes before iqamah the user wants to arrive, 0 to 60.
     arrive_early_minutes: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
+    # The same for Jumuah, 0 to 60. Jumuah often needs more time to park and find a spot.
+    jumuah_arrive_early_minutes: Mapped[int] = mapped_column(SmallInteger, default=5, server_default="5")
+    # The Jumuah the user picked: a masjid and the slot's order (1, 2, or 3),
+    # not a clock time, since a masjid's 3rd Jumuah can move every week.
+    jumuah_pick_masjid_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("masjids.id", ondelete="SET NULL")
+    )
+    jumuah_pick_order: Mapped[int | None] = mapped_column(SmallInteger)
     # Google event colours, "1" to "11". Empty uses the calendar's colour.
     prayer_color_id: Mapped[str | None] = mapped_column(String(2))
     drive_color_id: Mapped[str | None] = mapped_column(String(2))
@@ -203,6 +208,9 @@ class Masjid(Base):
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
+    # How long its Jumuah (khutbah and prayer) takes, 15 to 90 minutes. Set
+    # with the admin command, since MAWAQIT doesn't publish it. Empty uses 45.
+    jumuah_minutes: Mapped[int | None] = mapped_column(SmallInteger)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -339,6 +347,25 @@ class UserDriveTime(Base):
     status: Mapped[str] = mapped_column(String(16))
     route_key: Mapped[str] = mapped_column(String(64))
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class UserCommuteTime(Base):
+    """How long the user says their commute to one of their masjids takes.
+
+    When it's set, it's used instead of OpenRouteService's driving estimate,
+    and OpenRouteService isn't asked for that masjid.
+    """
+
+    __tablename__ = "user_commute_times"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    masjid_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("masjids.id", ondelete="CASCADE"), primary_key=True
+    )
+    # 1 to 120
+    minutes: Mapped[int] = mapped_column(SmallInteger)
 
 
 class UpdateJob(Base):
