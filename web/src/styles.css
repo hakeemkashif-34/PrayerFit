@@ -852,3 +852,17 @@ input[aria-invalid="true"] {
 .field-error {
   margin: 6px 0 0;
 }
+
+/* The optional step's heading, with Skip in the top-right corner. */
+.step-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.step-top .skip {
+  flex: none;
+  color: var(--muted);
+  font-weight: 500;
+}

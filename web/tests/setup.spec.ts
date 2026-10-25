@@ -120,11 +120,11 @@ test("the full setup: location, masjid, weekly grid, extras, then a filled calen
   await expect(early).toHaveAttribute("type", "number");
   await expect(early).toHaveValue("5");
   await early.fill("10");
-  await page.getByLabel("Short name for Kanata Muslim Association (optional)").fill("KMA");
+  await page.getByLabel("Short name for Kanata Muslim Association").fill("KMA");
   await expect(page.getByText('Events will say "Dhuhr at KMA".')).toBeVisible();
   // Both colours start as Basil, Google's green.
   await expect(page.getByRole("button", { name: /^Prayer colour/ })).toContainText("Basil");
-  await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Basil");
+  await expect(page.getByRole("button", { name: /^Commute colour/ })).toContainText("Basil");
   await page.getByRole("button", { name: /^Prayer colour/ }).click();
   // Every Google colour, by Google's name, after "Calendar colour".
   await expect(page.getByRole("listbox").getByRole("option")).toHaveText([
@@ -136,8 +136,8 @@ test("the full setup: location, masjid, weekly grid, extras, then a filled calen
   await expect(page.locator(".colour-list .tick")).toHaveCount(1);
   await expect(page.getByRole("option", { name: "Basil" }).locator(".tick")).toBeVisible();
   await page.getByRole("option", { name: "Peacock" }).click();
-  await pickColour(page, "Drive colour", "Tomato");
-  await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Tomato");
+  await pickColour(page, "Commute colour", "Tomato");
+  await expect(page.getByRole("button", { name: /^Commute colour/ })).toContainText("Tomato");
   await page.getByRole("button", { name: "Finish" }).click();
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({
     arrive_early_minutes: 10, short_name: "KMA", prayer_color_id: "7", drive_color_id: "11",
@@ -242,7 +242,7 @@ test("a masjid that isn't on the map can be picked by typing its address", async
 
   // No name on the map, so the optional step asks for one.
   await expect(page.getByText("This masjid has no name on the map.")).toBeVisible();
-  await page.getByLabel("Short name for your masjid (optional)").fill("Barrhaven Musalla");
+  await page.getByLabel("Short name for your masjid").fill("Barrhaven Musalla");
   await page.getByRole("button", { name: "Finish" }).click();
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toMatchObject({ short_name: "Barrhaven Musalla" });
   await expectGoogleCalendar(page, api);
@@ -410,7 +410,7 @@ test("the colour dropdown works with the keyboard", async ({ page }) => {
   await pickHome(page);
   await page.getByRole("button", { name: "Skip" }).click();
 
-  const button = page.getByRole("button", { name: /^Drive colour/ });
+  const button = page.getByRole("button", { name: /^Commute colour/ });
   await button.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("listbox")).toBeVisible();
@@ -516,4 +516,34 @@ test("0 minutes early is allowed", async ({ page }) => {
   await page.getByRole("button", { name: "Finish" }).click();
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toMatchObject({ arrive_early_minutes: 0 });
   await expectGoogleCalendar(page, api);
+});
+
+test("the extras step: short text, Commute colour, and Skip in the top-right corner", async ({ page }) => {
+  await new MockApi().signedIn().install(page);
+  await page.goto("/");
+  await pickHome(page);
+  await pickMasjid(page, "Kanata", "Kanata Muslim Association");
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Next" }).click();
+
+  const heading = page.getByRole("heading", { level: 1, name: OPTIONAL });
+  await expect(heading).toBeVisible();
+  // The removed lines stay gone. The error message for a wrong number stays (tested above).
+  for (const gone of ["All optional", "0 to 30 minutes", "Google Calendar's own colours", "(optional)"]) {
+    await expect(page.getByText(gone)).toHaveCount(0);
+  }
+  await expect(page.getByLabel("Short name for Kanata Muslim Association", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Commute colour/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Drive colour/ })).toHaveCount(0);
+
+  // Skip is level with the heading, at the right edge of the step.
+  const skip = page.getByRole("button", { name: "Skip" });
+  const finish = page.getByRole("button", { name: "Finish" });
+  const [skipBox, headingBox, finishBox, form] = await Promise.all([
+    skip.boundingBox(), heading.boundingBox(), finish.boundingBox(), page.locator("form").boundingBox(),
+  ]);
+  expect(skipBox!.y).toBeLessThan(headingBox!.y + headingBox!.height);
+  expect(skipBox!.y + skipBox!.height).toBeGreaterThan(headingBox!.y);
+  expect(skipBox!.x + skipBox!.width).toBeGreaterThan(form!.x + form!.width - 2);
+  expect(skipBox!.y).toBeLessThan(finishBox!.y);
 });

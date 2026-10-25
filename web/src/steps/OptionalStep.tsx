@@ -80,8 +80,14 @@ export function OptionalStep({ settings, page = false, submitLabel = "Save", can
   return (
     // noValidate: the page shows its own message instead of the browser's bubble.
     <form onSubmit={save} aria-labelledby="optional-title" noValidate>
-      <Heading id="optional-title">A few extras</Heading>
-      <p className="hint">All optional. You can change these later in Settings.</p>
+      <div className="step-top">
+        <Heading id="optional-title">A few extras</Heading>
+        {canSkip && (
+          <button type="button" className="link skip" onClick={() => void run(DEFAULTS)} disabled={busy}>
+            Skip
+          </button>
+        )}
+      </div>
 
       <label htmlFor="arrive-early">How early do you want to arrive before iqamah?</label>
       <div className="minutes-field">
@@ -95,7 +101,7 @@ export function OptionalStep({ settings, page = false, submitLabel = "Save", can
           value={early}
           onChange={(e) => setEarly(e.target.value)}
           aria-invalid={earlyError ? true : undefined}
-          aria-describedby={earlyError ? "arrive-early-error arrive-early-hint" : "arrive-early-hint"}
+          aria-describedby={earlyError ? "arrive-early-error" : undefined}
         />
         <span aria-hidden="true">minutes</span>
       </div>
@@ -104,13 +110,10 @@ export function OptionalStep({ settings, page = false, submitLabel = "Save", can
           {earlyError}
         </p>
       )}
-      <p className="hint small-line" id="arrive-early-hint">
-        0 to {MAX_EARLY} minutes. The drive block before each masjid prayer ends this many minutes before iqamah.
-      </p>
 
       {masjid && (
         <>
-          <label htmlFor="short-name">Short name for {masjid.name ?? "your masjid"} (optional)</label>
+          <label htmlFor="short-name">Short name for {masjid.name ?? "your masjid"}</label>
           <input id="short-name" value={shortName} onChange={(e) => setShortName(e.target.value)} placeholder="KMA" maxLength={40} />
           <p className="hint small-line">
             {masjid.name
@@ -122,9 +125,8 @@ export function OptionalStep({ settings, page = false, submitLabel = "Save", can
 
       <div className="colour-row">
         <ColourPicker label="Prayer colour" value={prayerColour} onChange={setPrayerColour} />
-        <ColourPicker label="Drive colour" value={driveColour} onChange={setDriveColour} />
+        <ColourPicker label="Commute colour" value={driveColour} onChange={setDriveColour} />
       </div>
-      <p className="hint small-line">Google Calendar's own colours. "Calendar colour" uses the Prayers calendar's colour.</p>
 
       {error && (
         <p className="error" role="alert">
@@ -138,11 +140,6 @@ export function OptionalStep({ settings, page = false, submitLabel = "Save", can
         {onCancel && (
           <button type="button" className="secondary" onClick={onCancel}>
             Cancel
-          </button>
-        )}
-        {canSkip && (
-          <button type="button" className="link skip" onClick={() => void run(DEFAULTS)} disabled={busy}>
-            Skip
           </button>
         )}
       </div>

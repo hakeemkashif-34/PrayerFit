@@ -138,7 +138,7 @@ test("picking a different masjid clears the old short name", async ({ page }) =>
   });
   await expect(page.getByRole("region", { name: "Main masjid" })).not.toContainText("(KMA)");
   await page.getByRole("button", { name: "Edit extras" }).click();
-  await expect(page.getByLabel("Short name for Stittsville Masjid (optional)")).toHaveValue("");
+  await expect(page.getByLabel("Short name for Stittsville Masjid")).toHaveValue("");
 });
 
 test("editing the extras: how early, short name, and colours", async ({ page }) => {
@@ -151,13 +151,13 @@ test("editing the extras: how early, short name, and colours", async ({ page }) 
   // Answered before, so it shows what was saved, not the defaults.
   await expect(early).toHaveValue("5");
   await early.fill("30");
-  const shortName = page.getByLabel("Short name for Kanata Muslim Association (optional)");
+  const shortName = page.getByLabel("Short name for Kanata Muslim Association");
   await expect(shortName).toHaveValue("KMA");
   await shortName.fill("Kanata");
   await expect(page.getByRole("button", { name: /^Prayer colour/ })).toContainText("Peacock");
   await page.getByRole("button", { name: /^Prayer colour/ }).click();
   await page.getByRole("option", { name: "Calendar colour" }).click();
-  await page.getByRole("button", { name: /^Drive colour/ }).click();
+  await page.getByRole("button", { name: /^Commute colour/ }).click();
   await page.getByRole("option", { name: "Banana" }).click();
   // No Skip on the settings page, just Save and Cancel.
   await expect(page.getByRole("button", { name: "Skip" })).toHaveCount(0);
@@ -300,7 +300,7 @@ test("existing users keep their own extras, not the new defaults", async ({ page
   await page.getByRole("button", { name: "Edit extras" }).click();
   await expect(page.getByLabel("How early do you want to arrive before iqamah?")).toHaveValue("0");
   await expect(page.getByRole("button", { name: /^Prayer colour/ })).toContainText("Calendar colour");
-  await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Calendar colour");
+  await expect(page.getByRole("button", { name: /^Commute colour/ })).toContainText("Calendar colour");
 });
 
 test("a bad how early number on the Settings page shows the error and saves nothing", async ({ page }) => {
