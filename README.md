@@ -119,7 +119,7 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 7. **Which prayers do you usually pray at the masjid?** Tick them in the grid: prayers down the side, Monday to Sunday across the top. Anything left unticked is at home, so ticking nothing means every prayer is at home. This page is skipped if you pressed **Skip**.
 8. **A few extras** (optional): how many minutes before iqamah you want to arrive (0 to 30), a short name like `KMA` for the masjid, and a Google Calendar colour for prayer blocks and for drive blocks. Press **Skip** to use the defaults: 0 minutes, the masjid's full name, and the calendar's own colour.
 9. Press **Finish**. The page says "Adding your prayers to Google Calendar..." while the calendar fills, in about 10 to 20 seconds. Then the same tab opens Google Calendar for the account you signed in with. If the update fails, you stay on the Settings page, which says what went wrong and has **Try again**.
-10. Setup uses ISNA and standard Asr, and no Jumuah masjids. You can change both on the Settings page.
+10. Setup uses ISNA and standard Asr, and your main masjid becomes your Jumuah masjid. You can change both on the Settings page, where you can also remove the Jumuah masjid or add others. Skipping the masjid step means no Jumuah masjids.
 11. In Google Calendar, the **Prayers** calendar has today and the next 13 days, like `Fajr at home` and `Dhuhr at KMA`. Each description says where the time came from. Until your masjid is linked to MAWAQIT (below), masjid prayers use the calculated time and say the iqamah isn't available.
 
 ### 4. Change a setting
@@ -162,7 +162,7 @@ What it changes in the calendar:
 
 1. **Masjid prayers** use the masjid's iqamah, like `KMA iqamah (MAWAQIT, updated Oct 25, 2026)`. A day with no iqamah uses the calculated start time and says so. An iqamah is never made up. `+0` on a MAWAQIT page means the iqamah is at the adhan time: KMA uses it for Asr and Isha on days when its set time would come before the adhan. If a page sets `fajrFixationComparedToShuruq`, Fajr's iqamah isn't used and the worker logs it, since that setting's format isn't known.
 2. **Home prayers** use the main masjid's adhan time, like `KMA adhan time (MAWAQIT)`.
-3. **Jumuah**: on Fridays, if you have Jumuah masjids on the settings page, Dhuhr becomes `Jumuah at <masjid>` at the slot with the shortest drive, then the earliest time.
+3. **Jumuah**: on Fridays, if you have Jumuah masjids on the Settings page (your main masjid is added for you), Dhuhr becomes `Jumuah at <masjid>` at the slot with the shortest drive, then the earliest time.
 4. **Freshness**: times read in the last 24 hours are fresh. Up to 7 days old, they're still used, and the description says they may be out of date. Older than that, calculated times are used.
 
 MAWAQIT can block this at any time. After a 403, a 429, or 3 failed reads in a row, the app waits 24 hours before trying that masjid again, and keeps the last good times in the meantime.

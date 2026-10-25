@@ -715,7 +715,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 5. **`backend/app/event_times.py`**: the leave and arrival time maths.
 6. **`backend/app/jumuah.py`**: the Jumuah picker, also a pure function.
 7. **`backend/app/update_jobs.py`**: calendar updates queued by a settings change or a masjid time change.
-8. **`backend/alembic/versions/0004_masjid_times_drive_optional.py`**: the new tables and columns.
+8. **`backend/alembic/versions/0004_masjid_times_drive_optional.py`**: the new tables and columns. `0005_main_masjid_for_jumuah.py` adds each existing user's main masjid as their Jumuah masjid (see section 10). It's a separate migration because my laptop had already run 0004, and Alembic never runs a migration twice.
 9. **`web/src/steps/OptionalStep.tsx`** and **`web/src/ColourPicker.tsx`**: the 4th setup step and the colour dropdown.
 
 ### 2. Shared masjids
@@ -790,6 +790,11 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 2. **The rule**: drop slots whose drive or prayer overlaps a busy time, pick the masjid with the shortest drive, then its earliest slot. Masjids with an unknown drive time go after known ones, in the order the user listed them.
 3. Busy times are always empty until milestone 7 adds commitments, but the tests already check them.
 4. **In the calendar**: on a Friday where a slot is picked, the Dhuhr row becomes "Jumuah at <masjid>" with its drive block. If the user has Jumuah masjids but none has usable Jumuah times, Dhuhr follows the weekly grid, and the description says Jumuah times aren't available. No Jumuah masjids means a normal Friday.
+5. **The main masjid is the first Jumuah masjid** (`follow_main_masjid` in `user_settings.py`), so users don't pick it twice:
+   a) Picking a main masjid with no Jumuah masjids yet adds it.
+   b) If the Jumuah list is only the old main masjid, a new main masjid takes its place. Choosing "I pray at home" empties it. That way picking a masjid, going Back, and pressing Skip still means no Jumuah.
+   c) Any other list was changed by the user, so it's left alone. Saving the same main masjid again does nothing, so a removed one isn't added back.
+   d) Migration 0005 does the same for users from before: a main masjid and no Jumuah masjids gets the main masjid. Its downgrade does nothing, since an added row looks the same as one the user picked.
 
 ### 11. Update jobs
 
