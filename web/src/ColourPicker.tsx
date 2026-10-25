@@ -1,6 +1,7 @@
-// A dropdown of Google Calendar's event colours, each with its swatch and
-// Google's name. A plain <select> can't show a coloured swatch in its
-// options, so this is a small listbox: a button that opens a list.
+// A dropdown that looks like Google Calendar's colour menu: a round dot
+// for each colour with Google's name, and a tick on the chosen one.
+// "Calendar colour" comes first and is the default. A plain <select> can't
+// show coloured dots, so this is a small listbox: a button that opens a list.
 // Keyboard: Enter, Space, or the arrow keys open it. Arrows move, Enter
 // picks, Escape closes.
 
@@ -19,8 +20,13 @@ const OPTIONS: { id: string | null; name: string; hex: string | null }[] = [
   ...GOOGLE_COLOURS,
 ];
 
-function Swatch({ hex }: { hex: string | null }) {
-  return <span className={hex ? "swatch" : "swatch none"} style={hex ? { background: hex } : undefined} aria-hidden="true" />;
+function Swatch({ hex, chosen = false }: { hex: string | null; chosen?: boolean }) {
+  return (
+    <span className={hex ? "swatch" : "swatch none"} style={hex ? { background: hex } : undefined} aria-hidden="true">
+      {/* Drawn by CSS, so the tick isn't read out as part of the colour's name. */}
+      {chosen && <span className="tick" />}
+    </span>
+  );
 }
 
 export function ColourPicker({ label, value, onChange }: Props) {
@@ -120,7 +126,7 @@ export function ColourPicker({ label, value, onChange }: Props) {
               onMouseEnter={() => setActive(index)}
               onClick={() => pick(index)}
             >
-              <Swatch hex={option.hex} />
+              <Swatch hex={option.hex} chosen={index === selected} />
               {option.name}
             </li>
           ))}
