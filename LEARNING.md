@@ -547,7 +547,8 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    e) **Cache**: each answer is kept for 7 days. The same text, with different spacing or capitals, is only sent once.
    f) **Through our backend**: the browser never calls Photon. Every request comes from the backend with the User-Agent `MuslimCalendar/0.4 (+mailto:<OSM_CONTACT_EMAIL>)`.
    g) **Spaced out**: calls from the whole app are at least 0.25 seconds apart (`throttle.py`).
-   h) **Credit**: "Search by Photon" and "© OpenStreetMap contributors" with a link, under the box.
+   h) **Credit**: OpenStreetMap's licence (the ODbL) requires credit wherever its data is shown. One small grey "© OpenStreetMap contributors" link sits in the footer of every page that uses it: setup and the settings page. The landing page shows no OpenStreetMap data, so it has no footer.
+   i) **No postal codes**: suggestions and the saved address leave out the postal code. OpenStreetMap's Canadian postal codes are often wrong (it showed the wrong one for my address), and prayer times only need the location. Postal code areas Photon sends as places are dropped too. The cache key got a `v2` so old cached labels with postal codes are never shown.
 3. **`throttle.py`**: the last call time lives in one Postgres row.
    a) A caller locks the row (`SELECT ... FOR UPDATE`), waits until enough time has passed, writes the new time, and commits.
    b) Anyone else blocks on the lock until then.
@@ -641,13 +642,15 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    b) A saved location shows with a **Next** button, so going back and forward doesn't search again.
    c) After the masjid question, "I pray at home" skips the grid.
    d) Straight after the last answer, the website calls `POST /setup/finish` and shows "Filling your Prayers calendar…". There's no extra button to press.
-   e) "Step X of 3" counts the 3 questions.
+   e) **Matches the landing page**: on a computer, a "Setup" heading and the 3 steps (Location, Masjid, Weekly prayers) are on the left, with the current one highlighted (`aria-current="step"`, so screen readers say it too) and finished ones ticked. The question is on the right. On a phone the list is hidden and "Setup · Step X of 3" shows at the top instead. Weekly prayers is crossed out for "I pray at home".
+   f) **Just the question**: the location page only says "What's your location?". The box still has a label for screen readers, hidden on screen.
 4. **Same code for setup and Edit**: each step takes `onSaved`, and a `page` flag that makes its question the page's main heading in setup. The settings page shows the step inside the card being edited.
 5. **The closest masjid** is first in the list, with a "Closest" badge and a thicker border.
 6. **Short name**: belongs to one masjid, so picking a different masjid clears it. Otherwise "Dhuhr at KMA" would show for Stittsville. Playwright caught this.
 7. **Picking a masjid after "I pray at home"** opens the weekly grid straight away, with no Cancel, since the calendar needs it.
-8. **Phones**: one column, tap targets at least 48 px tall. The weekly grid has the 5 prayers as rows and the 7 days as columns, with short day names (Mon, Tue...), so it still fits on a phone without scrolling sideways.
-9. **Sign out** posts to `/auth/logout` and goes back to the sign-in screen.
+8. **Font**: Plus Jakarta Sans, installed from npm (`@fontsource-variable/plus-jakarta-sans`). Vite copies the font files into `dist/assets/`, so our own nginx serves them. Nothing loads from Google Fonts, which would tell Google about every visitor. It's a variable font: one file covers every weight from 200 to 800. Headings use 800 with slightly tighter letter spacing, so they stand out from the 400 body text. A Playwright test checks the font is used and only comes from our own site.
+9. **Phones**: one column, tap targets at least 48 px tall. The weekly grid has the 5 prayers as rows and the 7 days as columns, with short day names (Mon, Tue...), so it still fits on a phone without scrolling sideways.
+10. **Sign out** posts to `/auth/logout` and goes back to the sign-in screen.
 
 ### 9. Tests
 
@@ -688,7 +691,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 
 ### 10. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`433 passed`) and `npx playwright test` in `web` (`44 passed`).
+1. **Tests**: `pytest` in `backend` (`435 passed`) and `npx playwright test` in `web` (`50 passed`).
 2. **For real**: follow "Go through setup" in the README with your test Google account. The Prayers calendar should have 70 events.
 3. **Change a setting**: tick one more prayer on one weekday. The message should say 2 events were sent, and only those 2 change in Google Calendar.
 4. **Nightly job**: `docker compose exec worker python -m app.worker run-now --email you@gmail.com`, then again, then with `--force`. Still 70 events.

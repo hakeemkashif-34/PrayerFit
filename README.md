@@ -111,8 +111,8 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 1. `docker compose up --build`
 2. Open http://localhost:8000 and click **Sign in with Google**.
 3. Pick your test account. Google warns that the app isn't verified. Click **Continue**. Leave the calendar box ticked and allow.
-4. You land back on the website, on step 1 of 3. Each question has its own page and a **Back** button.
-5. **What's your location?** Start typing your address. Suggestions show up in a dropdown once you stop typing. Pick yours. The time zone comes from the location.
+4. You land back on the website, on step 1 of 3. The 3 steps are listed on the left (on a phone, "Setup · Step 1 of 3" is at the top). Each question has its own page and a **Back** button.
+5. **What's your location?** Start typing your address. Suggestions show up in a dropdown once you stop typing. Pick yours. The time zone comes from the location. Postal codes aren't shown or saved, since OpenStreetMap's are often wrong in Canada.
 6. **Which masjid do you go to?** The closest masjids within 15 km are listed, closest first. Pick one, type one in with **My masjid isn't listed**, or pick **I pray at home**. You can give it a short name like `KMA` for the calendar.
 7. **Which prayers do you usually pray at the masjid?** Tick them in the grid: prayers down the side, Monday to Sunday across the top. This page is skipped if you pray at home.
 8. Press **Finish**. The calendar fills straight away, in about 10 to 20 seconds.
@@ -190,11 +190,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `433 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `435 passed`.
 
 The tests never call the real Google, Photon, or Overpass. They use fakes (`tests/fake_google.py` and `tests/fake_osm.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`265 passed, 168 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`265 passed, 170 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
@@ -207,4 +207,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `44 passed`: 22 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `50 passed`: 25 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
