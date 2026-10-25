@@ -576,9 +576,9 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    c) Each cell's results are cached for 30 days, since masjids rarely change. Neighbours in the same cell share one Overpass call.
    d) The exact distance is worked out on the server from the real location, kept if 15 km or less, and sorted closest first.
 4. **Distance** is the haversine formula: the straight-line distance over the Earth's curve. Ottawa to Toronto comes out at about 352 km, which the tests check. No ratings, just name and distance.
-5. If Overpass is busy (429 or 504), the user sees "OpenStreetMap's masjid search is busy. Try again in a minute."
+5. If every Overpass server is busy or down, the user sees "OpenStreetMap's masjid search is busy right now. Try again in a few minutes." (see point 7).
 6. **Overpass gets 60 seconds**: on my laptop, a real Overpass query for Kanata took 40.5 seconds and still worked. Google and Photon keep the usual 10 seconds, so Overpass passes its own `timeout=60` on that one request.
-   a) The chain has to wait longest at the front: the browser waits forever, nginx waits 120 seconds for `/api/`, and the backend gives Overpass 60. If nginx waited less than the backend, the user would get nginx's error even though the backend was about to answer.
+   a) The chain has to wait longest at the front: the browser waits forever, nginx waits 120 seconds for `/api/`, and the backend gives each Overpass server up to 60 and all of them together up to 100. If nginx waited less than the backend, the user would get nginx's error even though the backend was about to answer.
    b) While it waits, the masjid step says "Searching for masjids nearby. This can take up to a minute."
    c) `test_overpass_call_uses_a_60_second_timeout` reads the timeout httpx2 put on the actual request. I checked it fails when the `timeout=60` is taken out.
 
