@@ -870,3 +870,190 @@ input[aria-invalid="true"] {
 .blocked-note {
   margin: 8px 0 0;
 }
+
+/* ---- Setup page 1: 3 questions on one page ---- */
+
+.page-section {
+  margin-top: 32px;
+}
+
+.required-page h2,
+.chooser h2 {
+  font-size: 1.125rem;
+}
+
+button.home-choice {
+  margin-top: 12px;
+}
+
+/* ---- Settings: one card with a Required and an Optional section ---- */
+
+.settings-card {
+  padding: 4px 20px;
+}
+
+.settings-card > section + section {
+  border-top: 1px solid var(--line);
+}
+
+.section-title {
+  font-size: 1.125rem;
+  margin: 20px 0 4px;
+}
+
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.section-title + .setting-row {
+  border-top: none;
+}
+
+.setting-row.editing {
+  display: block;
+}
+
+.setting-row h3 {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+
+.setting-row p {
+  margin-bottom: 4px;
+}
+
+.setting-row.editing h3 {
+  margin-bottom: 0;
+}
+
+/* The banner asking older users to sign in again. */
+.notice.banner {
+  margin-bottom: 16px;
+}
+
+.notice.banner p {
+  margin: 0 0 4px;
+}
+
+.notice.banner .actions {
+  margin-top: 12px;
+}
+
+/* ---- The Jumuah chooser's day view ---- */
+
+.chooser {
+  margin-top: 28px;
+}
+
+.day-view {
+  display: grid;
+  column-gap: 6px;
+  margin-top: 12px;
+  padding: 10px 0;
+  position: relative;
+}
+
+/* A line every half hour. Height 0, so the time label never makes its row taller. */
+.day-line {
+  height: 0;
+  border-top: 1px solid var(--line);
+  position: relative;
+  z-index: 0;
+}
+
+.day-time {
+  position: absolute;
+  top: -0.7em;
+  left: 0;
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  color: var(--muted);
+  background: var(--background);
+  padding-right: 4px;
+}
+
+.card .day-time {
+  background: var(--card);
+}
+
+.busy-block {
+  z-index: 1;
+  background: repeating-linear-gradient(135deg, #d9dedc 0 6px, #e6e9e8 6px 12px);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 2px 4px;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.busy-band {
+  z-index: 0;
+  background: rgb(23 32 28 / 0.06);
+  border-radius: 6px;
+}
+
+.slot {
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.3;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.slot.fits {
+  background: var(--green-soft);
+  border-color: #9cc8b6;
+  color: var(--green-dark);
+}
+
+.slot.clashes {
+  background: #eceeed;
+  border-color: #d3d8d6;
+  color: var(--muted);
+}
+
+.slot.selected {
+  border-color: var(--green);
+  box-shadow: 0 0 0 2px var(--green);
+}
+
+.slot.clashes.selected {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--text);
+}
+
+.slot:has(input:focus-visible) {
+  outline: 3px solid var(--green);
+  outline-offset: 2px;
+}
+
+.slot-name {
+  font-size: 0.8125rem;
+}
+
+.slot-fit {
+  font-weight: 700;
+}
+
+.slot.selected .slot-fit::after {
+  content: " · Picked";
+}

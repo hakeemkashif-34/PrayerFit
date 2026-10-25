@@ -2,7 +2,10 @@
 // The session cookie is HttpOnly, so this code never sees it. The browser
 // sends it because the website and the API are the same site.
 
-import type { CalendarUpdate, Masjid, MasjidSuggestion, Me, OptionalAnswers, SaveResponse, Settings, Suggestions } from "./types";
+import type {
+  CalendarUpdate, ChoicesRequest, JumuahChoices, Masjid, MasjidSuggestion, Me, OptionalAnswers, SaveResponse, Settings,
+  SlotKey, Suggestions,
+} from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -56,8 +59,6 @@ export const api = {
     request<Suggestions>("POST", "/api/setup/location/suggest", { query }, signal),
   saveLocation: (query: string, index: number) =>
     request<SaveResponse>("PUT", "/api/settings/location", { query, index }),
-  saveMethods: (method: string, asr_method: string) =>
-    request<SaveResponse>("PUT", "/api/settings/methods", { method, asr_method }),
   suggestMasjids: (query: string, signal?: AbortSignal) =>
     request<{ suggestions: MasjidSuggestion[] }>("POST", "/api/setup/masjid/suggest", { query }, signal),
   // Saves the picked suggestion as a masjid, so it can be the main or a Jumuah masjid.
@@ -69,6 +70,14 @@ export const api = {
   saveJumuah: (masjid_ids: string[]) => request<SaveResponse>("PUT", "/api/settings/jumuah", { masjid_ids }),
   // Skip sends the defaults.
   saveOptional: (answers: OptionalAnswers) => request<SaveResponse>("PUT", "/api/settings/optional", answers),
+  // null minutes clears a time, so OpenRouteService's estimate is used.
+  saveCommuteTimes: (times: { masjid_id: string; minutes: number | null }[]) =>
+    request<SaveResponse>("PUT", "/api/settings/commute-times", { times }),
+  // null clears the pick, so the earliest Jumuah that fits is used.
+  saveJumuahPick: (pick: SlotKey | null) => request<SaveResponse>("PUT", "/api/settings/jumuah-pick", pick ?? {}),
+  // A POST, but it saves nothing.
+  jumuahChoices: (body: ChoicesRequest, signal?: AbortSignal) =>
+    request<JumuahChoices>("POST", "/api/jumuah/choices", body, signal),
   finishSetup: () => request<SaveResponse>("POST", "/api/setup/finish"),
   syncCalendar: () => request<CalendarUpdate>("POST", "/api/calendar/sync"),
   // /auth/ goes straight to the backend, like the sign-in links.
