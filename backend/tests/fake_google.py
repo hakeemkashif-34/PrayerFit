@@ -258,7 +258,22 @@ class FakeGoogle:
                 raise httpx2.ReadTimeout("fake timeout after write", request=request)
             return httpx2.Response(200, json=calendar.events[parts[3]])
 
+        # DELETE /calendars/{id}/events/{eventId}
+        if request.method == "DELETE" and len(parts) == 4 and parts[2] == "events":
+            failure = self._event_write_failure()
+            if failure not in (None, "timeout_after_write"):
+                return self._fail(request, failure)
+            event = calendar.events.get(parts[3])
+            if event is None or event.get("status") == "cancelled":
+                return httpx2.Response(410, json={"error": {"code": 410, "message": "Resource has been deleted"}})
+            # Like Google: the event stays as "cancelled", and its ID stays taken.
+            event["status"] = "cancelled"
+            return httpx2.Response(204)
+
         raise AssertionError(f"The app called a Calendar API path the fake doesn't know: {raw_path}")
+
+    def deletes(self) -> list[Recorded]:
+        return [r for r in self.requests if r.method == "DELETE"]
 
     def _event_write_failure(self) -> str | int | None:
         self._event_writes += 1

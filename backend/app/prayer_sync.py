@@ -95,7 +95,7 @@ def google_event_id(row: PrayerEvent) -> str:
 
 def google_event(row: PrayerEvent) -> dict:
     zone = ZoneInfo(row.time_zone)
-    return {
+    event = {
         "id": google_event_id(row),
         # Rows from before milestone 4 have no title or description saved.
         "summary": row.summary or PRAYER_TITLES[row.prayer],
@@ -108,6 +108,16 @@ def google_event(row: PrayerEvent) -> dict:
         # Google events back to rows even if the event ID ever differs.
         "extendedProperties": {"private": {"appEventId": str(row.id)}},
     }
+    # Only added when set, so events from before milestone 5 hash the same
+    # and aren't sent again.
+    if row.color_id:
+        event["colorId"] = row.color_id
+    if row.reminder_minutes is not None:
+        event["reminders"] = {
+            "useDefault": False,
+            "overrides": [{"method": "popup", "minutes": row.reminder_minutes}],
+        }
+    return event
 
 
 def event_hash(row: PrayerEvent) -> str:
@@ -146,8 +156,27 @@ def _write_event(calendar: GoogleCalendar, calendar_id: str, row: PrayerEvent) -
         calendar.update_event(calendar_id, event_id, body)
 
 
+class NotADriveBlock(Exception):
+    """Something asked to delete an event the app may not delete."""
+
+
+def delete_drive_block(calendar: GoogleCalendar, calendar_id: str, row: PrayerEvent, now: datetime) -> None:
+    """Delete one future drive block the app made. The only delete the app does.
+
+    Prayer blocks, past events, and anything the app didn't make are never deleted.
+    """
+    if row.kind != "drive" or row.starts_at <= now:
+        raise NotADriveBlock(f"Refused to delete {row.kind} event {row.id}")
+    if row.google_calendar_id != calendar_id:
+        return  # it was in a calendar that's gone, so there's nothing to delete
+    try:
+        calendar.delete_event(calendar_id, google_event_id(row))
+    except GoogleNotFound:
+        pass  # already gone, for example the user deleted it
+
+
 def send_to_google(
-    db: Session, calendar: GoogleCalendar, calendar_id: str, rows: list[PrayerEvent]
+    db: Session, calendar: GoogleCalendar, calendar_id: str, rows: list[PrayerEvent], now: datetime
 ) -> None:
     """Send each row to Google, committing after each one.
 
@@ -156,7 +185,10 @@ def send_to_google(
     """
     for index, row in enumerate(rows):
         try:
-            _write_event(calendar, calendar_id, row)
+            if row.sync_status == "delete_pending":
+                delete_drive_block(calendar, calendar_id, row, now)
+            else:
+                _write_event(calendar, calendar_id, row)
         except GoogleError as error:
             row.last_error = str(error)
             db.commit()
@@ -165,9 +197,14 @@ def send_to_google(
                 saved=[r.prayer for r in rows[:index]],
                 waiting=[r.prayer for r in rows[index:]],
             ) from error
-        row.google_calendar_id = calendar_id
-        row.synced_hash = event_hash(row)
-        row.sync_status = "synced"
+        if row.sync_status == "delete_pending":
+            # Gone from Google. No hash, so if it's needed again it's sent again.
+            row.sync_status = "deleted"
+            row.synced_hash = None
+        else:
+            row.google_calendar_id = calendar_id
+            row.synced_hash = event_hash(row)
+            row.sync_status = "synced"
         row.synced_at = datetime.now(UTC)
         row.last_error = None
         db.commit()

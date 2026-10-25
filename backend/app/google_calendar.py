@@ -1,9 +1,11 @@
 """The only code that talks to the Google Calendar API.
 
-It has exactly 5 calls: create a calendar, look one up, change its time
-zone, add an event, and update an event. There's no delete call at all. There's nothing here that lists or changes the user's other
-calendars, so the app can't touch them by mistake. The calendar.app.created
-scope would block it anyway.
+It has exactly 6 calls: create a calendar, look one up, change its time
+zone, add an event, update an event, and delete an event. Delete is only
+ever used for drive blocks the app made (see prayer_sync.delete_drive_block).
+There's nothing here that lists or changes the user's other calendars, so
+the app can't touch them by mistake. The calendar.app.created scope would
+block it anyway.
 """
 
 import time
@@ -71,7 +73,8 @@ class GoogleCalendar:
 
         status = response.status_code
         if status < 300:
-            return response.json()
+            # A delete answers 204 with no body.
+            return response.json() if response.content else {}
         # 404 and 409 are normal answers the callers handle (a deleted
         # calendar, an event that already exists), so they aren't logged.
         if status not in (404, 410, 409):
@@ -107,3 +110,7 @@ class GoogleCalendar:
     def update_event(self, calendar_id: str, event_id: str, event: dict) -> dict:
         path = f"{self._calendar_path(calendar_id)}/events/{quote(event_id, safe='')}"
         return self._request("PUT", path, event)
+
+    def delete_event(self, calendar_id: str, event_id: str) -> None:
+        path = f"{self._calendar_path(calendar_id)}/events/{quote(event_id, safe='')}"
+        self._request("DELETE", path)
