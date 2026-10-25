@@ -5,6 +5,7 @@ these, so a user can't link the wrong page for everyone.
     python -m app.admin link-mawaqit --masjid <masjid id> --url <MAWAQIT page link>
     python -m app.admin unlink-mawaqit --masjid <masjid id>
     python -m app.admin fetch-mawaqit --masjid <masjid id>
+    python -m app.admin set-jumuah-length --masjid <masjid id> --minutes 40
 
 With Docker: docker compose exec backend python -m app.admin list-masjids
 """
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_engine
 from app.http_client import new_http_client
+from app.jumuah import DEFAULT_JUMUAH_MINUTES
 from app.masjid_times.mawaqit import BadLink, slug_from_link
 from app.masjid_times.scheduler import run_fetch
 from app.models import Masjid, MasjidDayTimes, MasjidSource
@@ -44,7 +46,11 @@ def list_masjids(db: Session) -> list[str]:
         name = masjid.name or "(no name, picked by address)"
         linked = f"MAWAQIT {source.external_id}" if source else "not linked"
         fetched = f", last fetched {source.last_success_at:%Y-%m-%d %H:%M} UTC" if source and source.last_success_at else ""
-        lines.append(f"{masjid.id}  {name}  [{linked}{fetched}]  {users} user{'s' if users != 1 else ''}")
+        length = (
+            f"Jumuah {masjid.jumuah_minutes} min" if masjid.jumuah_minutes
+            else f"Jumuah length not set ({DEFAULT_JUMUAH_MINUTES} min estimated)"
+        )
+        lines.append(f"{masjid.id}  {name}  [{linked}{fetched}]  {length}  {users} user{'s' if users != 1 else ''}")
     return lines or ["No masjids yet. They're added when users pick them in setup."]
 
 
@@ -65,6 +71,23 @@ def link_mawaqit(db: Session, masjid_id: str, link: str, now: datetime) -> str:
     db.add(MasjidSource(masjid_id=masjid.id, source="mawaqit", external_id=slug, linked_at=now))
     db.commit()
     return f"Linked {masjid.name or masjid.id} to MAWAQIT {slug}. The worker reads it within a minute."
+
+
+JUMUAH_MINUTES = range(15, 91)
+
+
+def set_jumuah_length(db: Session, masjid_id: str, minutes: int, now: datetime) -> str:
+    """How long this masjid's Jumuah takes, from the start of the khutbah to the end of the prayer."""
+    if minutes not in JUMUAH_MINUTES:
+        raise SystemExit("Jumuah length must be a whole number of minutes from 15 to 90.")
+    masjid = _masjid(db, masjid_id)
+    masjid.jumuah_minutes = minutes
+    # Their Jumuah events end at the new time.
+    users = users_of_masjid(db, masjid.id)
+    for user_id in users:
+        queue_update(db, user_id, "jumuah_length", now)
+    db.commit()
+    return f"Set {masjid.name or masjid.id}'s Jumuah to {minutes} minutes. Updates queued for {len(users)} user(s)."
 
 
 def unlink_mawaqit(db: Session, masjid_id: str, now: datetime) -> str:
@@ -93,6 +116,10 @@ def main(argv: list[str] | None = None) -> None:
     unlink.add_argument("--masjid", required=True)
     fetch = commands.add_parser("fetch-mawaqit", help="read a linked masjid's page now")
     fetch.add_argument("--masjid", required=True)
+    length = commands.add_parser("set-jumuah-length", help="how long a masjid's Jumuah takes, 15 to 90 minutes")
+    length.add_argument("--masjid", required=True)
+    # A string, so "40.5" gets this command's own message instead of argparse's.
+    length.add_argument("--minutes", required=True)
     args = parser.parse_args(argv)
 
     now = datetime.now(UTC)
@@ -103,6 +130,10 @@ def main(argv: list[str] | None = None) -> None:
             print(link_mawaqit(db, args.masjid, args.url, now))
         elif args.command == "unlink-mawaqit":
             print(unlink_mawaqit(db, args.masjid, now))
+        elif args.command == "set-jumuah-length":
+            if not args.minutes.isdigit():
+                raise SystemExit("Jumuah length must be a whole number of minutes from 15 to 90.")
+            print(set_jumuah_length(db, args.masjid, int(args.minutes), now))
         elif args.command == "fetch-mawaqit":
             masjid = _masjid(db, args.masjid)
             with new_http_client() as http:

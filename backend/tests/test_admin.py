@@ -78,6 +78,35 @@ def test_list_shows_ids_and_links_but_not_typed_in_addresses(db, kma, fake_googl
     with Session(db) as session:
         lines = admin.list_masjids(session)
     text = "\n".join(lines)
-    assert f"{kma}  KMA  [MAWAQIT kma-kanata]  1 user" in text
-    assert "(no name, picked by address)  [not linked]  0 users" in text
+    assert f"{kma}  KMA  [MAWAQIT kma-kanata]  Jumuah length not set (45 min estimated)  1 user" in text
+    assert "(no name, picked by address)  [not linked]  Jumuah length not set (45 min estimated)  0 users" in text
     assert "Private Lane" not in text
+
+
+def test_set_jumuah_length(db, kma):
+    with Session(db) as session:
+        message = admin.set_jumuah_length(session, str(kma), 40, NOW)
+    assert "Set KMA's Jumuah to 40 minutes. Updates queued for 1 user(s)." == message
+    with Session(db) as session:
+        assert session.get(Masjid, kma).jumuah_minutes == 40
+        assert session.get(UpdateJob, f"update:{user_id(db, 'user-a')}").status == "pending"
+        assert f"{kma}  KMA  [not linked]  Jumuah 40 min  1 user" in "\n".join(admin.list_masjids(session))
+
+
+@pytest.mark.parametrize("minutes", [14, 91, 0, -5])
+def test_jumuah_length_is_15_to_90(db, kma, minutes):
+    with Session(db) as session, pytest.raises(SystemExit, match="15 to 90"):
+        admin.set_jumuah_length(session, str(kma), minutes, NOW)
+
+
+@pytest.mark.parametrize("typed", ["40.5", "forty", ""])
+def test_the_command_takes_whole_minutes_only(db, kma, typed, monkeypatch):
+    monkeypatch.setattr(admin, "get_engine", lambda: db)
+    with pytest.raises(SystemExit, match="whole number"):
+        admin.main(["set-jumuah-length", "--masjid", str(kma), "--minutes", typed])
+
+
+def test_the_command_sets_it(db, kma, monkeypatch, capsys):
+    monkeypatch.setattr(admin, "get_engine", lambda: db)
+    admin.main(["set-jumuah-length", "--masjid", str(kma), "--minutes", "30"])
+    assert "Jumuah to 30 minutes" in capsys.readouterr().out
