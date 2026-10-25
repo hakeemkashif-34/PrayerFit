@@ -1,0 +1,121 @@
+// Setup page 1, "Required": location, main masjid (or "I pray at home"),
+// and the weekly grid, all on one page.
+//
+// Picking a location saves it straight away, since the masjid search needs
+// it to sort masjids by distance. Next saves the masjid and the grid.
+// Nothing goes to Google Calendar until the user presses Finish or Skip on
+// page 2.
+
+import { useState } from "react";
+import { api, ApiError } from "../api";
+import { distanceText, masjidName } from "../labels";
+import type { Masjid, Prayer, Settings } from "../types";
+import { LocationStep } from "./LocationStep";
+import { MasjidSearch } from "./MasjidSearch";
+import { emptyWeek, WeeklyGrid } from "./WeeklyStep";
+
+type Props = {
+  settings: Settings;
+  // The location saved. The page stays.
+  onChange: (settings: Settings) => void;
+  // Everything on the page is saved. Go to page 2.
+  onNext: (settings: Settings) => void;
+};
+
+export function RequiredPage({ settings, onChange, onNext }: Props) {
+  const [choice, setChoice] = useState<"masjid" | "home" | null>(settings.main_masjid_choice);
+  const [picked, setPicked] = useState<Masjid | null>(settings.main_masjid);
+  const [days, setDays] = useState(settings.weekly.length === 7 ? settings.weekly : emptyWeek());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const hasLocation = settings.place_name !== null;
+  const atMasjid = choice === "masjid" && picked !== null;
+
+  function toggle(weekday: number, prayer: Prayer) {
+    setDays((current) => current.map((d) => (d.weekday === weekday ? { ...d, [prayer]: !d[prayer] } : d)));
+  }
+
+  function pickMasjid(masjid: Masjid) {
+    setPicked(masjid);
+    setChoice("masjid");
+  }
+
+  async function next() {
+    if (!hasLocation) return setError("Pick your location from the list.");
+    if (choice === null || (choice === "masjid" && !picked)) {
+      return setError("Pick your masjid, or choose I pray at home.");
+    }
+    setBusy(true);
+    setError("");
+    try {
+      let saved = await api.saveMainMasjid(
+        choice === "masjid" && picked ? { choice: "masjid", masjid_id: picked.id } : { choice: "home" },
+      );
+      if (atMasjid) saved = await api.saveWeekly(days);
+      onNext(saved.settings);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't save. Try again.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="required-page">
+      <h1>Required</h1>
+
+      <LocationStep current={settings.place_name} onSaved={(response) => onChange(response.settings)} />
+
+      <section aria-labelledby="masjid-title" className="page-section">
+        <h2 id="masjid-title">Which masjid do you usually go to?</h2>
+        {!hasLocation ? (
+          <p className="hint">Pick your location first, so masjids near you come up first.</p>
+        ) : choice === "home" ? (
+          <div className="current picked-masjid">
+            <p>
+              <strong>I pray at home</strong>
+            </p>
+            <button type="button" className="link" onClick={() => setChoice(picked ? "masjid" : null)} disabled={busy}>
+              Change
+            </button>
+          </div>
+        ) : picked && choice === "masjid" ? (
+          <div className="current picked-masjid">
+            <p>
+              <strong>{masjidName(picked)}</strong>
+              {picked.distance_km !== null && <span className="hint"> · {distanceText(picked.distance_km)}</span>}
+            </p>
+            <button type="button" className="link" onClick={() => setChoice(null)} disabled={busy}>
+              Change
+            </button>
+          </div>
+        ) : (
+          <>
+            <MasjidSearch onPicked={pickMasjid} />
+            <button type="button" className="link home-choice" onClick={() => setChoice("home")} disabled={busy}>
+              I pray at home
+            </button>
+          </>
+        )}
+      </section>
+
+      {choice === "masjid" && picked && (
+        <section aria-labelledby="weekly-title" className="page-section">
+          <h2 id="weekly-title">Which prayers do you usually pray at {picked.name ?? "your masjid"}?</h2>
+          <p className="hint">Ticked means at the masjid. Unticked means at home.</p>
+          <WeeklyGrid days={days} onToggle={toggle} />
+        </section>
+      )}
+
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="actions">
+        <button type="button" onClick={() => void next()} disabled={busy}>
+          {busy ? "Saving…" : "Next"}
+        </button>
+      </div>
+    </div>
+  );
+}

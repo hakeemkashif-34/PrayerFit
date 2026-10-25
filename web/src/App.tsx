@@ -114,6 +114,7 @@ function Main() {
       return (
         <SettingsPage
           email={view.me.email}
+          busyAccess={view.me.busy_access}
           initial={view.settings}
           initialCalendar={view.calendar}
           tabBlocked={view.tabBlocked ?? false}

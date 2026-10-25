@@ -3,7 +3,7 @@
 // records every request so tests can check what the website sent.
 
 import type { Page, Route } from "@playwright/test";
-import type { Masjid, MasjidSuggestion, Me, Settings, Step } from "../src/types";
+import type { ChoicesRequest, CommuteTime, JumuahChoices, JumuahSlot, Masjid, MasjidSuggestion, Me, Settings, SlotKey, Step } from "../src/types";
 
 export const KMA: Masjid = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -48,8 +48,6 @@ export function emptySettings(): Settings {
     address: null,
     place_name: null,
     time_zone: null,
-    method: "isna",
-    asr_method: "standard",
     main_masjid_choice: null,
     main_masjid: null,
     main_masjid_short_name: null,
@@ -57,6 +55,9 @@ export function emptySettings(): Settings {
     jumuah_saved: false,
     jumuah_masjids: [],
     arrive_early_minutes: 0,
+    jumuah_arrive_early_minutes: 5,
+    jumuah_pick: null,
+    commute_times: [],
     prayer_color_id: null,
     drive_color_id: null,
   };
@@ -69,8 +70,6 @@ export function finishedSettings(): Settings {
     address: HOME_PLACE,
     place_name: HOME_PLACE,
     time_zone: "America/Toronto",
-    method: "isna",
-    asr_method: "standard",
     main_masjid_choice: "masjid",
     main_masjid: KMA,
     main_masjid_short_name: "KMA",
@@ -80,9 +79,27 @@ export function finishedSettings(): Settings {
     jumuah_saved: true,
     jumuah_masjids: [KMA, STITTSVILLE],
     arrive_early_minutes: 5,
+    jumuah_arrive_early_minutes: 10,
+    jumuah_pick: null,
+    commute_times: [],
     prayer_color_id: "7",
     drive_color_id: null,
   };
+}
+
+// The coming Friday in the pretend backend. Toronto is 4 hours behind UTC that day.
+export const FRIDAY = "2026-10-30";
+const OFFSET = "-04:00";
+const MINUTE = 60_000;
+
+// "13:30" on the Friday -> its time as an ISO string with the offset.
+export function friday(clock: string): string {
+  return `${FRIDAY}T${clock}:00${OFFSET}`;
+}
+
+function iso(time: number): string {
+  const local = new Date(time - 4 * 60 * MINUTE).toISOString().slice(11, 16);
+  return friday(local);
 }
 
 export type Recorded = { method: string; path: string; body: unknown };
@@ -102,11 +119,29 @@ export class MockApi {
   finishDelayMs = 0;
   // Every Google Calendar URL the page went to. A fake page answers, so no test reaches Google.
   googleVisits: string[] = [];
+  // This Friday's Jumuah times by masjid ID, in slot order. A masjid that isn't here has none.
+  jumuahTimes: Record<string, string[]> = { [KMA.id]: ["13:30", "14:30"], [STITTSVILLE.id]: ["13:15"] };
+  // Busy times on the Friday, as ["13:00", "13:40"] clock pairs.
+  busy: [string, string][] = [];
+  // False is like a user without free/busy access: no busy times.
+  busyChecked = true;
+  // Jumuah length by masjid ID. Missing means 45 minutes, estimated.
+  jumuahLength: Record<string, number> = {};
+  // OpenRouteService's pretend driving estimates, in minutes. A masjid that isn't here has no estimate.
+  orsMinutes: Record<string, number> = { [KMA.id]: 14, [STITTSVILLE.id]: 20 };
+  // The user's own commute times, by masjid ID.
+  commuteMinutes: Record<string, number> = {};
 
   signedIn(settings: Settings = emptySettings(), me: Partial<Me> = {}) {
     this.settings = settings;
     this.optionalSaved = !settings.missing.includes("optional");
-    this.me = { email: "hakeem@example.com", google_sign_in_needed: false, calendar_access: true, setup_complete: settings.setup_complete, ...me };
+    this.me = {
+      email: "hakeem@example.com", google_sign_in_needed: false, calendar_access: true, busy_access: true,
+      setup_complete: settings.setup_complete, ...me,
+    };
+    this.commuteMinutes = Object.fromEntries(
+      settings.commute_times.filter((c) => c.minutes !== null).map((c) => [c.masjid_id, c.minutes!]),
+    );
     return this;
   }
 
@@ -135,8 +170,60 @@ export class MockApi {
     return missing;
   }
 
+  // Like the backend: the main masjid, then the Jumuah masjids, each once.
+  private commuteTimes(): CommuteTime[] {
+    const s = this.settings;
+    const masjids = [...(s.main_masjid_choice === "masjid" && s.main_masjid ? [s.main_masjid] : []), ...s.jumuah_masjids];
+    const unique = masjids.filter((m, i) => masjids.findIndex((x) => x.id === m.id) === i);
+    return unique.map((m) => ({ masjid_id: m.id, masjid_name: m.name ?? m.address ?? "Your masjid", minutes: this.commuteMinutes[m.id] ?? null }));
+  }
+
+  // Like POST /jumuah/choices: every slot's window, and which one is selected.
+  choices(body: ChoicesRequest): JumuahChoices {
+    const s = this.settings;
+    const empty: JumuahChoices = { friday: null, time_zone: null, busy_checked: false, busy: [], slots: [], selected: null };
+    if (s.jumuah_masjids.length === 0) return empty;
+    const early = body.jumuah_arrive_early_minutes ?? s.jumuah_arrive_early_minutes;
+    const busy = this.busyChecked ? this.busy.map(([start, end]) => [Date.parse(friday(start)), Date.parse(friday(end))]) : [];
+    const slots: JumuahSlot[] = [];
+    s.jumuah_masjids.forEach((masjid) => {
+      (this.jumuahTimes[masjid.id] ?? []).forEach((clock, i) => {
+        const override = body.commute_minutes && masjid.id in body.commute_minutes ? body.commute_minutes[masjid.id] : undefined;
+        const own = override === undefined ? this.commuteMinutes[masjid.id] ?? null : override;
+        const commute = own ?? this.orsMinutes[masjid.id] ?? null;
+        const length = this.jumuahLength[masjid.id] ?? 45;
+        const start = Date.parse(friday(clock));
+        const arrive = start - early * MINUTE;
+        const leave = commute === null ? null : arrive - commute * MINUTE;
+        const end = start + length * MINUTE;
+        const from = leave ?? arrive;
+        slots.push({
+          masjid_id: masjid.id, masjid_label: masjid.id === s.main_masjid?.id && s.main_masjid_short_name ? s.main_masjid_short_name : masjid.name ?? "Your masjid",
+          order: i + 1, order_label: `${["1st", "2nd", "3rd"][i]} Jumuah`,
+          starts_at: iso(start), leave_at: leave === null ? null : iso(leave), arrive_at: iso(arrive), ends_at: iso(end),
+          commute_minutes: commute, commute_source: commute === null ? null : own === null ? "ors" : "user",
+          jumuah_minutes: length, length_estimated: !(masjid.id in this.jumuahLength),
+          fits: !busy.some(([b0, b1]) => from < b1 && b0 < end),
+        });
+      });
+    });
+    const listed = s.jumuah_masjids.map((m) => m.id);
+    slots.sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at) || listed.indexOf(a.masjid_id) - listed.indexOf(b.masjid_id));
+    const key = (slot: JumuahSlot): SlotKey => ({ masjid_id: slot.masjid_id, order: slot.order });
+    const pick = s.jumuah_pick;
+    const picked = pick && slots.find((x) => x.masjid_id === pick.masjid_id && x.order === pick.order);
+    const fitting = slots.find((x) => x.fits);
+    const selected = picked ? key(picked) : fitting ? key(fitting) : slots[0] ? key(slots[0]) : null;
+    return {
+      friday: FRIDAY, time_zone: "America/Toronto", busy_checked: this.busyChecked,
+      busy: this.busyChecked ? this.busy.map(([start, end]) => ({ starts_at: friday(start), ends_at: friday(end) })) : [],
+      slots, selected,
+    };
+  }
+
   private saved(calendar: unknown = null) {
     this.settings.missing = this.missing();
+    this.settings.commute_times = this.commuteTimes();
     return { settings: this.settings, calendar: this.me?.setup_complete ? calendar ?? updated(3) : null };
   }
 
@@ -178,6 +265,7 @@ export class MockApi {
         return json(200, this.me);
       case "GET /api/settings":
         s.missing = this.missing();
+        s.commute_times = this.commuteTimes();
         return json(200, s);
       case "POST /api/setup/location/suggest":
         return json(200, { suggestions: suggest(body.query).map((label, index) => ({ index, label })), ...CREDIT });
@@ -188,9 +276,6 @@ export class MockApi {
         Object.assign(s, { address: label, place_name: label, time_zone: "America/Toronto" });
         return json(200, this.saved());
       }
-      case "PUT /api/settings/methods":
-        Object.assign(s, { method: body.method, asr_method: body.asr_method });
-        return json(200, this.saved());
       case "POST /api/setup/masjid/suggest":
         if (!s.address) return json(409, { detail: { message: "Save your location first." } });
         return json(200, {
@@ -233,11 +318,24 @@ export class MockApi {
       case "PUT /api/settings/jumuah":
         s.jumuah_saved = true;
         s.jumuah_masjids = body.masjid_ids.map((id: string) => this.savedMasjids.get(id)!);
+        if (s.jumuah_pick && !body.masjid_ids.includes(s.jumuah_pick.masjid_id)) s.jumuah_pick = null;
         return json(200, this.saved());
+      case "PUT /api/settings/commute-times":
+        for (const time of body.times as { masjid_id: string; minutes: number | null }[]) {
+          if (time.minutes === null) delete this.commuteMinutes[time.masjid_id];
+          else this.commuteMinutes[time.masjid_id] = time.minutes;
+        }
+        return json(200, this.saved(updated(4)));
+      case "PUT /api/settings/jumuah-pick":
+        s.jumuah_pick = body.masjid_id ? { masjid_id: body.masjid_id, order: body.order } : null;
+        return json(200, this.saved(updated(2)));
+      case "POST /api/jumuah/choices":
+        return json(200, this.choices(body));
       case "PUT /api/settings/optional":
         this.optionalSaved = true;
         Object.assign(s, {
           arrive_early_minutes: body.arrive_early_minutes ?? 0,
+          jumuah_arrive_early_minutes: body.jumuah_arrive_early_minutes ?? 5,
           main_masjid_short_name: s.main_masjid_choice === "masjid" ? body.short_name?.trim() || null : null,
           prayer_color_id: body.prayer_color_id ?? null,
           drive_color_id: body.drive_color_id ?? null,
