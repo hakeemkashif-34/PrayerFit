@@ -1,4 +1,4 @@
-"""A fake Nominatim and Overpass for tests.
+"""A fake Photon and Overpass for tests.
 
 Like fake_google.py, it answers only the URLs the app calls, records every
 request, and can be told to fail. No test reaches the real OpenStreetMap.
@@ -10,7 +10,7 @@ from urllib.parse import parse_qs
 
 import httpx2
 
-NOMINATIM_HOST = "nominatim.openstreetmap.org"
+PHOTON_HOST = "photon.komoot.io"
 OVERPASS_HOST = "overpass-api.de"
 
 
@@ -25,24 +25,27 @@ def _metres(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 class FakeOsm:
     def __init__(self) -> None:
-        # Normalized address -> Nominatim's answer.
-        self.places: dict[str, dict] = {}
+        # Every place Photon "knows", as GeoJSON features.
+        self.places: list[dict] = []
         # Every masjid "on OpenStreetMap", as Overpass elements.
         self.elements: list[dict] = []
-        self.nominatim_requests: list[httpx2.Request] = []
+        self.photon_requests: list[httpx2.Request] = []
         self.overpass_requests: list[httpx2.Request] = []
         # Set to a status code (like 429) or "timeout" to make the next calls fail.
-        self.nominatim_failure: int | str | None = None
+        self.photon_failure: int | str | None = None
         self.overpass_failure: int | str | None = None
 
     # ---- Things tests call to set up a scene ----
 
-    def add_place(self, address: str, display_name: str, lat: float, lon: float) -> None:
-        self.places[" ".join(address.split()).casefold()] = {
-            "display_name": display_name,
-            "lat": str(lat),  # Nominatim sends numbers as strings
-            "lon": str(lon),
-        }
+    def add_place(self, lat: float, lon: float, countrycode: str = "CA", **properties: str) -> None:
+        """A place Photon can suggest, like add_place(45.3, -75.9, housenumber="200", street="Kanata Avenue")."""
+        self.places.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},  # GeoJSON is lon, lat
+                "properties": {"countrycode": countrycode, **properties},
+            }
+        )
 
     def add_masjid(self, osm_id: int, name: str | None, lat: float, lon: float, osm_type: str = "node", **tags) -> None:
         all_tags = {"amenity": "place_of_worship", "religion": "muslim", **tags}
@@ -58,12 +61,12 @@ class FakeOsm:
     # ---- The transport ----
 
     def handles(self, host: str) -> bool:
-        return host in (NOMINATIM_HOST, OVERPASS_HOST)
+        return host in (PHOTON_HOST, OVERPASS_HOST)
 
     def handle(self, request: httpx2.Request) -> httpx2.Response:
-        if request.url.host == NOMINATIM_HOST and request.url.path == "/search":
-            self.nominatim_requests.append(request)
-            return self._nominatim(request)
+        if request.url.host == PHOTON_HOST and request.url.path == "/api/":
+            self.photon_requests.append(request)
+            return self._photon(request)
         if request.url.host == OVERPASS_HOST and request.url.path == "/api/interpreter":
             self.overpass_requests.append(request)
             return self._overpass(request)
@@ -75,15 +78,23 @@ class FakeOsm:
             raise httpx2.ReadTimeout("fake timeout", request=request)
         return httpx2.Response(int(failure), text="Fake failure")
 
-    def _nominatim(self, request: httpx2.Request) -> httpx2.Response:
-        if self.nominatim_failure is not None:
-            return self._fail(request, self.nominatim_failure)
+    def _photon(self, request: httpx2.Request) -> httpx2.Response:
+        if self.photon_failure is not None:
+            return self._fail(request, self.photon_failure)
         params = request.url.params
-        assert params["format"] == "jsonv2"
-        assert params["limit"] == "1"
         assert "MuslimCalendar" in request.headers["user-agent"]
-        place = self.places.get(" ".join(params["q"].split()).casefold())
-        return httpx2.Response(200, json=[place] if place else [])
+        assert params["lang"] == "en"
+        assert "lat" in params and "lon" in params  # the bias toward Canada
+        # Like Photon: every word typed has to start a word in the place.
+        words = params["q"].casefold().split()
+        found = []
+        for place in self.places:
+            text = " ".join(str(v) for v in place["properties"].values()).casefold().replace(",", " ").split()
+            if all(any(t.startswith(w) for t in text) for w in words):
+                found.append(place)
+        return httpx2.Response(
+            200, json={"type": "FeatureCollection", "features": found[: int(params["limit"])]}
+        )
 
     def _overpass(self, request: httpx2.Request) -> httpx2.Response:
         if self.overpass_failure is not None:

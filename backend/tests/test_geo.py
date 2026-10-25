@@ -1,4 +1,4 @@
-"""Tests for Nominatim, Overpass, the rate limit, and time zones. All faked."""
+"""Tests for Photon, Overpass, the rate limit, and time zones. All faked."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -7,14 +7,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.geo.errors import OsmServiceError
-from app.geo.nominatim import find_address
+from app.geo.photon import suggest
 from app.geo.overpass import cell_for, distance_km, nearby_masjids
 from app.geo.timezones import timezone_for
 from app.models import GeocodeCache, Masjid
 from tests.conftest import fake_http_client
 
 NOW = datetime(2026, 10, 24, 16, 0, tzinfo=UTC)
-ADDRESS = "200 Kanata Ave, Ottawa"
+QUERY = "200 Kanata Ave"
 HOME = (45.3088, -75.8987)  # a made-up point in Kanata
 
 
@@ -30,47 +30,81 @@ def http(fake_google, fake_osm):
         yield client
 
 
-# ---- Nominatim ----
+# ---- Photon ----
 
 
-def test_finds_an_address(session, http, fake_osm):
-    fake_osm.add_place(ADDRESS, "200, Kanata Avenue, Kanata, Ottawa, Ontario, Canada", *HOME)
+def _add_kanata(fake_osm):
+    fake_osm.add_place(
+        43.1, -77.6, countrycode="US", housenumber="200", street="Kanata Avenue",
+        city="Rochester", state="New York", country="United States",
+    )
+    fake_osm.add_place(
+        *HOME, housenumber="200", street="Kanata Avenue", city="Ottawa",
+        state="Ontario", postcode="K2T 1K8", country="Canada",
+    )
 
-    found = find_address(session, http, ADDRESS, NOW)
 
-    assert found.place_name == "200, Kanata Avenue, Kanata, Ottawa, Ontario, Canada"
-    assert (found.latitude, found.longitude) == HOME
-    request = fake_osm.nominatim_requests[0]
+def test_suggests_places_canada_first(session, http, fake_osm):
+    _add_kanata(fake_osm)
+
+    found = suggest(session, http, QUERY, NOW)
+
+    # Photon sent the US one first. Canada is moved up.
+    assert [s.label for s in found] == [
+        "200 Kanata Avenue, Ottawa, Ontario, K2T 1K8, Canada",
+        "200 Kanata Avenue, Rochester, New York, United States",
+    ]
+    assert (found[0].latitude, found[0].longitude) == HOME
+    request = fake_osm.photon_requests[0]
     assert request.headers["user-agent"] == "MuslimCalendar/0.4 (+mailto:tests@example.com)"
+    assert request.url.params["q"] == QUERY
 
 
-def test_same_address_is_only_looked_up_once(session, http, fake_osm):
-    fake_osm.add_place(ADDRESS, "Kanata", *HOME)
+def test_at_most_5_suggestions(session, http, fake_osm):
+    for n in range(8):
+        fake_osm.add_place(45 + n / 100, -75.0, name=f"Kanata Place {n}", city="Ottawa", country="Canada")
 
-    find_address(session, http, ADDRESS, NOW)
+    assert len(suggest(session, http, "Kanata", NOW)) == 5
+
+
+def test_fewer_than_3_characters_never_calls_photon(session, http, fake_osm):
+    assert suggest(session, http, "20", NOW) == []
+    assert suggest(session, http, "  2  ", NOW) == []
+    assert fake_osm.photon_requests == []
+
+
+def test_same_text_is_only_sent_once(session, http, fake_osm):
+    _add_kanata(fake_osm)
+
+    suggest(session, http, QUERY, NOW)
     # Different spacing and capitals are the same search.
-    again = find_address(session, http, "  200 KANATA  ave, ottawa ", NOW + timedelta(days=1))
+    again = suggest(session, http, "  200 KANATA  ave ", NOW + timedelta(days=1))
 
-    assert again.latitude == HOME[0]
-    assert len(fake_osm.nominatim_requests) == 1
-
-
-def test_cache_runs_out_after_30_days(session, http, fake_osm):
-    fake_osm.add_place(ADDRESS, "Kanata", *HOME)
-    find_address(session, http, ADDRESS, NOW)
-    find_address(session, http, ADDRESS, NOW + timedelta(days=31))
-    assert len(fake_osm.nominatim_requests) == 2
+    assert again[0].latitude == HOME[0]
+    assert len(fake_osm.photon_requests) == 1
 
 
-def test_not_found_is_none_and_cached(session, http, fake_osm):
-    assert find_address(session, http, "nowhere at all", NOW) is None
-    assert find_address(session, http, "nowhere at all", NOW) is None
-    assert len(fake_osm.nominatim_requests) == 1
+def test_cache_runs_out_after_7_days(session, http, fake_osm):
+    suggest(session, http, QUERY, NOW)
+    suggest(session, http, QUERY, NOW + timedelta(days=8))
+    assert len(fake_osm.photon_requests) == 2
+
+
+def test_no_match_is_empty_and_cached(session, http, fake_osm):
+    assert suggest(session, http, "nowhere at all", NOW) == []
+    assert suggest(session, http, "nowhere at all", NOW) == []
+    assert len(fake_osm.photon_requests) == 1
+
+
+def test_duplicate_places_are_shown_once(session, http, fake_osm):
+    _add_kanata(fake_osm)
+    _add_kanata(fake_osm)
+    assert len(suggest(session, http, QUERY, NOW)) == 2
 
 
 def test_cache_never_holds_the_address_in_plain_text(session, http, fake_osm):
-    fake_osm.add_place(ADDRESS, "200, Kanata Avenue, Kanata", *HOME)
-    find_address(session, http, ADDRESS, NOW)
+    _add_kanata(fake_osm)
+    suggest(session, http, QUERY, NOW)
 
     row = session.scalars(select(GeocodeCache)).one()
     assert "kanata" not in row.query_hash.lower()
@@ -78,23 +112,23 @@ def test_cache_never_holds_the_address_in_plain_text(session, http, fake_osm):
 
 
 @pytest.mark.parametrize("failure", [429, 503, "timeout"])
-def test_busy_nominatim_gives_a_message_without_the_address(session, http, fake_osm, failure):
-    fake_osm.nominatim_failure = failure
+def test_busy_photon_gives_a_message_without_the_address(session, http, fake_osm, failure):
+    fake_osm.photon_failure = failure
     with pytest.raises(OsmServiceError) as error:
-        find_address(session, http, ADDRESS, NOW)
+        suggest(session, http, QUERY, NOW)
     assert "Kanata" not in str(error.value)
     assert "Try again" in str(error.value)
 
 
-def test_calls_are_at_least_1_second_apart(session, http, fake_osm, throttle_waits, monkeypatch):
+def test_calls_are_spaced_out(session, http, fake_osm, throttle_waits, monkeypatch):
     from app.geo import throttle
 
     # Freeze the clock so the second call is "right after" the first.
     monkeypatch.setattr(throttle, "utc_now", lambda: NOW)
-    find_address(session, http, "first address", NOW)
-    find_address(session, http, "second address", NOW)
+    suggest(session, http, "first address", NOW)
+    suggest(session, http, "second address", NOW)
 
-    assert throttle_waits == [1.0]
+    assert throttle_waits == [0.25]
 
 
 # ---- Time zones ----

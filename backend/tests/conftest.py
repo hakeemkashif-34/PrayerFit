@@ -19,9 +19,9 @@ os.environ["TOKEN_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
 os.environ["APP_ORIGIN"] = "http://testserver"
 # The test client uses plain http, and won't send Secure cookies over it.
 os.environ["COOKIE_SECURE"] = "false"
-# Nominatim and Overpass are faked too, at their normal URLs.
+# Photon and Overpass are faked too, at their normal URLs.
 os.environ["OSM_CONTACT_EMAIL"] = "tests@example.com"
-os.environ["NOMINATIM_URL"] = "https://nominatim.openstreetmap.org"
+os.environ["PHOTON_URL"] = "https://photon.komoot.io"
 os.environ["OVERPASS_URL"] = "https://overpass-api.de/api/interpreter"
 
 from datetime import datetime, time  # noqa: E402
