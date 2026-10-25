@@ -19,11 +19,11 @@ Tech stack
 Backend: Python and FastAPI
 Database: Postgres, with SQLAlchemy and Alembic for migrations
 Website: React and TypeScript
-Sign-in: Google sign-in, with access to Google Calendar only, never Gmail
+Sign-in: Google sign-in, with access to Google Calendar only, never Gmail. 2 calendar scopes: calendar.app.created, so the app can manage only the calendar it made, and calendar.freebusy, so it can see when the user is busy on Friday (never what their events are) and pick a Jumuah that fits. Free/busy only checks the primary calendar, since checking others would need calendar.calendarlist.readonly
 Calendar: prayers go into a separate "Prayers" calendar that the app owns, so it never touches the user's other events
-Prayer times: calculated in code, with a choice of calculation method and Asr method (standard or Hanafi)
+Prayer times: calculated in code, always with ISNA and standard Asr. There is no setting for the method
 Masjid times: read from each masjid's public MAWAQIT page. MAWAQIT may block this at any time, so calculated times are the fallback. Masjid prayers use the masjid's iqamah. Home prayers use the main masjid's MAWAQIT adhan times when available, and calculated times otherwise
-Drive time: OpenRouteService's free plan, with no live traffic. Each masjid prayer has 2 events: a drive block from the leave time to the arrival time, then the prayer block
+Commute time: the user's own commute time per masjid, or OpenRouteService's free plan (a driving estimate with no live traffic) when they haven't set one. Each masjid prayer has 2 events: a commute block from the leave time to the arrival time, then the prayer block. Every event the app makes is private
 Background jobs: a nightly job that updates every user's prayers
 Hosting: Azure on student credit
 
@@ -60,7 +60,7 @@ Setup: repo, Docker Compose, a basic FastAPI app, Postgres, and GitHub Actions r
 Prayer times: calculate times for any location, with tests
 Google Calendar: sign in with Google, create the "Prayers" calendar, and add today's prayers
 Setup questions and nightly updates: address, masjid, which prayers at the masjid, Jumuah masjids, and daylight saving time
-Masjid times and Jumuah: read each masjid's times from its public MAWAQIT page (calculated times as the fallback), add a drive block before masjid prayers, an optional setup step, and pick the Jumuah slot that fits
+Masjid times and Jumuah: read each masjid's times from its public MAWAQIT page (calculated times as the fallback), add a commute block before masjid prayers, an optional setup page, and pick the Jumuah slot that fits the user's calendar
 Edit page: change prayers on the website, and keep the website and Google Calendar in sync both ways
 Commitments and notifications: move prayers around other commitments, and alert users when something changes
 Deploy: run it on Azure
