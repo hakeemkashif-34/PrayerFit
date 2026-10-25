@@ -90,6 +90,14 @@ def test_picking_a_suggestion_saves_it_without_a_second_lookup(signed_in, osm):
     assert response.json()["calendar"] is None  # nothing goes to Google during setup
 
 
+def test_the_saved_address_has_no_postal_code(signed_in, osm, db):
+    save_home(signed_in)
+
+    settings = signed_in.get("/settings").json()
+    assert "K2T" not in settings["address"]
+    assert "K2T" not in settings["place_name"]
+
+
 def test_picking_a_place_not_in_the_list_is_refused(signed_in, osm):
     response = signed_in.put("/settings/location", json={"query": HOME_QUERY, "index": 4})
     assert response.status_code == 404

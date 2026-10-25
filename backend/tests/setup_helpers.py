@@ -79,7 +79,7 @@ def settings_row(engine, sub: str = "user-a") -> UserSettings:
 # ---- Going through setup the way the website does ----
 
 HOME_QUERY = "200 Kanata Ave"
-HOME_PLACE = "200 Kanata Avenue, Ottawa, Ontario, K2T 1K8, Canada"
+HOME_PLACE = "200 Kanata Avenue, Ottawa, Ontario, Canada"
 HOME = (45.3088, -75.8987)  # a made-up point in Kanata
 
 

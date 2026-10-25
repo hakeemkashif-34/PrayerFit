@@ -54,13 +54,24 @@ def test_suggests_places_canada_first(session, http, fake_osm):
 
     # Photon sent the US one first. Canada is moved up.
     assert [s.label for s in found] == [
-        "200 Kanata Avenue, Ottawa, Ontario, K2T 1K8, Canada",
+        "200 Kanata Avenue, Ottawa, Ontario, Canada",
         "200 Kanata Avenue, Rochester, New York, United States",
     ]
     assert (found[0].latitude, found[0].longitude) == HOME
     request = fake_osm.photon_requests[0]
     assert request.headers["user-agent"] == "MuslimCalendar/0.4 (+mailto:tests@example.com)"
     assert request.url.params["q"] == QUERY
+
+
+def test_postal_codes_are_never_shown(session, http, fake_osm):
+    _add_kanata(fake_osm)
+    # A postal code area, which Photon can also send. Its name is the postal code.
+    fake_osm.add_place(*HOME, name="K2T 1K8", osm_value="postcode", city="Ottawa", country="Canada")
+
+    found = suggest(session, http, "Kanata", NOW) + suggest(session, http, "K2T", NOW)
+
+    assert found
+    assert all("K2T" not in s.label and "1K8" not in s.label for s in found)
 
 
 def test_at_most_5_suggestions(session, http, fake_osm):

@@ -45,7 +45,7 @@ CANADA_BIAS = {"lat": 56.13, "lon": -106.35, "zoom": 4, "location_bias_scale": 0
 
 @dataclass(frozen=True)
 class Suggestion:
-    label: str  # like "200 Kanata Avenue, Ottawa, Ontario, K2T 1K8, Canada"
+    label: str  # like "200 Kanata Avenue, Ottawa, Ontario, Canada"
     latitude: float
     longitude: float
     country_code: str | None
@@ -57,11 +57,16 @@ def normalize(query: str) -> str:
 
 
 def _cache_key(query: str) -> str:
-    return keyed_hash("photon:" + normalize(query))
+    # "v2" because the labels changed (no postal codes). Old cached labels are never served.
+    return keyed_hash("photon:v2:" + normalize(query))
 
 
 def _label(properties: dict) -> str:
-    """Build one readable line from Photon's address parts. Only what Photon sent."""
+    """Build one readable line from Photon's address parts. Only what Photon sent.
+
+    No postal code: OpenStreetMap's Canadian postal codes are often wrong,
+    and prayer times only need the location.
+    """
     street = " ".join(p for p in (properties.get("housenumber"), properties.get("street")) if p)
     name = properties.get("name")
     parts = [
@@ -69,7 +74,6 @@ def _label(properties: dict) -> str:
         street if street != name else None,
         properties.get("city") or properties.get("district") or properties.get("county"),
         properties.get("state"),
-        properties.get("postcode"),
         properties.get("country"),
     ]
     seen: list[str] = []
@@ -84,6 +88,8 @@ def _suggestions(features: list[dict]) -> list[Suggestion]:
     for feature in features:
         longitude, latitude = feature["geometry"]["coordinates"]
         properties = feature.get("properties", {})
+        if properties.get("osm_value") == "postcode":
+            continue  # a postal code area, not a place. Its name is the postal code.
         label = _label(properties)
         if not label or any(s.label == label for s in found):
             continue  # Photon sometimes sends the same place twice
