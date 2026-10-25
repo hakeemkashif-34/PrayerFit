@@ -11,6 +11,7 @@ never the exact home location. The exact distance is worked out here.
 """
 
 import math
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -23,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.config import get_osm_settings
 from app.geo.errors import OsmServiceError
 from app.geo.throttle import wait_for_turn
+from app.http_client import log_failure, transport_reason
 from app.models import Masjid, OverpassCache
 
 SEARCH_RADIUS_KM = 15
@@ -33,6 +35,10 @@ CELL_DECIMALS = 2
 QUERY_RADIUS_M = 17_000
 CACHE_FOR = timedelta(days=7)
 MIN_GAP = timedelta(seconds=1)
+# Overpass often takes 30 to 45 seconds when it's busy (a real query for
+# Kanata took 40.5 s), so it gets much longer than the usual 10 seconds.
+# nginx waits 120 s for /api/, so the backend always answers first.
+OVERPASS_TIMEOUT = 60
 EARTH_RADIUS_KM = 6371.0088  # mean radius
 
 
@@ -76,14 +82,22 @@ def _address_from_tags(tags: dict[str, str]) -> str | None:
 def _fetch(db: Session, http: httpx2.Client, latitude: float, longitude: float) -> list[dict]:
     settings = get_osm_settings()
     wait_for_turn(db, "overpass", MIN_GAP)
+    started = time.monotonic()
     try:
         response = http.post(
             settings.overpass_url,
             data={"data": overpass_query(latitude, longitude)},
             headers={"User-Agent": settings.user_agent},
+            timeout=OVERPASS_TIMEOUT,
         )
-    except httpx2.TransportError:
+    except httpx2.TransportError as error:
+        reason = transport_reason(error)
+        log_failure("Overpass", reason, started)
+        if reason == "timeout":
+            raise OsmServiceError("OpenStreetMap's masjid search took too long. Try again in a minute.")
         raise OsmServiceError("Couldn't reach OpenStreetMap's masjid search. Try again in a minute.")
+    if response.status_code != 200:
+        log_failure("Overpass", f"status {response.status_code}", started)
     # 429: too many requests. 504: the server is overloaded.
     if response.status_code == 429 or response.status_code >= 500:
         raise OsmServiceError("OpenStreetMap's masjid search is busy. Try again in a minute.")
@@ -92,6 +106,7 @@ def _fetch(db: Session, http: httpx2.Client, latitude: float, longitude: float) 
     try:
         return response.json()["elements"]
     except (ValueError, KeyError):
+        log_failure("Overpass", "answer couldn't be read", started)
         raise OsmServiceError("OpenStreetMap's masjid search sent an answer we couldn't read.")
 
 

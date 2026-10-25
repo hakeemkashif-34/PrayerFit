@@ -1,5 +1,7 @@
 """Tests for Photon, Overpass, the rate limit, and time zones. All faked."""
 
+import logging
+import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -8,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.geo.errors import OsmServiceError
 from app.geo.photon import suggest
-from app.geo.overpass import cell_for, distance_km, nearby_masjids
+from app.geo.overpass import OVERPASS_TIMEOUT, cell_for, distance_km, nearby_masjids
+from app.http_client import HTTP_TIMEOUT, new_http_client
 from app.geo.timezones import timezone_for
 from app.models import GeocodeCache, Masjid
 from tests.conftest import fake_http_client
@@ -215,8 +218,66 @@ def test_a_masjid_found_twice_is_saved_once(session, http, fake_osm):
     assert len(session.scalars(select(Masjid)).all()) == 1
 
 
-@pytest.mark.parametrize("failure", [429, 504, "timeout"])
+@pytest.mark.parametrize("failure", [429, 504, "timeout", "connect"])
 def test_busy_overpass_gives_a_friendly_message(session, http, fake_osm, failure):
     fake_osm.overpass_failure = failure
     with pytest.raises(OsmServiceError, match="Try again in a minute"):
         nearby_masjids(session, http, *HOME, NOW)
+
+
+# ---- Timeouts and failure logs ----
+
+
+def test_overpass_call_uses_a_60_second_timeout(session, http, fake_osm):
+    nearby_masjids(session, http, *HOME, NOW)
+
+    # The timeout httpx2 used for this one request, whatever the client's default is.
+    timeout = fake_osm.overpass_requests[0].extensions["timeout"]
+    assert OVERPASS_TIMEOUT == 60
+    assert timeout == {"connect": 60, "read": 60, "write": 60, "pool": 60}
+
+
+def test_google_and_photon_keep_the_10_second_timeout(session, http, fake_osm):
+    with new_http_client() as client:
+        assert HTTP_TIMEOUT == 10
+        assert client.timeout.read == 10
+        assert client.timeout.connect == 10
+    # Photon doesn't set its own, so it uses the client's.
+    suggest(session, http, QUERY, NOW)
+    assert fake_osm.photon_requests[0].extensions["timeout"]["read"] != OVERPASS_TIMEOUT
+
+
+def test_overpass_timeout_says_it_took_too_long(session, http, fake_osm):
+    fake_osm.overpass_failure = "timeout"
+    with pytest.raises(OsmServiceError, match="took too long"):
+        nearby_masjids(session, http, *HOME, NOW)
+
+
+@pytest.mark.parametrize(
+    "failure, reason", [(504, "status 504"), (429, "status 429"), ("timeout", "timeout"), ("connect", "connection error")]
+)
+def test_overpass_failure_logs_the_reason_and_time_but_not_the_location(session, http, fake_osm, caplog, failure, reason):
+    caplog.set_level(logging.DEBUG)
+    fake_osm.overpass_failure = failure
+
+    with pytest.raises(OsmServiceError):
+        nearby_masjids(session, http, *HOME, NOW)
+
+    assert re.search(rf"Overpass failed: {reason} after \d+\.\d s", caplog.text)
+    for secret in ("45.3", "75.8", "75.9", "45.31", "-75.9"):
+        assert secret not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "failure, reason", [(503, "status 503"), ("timeout", "timeout"), ("connect", "connection error")]
+)
+def test_photon_failure_logs_the_reason_and_time_but_not_the_address(session, http, fake_osm, caplog, failure, reason):
+    caplog.set_level(logging.DEBUG)
+    fake_osm.photon_failure = failure
+
+    with pytest.raises(OsmServiceError):
+        suggest(session, http, QUERY, NOW)
+
+    assert re.search(rf"Photon failed: {reason} after \d+\.\d s", caplog.text)
+    assert "Kanata" not in caplog.text
+    assert "200" not in caplog.text

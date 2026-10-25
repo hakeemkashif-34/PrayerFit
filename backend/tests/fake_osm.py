@@ -31,7 +31,7 @@ class FakeOsm:
         self.elements: list[dict] = []
         self.photon_requests: list[httpx2.Request] = []
         self.overpass_requests: list[httpx2.Request] = []
-        # Set to a status code (like 429) or "timeout" to make the next calls fail.
+        # Set to a status code (like 429), "timeout", or "connect" to make the next calls fail.
         self.photon_failure: int | str | None = None
         self.overpass_failure: int | str | None = None
 
@@ -76,6 +76,8 @@ class FakeOsm:
     def _fail(request: httpx2.Request, failure: int | str) -> httpx2.Response:
         if failure == "timeout":
             raise httpx2.ReadTimeout("fake timeout", request=request)
+        if failure == "connect":
+            raise httpx2.ConnectError("fake connection error", request=request)
         return httpx2.Response(int(failure), text="Fake failure")
 
     def _photon(self, request: httpx2.Request) -> httpx2.Response:
