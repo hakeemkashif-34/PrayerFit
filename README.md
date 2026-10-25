@@ -118,13 +118,13 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 6. **Which masjid do you usually go to?** Start typing its name. Suggestions show the masjid's name and its distance from home, closest first. If yours doesn't come up, type its address instead and pick that. Press **Skip** if you pray at home: every prayer is at home and the next page is skipped.
 7. **Which prayers do you usually pray at the masjid?** Tick them in the grid: prayers down the side, Monday to Sunday across the top. Anything left unticked is at home, so ticking nothing means every prayer is at home. This page is skipped if you pressed **Skip**.
 8. **A few extras** (optional): how many minutes before iqamah you want to arrive (0 to 30), a short name like `KMA` for the masjid, and a Google Calendar colour for prayer blocks and for drive blocks. Press **Skip** to use the defaults: 0 minutes, the masjid's full name, and the calendar's own colour.
-9. Press **Finish**. The calendar fills straight away, in about 10 to 20 seconds.
-10. Setup uses ISNA and standard Asr, and no Jumuah masjids. You can change both on the settings page.
-11. Open Google Calendar. The **Prayers** calendar has today and the next 13 days, like `Fajr at home` and `Dhuhr at KMA`. Each description says where the time came from. Until your masjid is linked to MAWAQIT (below), masjid prayers use the calculated time and say the iqamah isn't available.
+9. Press **Finish**. The page says "Adding your prayers to Google Calendar..." while the calendar fills, in about 10 to 20 seconds. Then the same tab opens Google Calendar for the account you signed in with. If the update fails, you stay on the Settings page, which says what went wrong and has **Try again**.
+10. Setup uses ISNA and standard Asr, and no Jumuah masjids. You can change both on the Settings page.
+11. In Google Calendar, the **Prayers** calendar has today and the next 13 days, like `Fajr at home` and `Dhuhr at KMA`. Each description says where the time came from. Until your masjid is linked to MAWAQIT (below), masjid prayers use the calculated time and say the iqamah isn't available.
 
 ### 4. Change a setting
 
-On the settings page, press **Edit** next to any setting, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
+Coming back to the website later opens the **Settings** page. It never sends you to Google Calendar on its own. Press **Open Google Calendar** to go there. On the Settings page, press **Edit** next to any setting, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
 
 If you move to another time zone, the Prayers calendar's time zone changes too.
 
@@ -146,7 +146,7 @@ Masjid times come from each masjid's public page on [MAWAQIT](https://mawaqit.ne
    docker compose exec backend python -m app.admin link-mawaqit --masjid <masjid id> --url https://mawaqit.net/en/<masjid page>
    ```
 
-   Only `https://mawaqit.net` links are accepted, and only the page name from the link is saved.
+   Only `https://mawaqit.net` links are accepted, and only the page name from the link is saved. The widget link (`https://mawaqit.net/en/w/<masjid page>`) works too. KMA's page is `https://mawaqit.net/en/kma-masjid-ottawa`.
 
 3. The worker reads the page within a minute, then at most once every 6 hours. To read it now:
 
@@ -160,7 +160,7 @@ Masjid times come from each masjid's public page on [MAWAQIT](https://mawaqit.ne
 
 What it changes in the calendar:
 
-1. **Masjid prayers** use the masjid's iqamah, like `KMA iqamah (MAWAQIT, updated Oct 25, 2026)`. A day with no iqamah uses the calculated start time and says so. An iqamah is never made up.
+1. **Masjid prayers** use the masjid's iqamah, like `KMA iqamah (MAWAQIT, updated Oct 25, 2026)`. A day with no iqamah uses the calculated start time and says so. An iqamah is never made up, so `+0` on a MAWAQIT page counts as no iqamah (KMA's page has it for Asr and Isha in the months it hasn't set times for).
 2. **Home prayers** use the main masjid's adhan time, like `KMA adhan time (MAWAQIT)`.
 3. **Jumuah**: on Fridays, if you have Jumuah masjids on the settings page, Dhuhr becomes `Jumuah at <masjid>` at the slot with the shortest drive, then the earliest time.
 4. **Freshness**: times read in the last 24 hours are fresh. Up to 7 days old, they're still used, and the description says they may be out of date. Older than that, calculated times are used.
@@ -243,11 +243,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `591 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `600 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`334 passed, 257 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`342 passed, 258 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
@@ -260,4 +260,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `70 passed`: 35 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `78 passed`: 39 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.

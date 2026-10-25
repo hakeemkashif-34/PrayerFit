@@ -741,7 +741,9 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 6. **Checks** (`validate.py`): every prayer present, real clock times (`25:00` fails), adhan times in order, iqamah not before adhan, and iqamah at most 90 minutes after. An iqamah that would land after midnight is refused instead of guessed.
 7. **One bad value rejects the whole page.** A wrong time means a missed prayer, so I'd rather keep yesterday's good times than save half a broken page. The failure is logged as `MAWAQIT fetch for masjid <id> failed: <reason>`, with the masjid's ID and nothing about any user.
 8. **Time zones**: times on the page are clock times in the masjid's time zone, so the database stores them as plain clock times (`time`, not a timestamp). The offset is only added when an event is built, for that exact date. On November 1, 05:30 is 10:30 UTC. On October 31 it's 09:30 UTC.
-9. **The saved fixture**: mawaqit.net was blocked in the cloud environment I built this in, so I wrote the parser against the format and made-up pages in `tests/mawaqit_pages.py`. KMA's real page still needs to be saved from my laptop as a trimmed fixture, with a test against it.
+9. **KMA's real page**: mawaqit.net was blocked in the cloud environment I built this in, so I saved KMA's page (`https://mawaqit.net/en/kma-masjid-ottawa`) from my laptop. Only a trimmed copy is in the repo, `backend/tests/fixtures/mawaqit/kma_page.html`: the `confData` script with just the adhan and iqamah tables, the Jumuah times, and a few labels. The full page stayed out of git, since git keeps deleted files in its history and the repo is public. `test_mawaqit_kma.py` checks times I read off the page by hand, and that all 365 days of 2026 pass the checks.
+10. **`+0` means no iqamah**: KMA's page has `+0` for Asr and Isha from February to mid-October, and real times in the other months. That looks like "not set yet", not "iqamah at the adhan". Reading it as an iqamah would make one up, so `+0` counts as no iqamah, and those prayers use the calculated time with the "isn't available" note. If a masjid really prays at the adhan, it can publish that time as a clock time.
+11. **`jumuaAsDuhr`**: when it's true the page has no set Jumuah times, so no slots are read from it.
 
 ### 5. Reading each masjid every 6 hours
 
@@ -804,6 +806,16 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 5. `user_settings.optional_saved` says whether the step was answered. The migration sets it to true for everyone who already finished setup, so nobody is sent back to setup.
 6. The settings page has an **Extras** card with the same step.
 7. The footer credits OpenRouteService next to OpenStreetMap.
+8. **Like Google's own colour menu**: the colours are in the order Google lists them (Tomato, Flamingo, Tangerine, and so on), each a round dot with Google's name, and the chosen one has a tick. The tick is drawn with CSS (`::after`), so a screen reader reads "Peacock", not "✓ Peacock". `aria-selected` says which one is chosen.
+
+### 12a. After setup: straight to Google Calendar
+
+1. After the last setup step, the page says "Adding your prayers to Google Calendar..." until the first calendar update finishes.
+2. If every prayer reached Google, the same tab goes to `https://calendar.google.com/calendar/r?authuser=<email>` (`web/src/googleCalendar.ts`).
+3. **Why `authuser`**: someone signed in to 2 Google accounts would otherwise land in whichever one is first in the browser, which might not have the Prayers calendar. Google's docs only show `authuser` with a number (the account's place in the browser's list). People report the email works for Calendar too, and an email doesn't change when the list order does. I couldn't test this against the real Google from the cloud environment, so it's a check to do on my laptop with 2 accounts signed in.
+4. If the update fails, the user stays on our site: the Settings page shows the message and **Try again**. If finishing fails completely, the setup page shows the error with its own **Try again**.
+5. **Returning users** land on the Settings page (renamed from "Your prayers"; there was only ever one settings page). It has an **Open Google Calendar** button with the same link, and never redirects on its own.
+6. **Tests never open Google**: the mock API catches every `calendar.google.com` URL and answers with a fake page, and records each visit, so a test can check the exact URL.
 
 ### 13. Tests
 
@@ -816,10 +828,10 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 7. **`test_jumuah_picker.py`** and **`test_jumuah_calendar.py`**: shortest drive, ties, busy times, unknown drive times, no slots, no Jumuah masjids, and Friday Dhuhr replaced only when a slot is picked.
 8. **`test_ors.py`**, **`test_optional_settings.py`**, **`test_update_jobs.py`**, **`test_admin.py`**, and **`test_worker.py`** cover the rest.
 9. **`test_migrations.py`**: goes back to milestone 4's tables, adds a user with a masjid, a short name, a method, and Jumuah masjids, upgrades, and checks it all survived.
-10. **Playwright**: the optional step filled in and skipped, the colour dropdown with a mouse and with the keyboard, and the settings page editing how early, the short name, colours, and Jumuah masjids in order.
+10. **Playwright**: the optional step filled in and skipped, the colour dropdown with a mouse and with the keyboard (with the tick moving), the Settings page editing how early, the short name, colours, and Jumuah masjids in order, the "Adding your prayers..." message, the redirect to Google Calendar (faked), staying on our site when the update or the finish fails, and returning users landing on Settings with no redirect.
 
 ### 14. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`591 passed`) and `npx playwright test` in `web` (`70 passed`).
+1. **Tests**: `pytest` in `backend` (`600 passed`) and `npx playwright test` in `web` (`78 passed`).
 2. **For real**: get a free ORS key and put it in `.env`. Then follow "Masjid times from MAWAQIT" in the README to link KMA, and run `run-now --force`. In Google Calendar: masjid prayers at KMA's iqamah, home prayers at KMA's adhan, each with its source, a drive block with a reminder before each masjid prayer, Jumuah on Friday if KMA is a Jumuah masjid, and the colours picked in Extras.
-3. **Checks I couldn't do here**: reading KMA's real MAWAQIT page, and a real ORS key. Both hosts were blocked where I built this.
+3. **Checks I couldn't do here**: reading KMA's live MAWAQIT page (only the saved copy), a real ORS key, and `authuser` with an email on the real Google Calendar. All 3 hosts were blocked where I built this.
