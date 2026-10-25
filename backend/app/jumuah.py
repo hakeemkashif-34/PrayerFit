@@ -16,11 +16,10 @@ already handles them.
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from app.event_times import MasjidTrip, drive_minutes, trip
-
-PRAYER_LENGTH = timedelta(minutes=15)
+from app.prayer_sync import JUMUAH_LENGTH
 
 
 @dataclass(frozen=True)
@@ -56,7 +55,8 @@ def pick_jumuah(
         seconds = drive_seconds.get(slot.masjid_id)
         planned = trip(slot.starts_at, early_minutes, seconds)
         start = planned.leave_at or planned.arrive_at
-        end = (slot.starts_at.astimezone(UTC) + PRAYER_LENGTH).astimezone(slot.starts_at.tzinfo)
+        # The whole 60 minute Jumuah block has to be free, not just the start.
+        end = (slot.starts_at.astimezone(UTC) + JUMUAH_LENGTH).astimezone(slot.starts_at.tzinfo)
         if not _overlaps(start, end, busy):
             fitting.append((slot, planned, seconds))
     if not fitting:

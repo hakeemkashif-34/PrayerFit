@@ -30,6 +30,8 @@ from app.prayer_times import AsrMethod, CalculationMethod, DailyPrayerTimes, Pra
 PRAYERS = ("fajr", "dhuhr", "asr", "maghrib", "isha")
 PRAYER_TITLES = {"fajr": "Fajr", "dhuhr": "Dhuhr", "asr": "Asr", "maghrib": "Maghrib", "isha": "Isha"}
 EVENT_LENGTH = timedelta(minutes=15)
+# Jumuah has the khutbah before the prayer, so its block is longer.
+JUMUAH_LENGTH = timedelta(minutes=60)
 
 METHOD_NAMES = {
     CalculationMethod.ISNA: "ISNA",
@@ -49,9 +51,9 @@ def source_description(prayer: PrayerTime) -> str:
     return f"{prayer.source.capitalize()} ({', '.join(parts)})"
 
 
-def event_end(start: datetime) -> datetime:
-    """15 minutes after start, counted in UTC so a clock change can't stretch it."""
-    return (start.astimezone(UTC) + EVENT_LENGTH).astimezone(start.tzinfo)
+def event_end(start: datetime, length: timedelta = EVENT_LENGTH) -> datetime:
+    """15 minutes after start (or length), counted in UTC so a clock change can't stretch it."""
+    return (start.astimezone(UTC) + length).astimezone(start.tzinfo)
 
 
 def save_day(db: Session, user_id: uuid.UUID, day: DailyPrayerTimes) -> list[PrayerEvent]:

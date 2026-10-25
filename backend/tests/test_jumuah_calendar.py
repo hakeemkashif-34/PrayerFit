@@ -48,6 +48,8 @@ def test_jumuah_replaces_friday_dhuhr(db, http, user, fake_google, ors_key):
     assert jumuah["description"] == (
         "KMA Jumuah (MAWAQIT, updated Oct 25, 2026)\nEarliest Jumuah that fits, 14 min away."
     )
+    # Jumuah is 60 minutes long, for the khutbah and the prayer.
+    assert clock(jumuah, end=True) == "14:30"
     drive = on(events, FRIDAY)[1]
     assert (clock(drive), clock(drive, end=True)) == ("13:16", "13:30")
     assert drive["description"].endswith("Arriving at Jumuah time.")
@@ -123,3 +125,25 @@ def test_jumuah_stays_put_when_nothing_changes(db, http, user, fake_google, ors_
     writes = len(fake_google.writes())
     refresh(db, http, user, NOW)
     assert len(fake_google.writes()) == writes
+
+
+def test_only_jumuah_is_60_minutes(db, http, user, fake_google):
+    from datetime import datetime as dt
+
+    set_jumuah(db, "user-a", ["Kanata Muslim Association"])
+    fetch(db, http, NOW)
+    refresh(db, http, user, NOW)
+
+    def minutes(event: dict) -> int:
+        start = dt.fromisoformat(event["start"]["dateTime"])
+        end = dt.fromisoformat(event["end"]["dateTime"])
+        return int((end - start).total_seconds() // 60)
+
+    events = google_events(fake_google)
+    prayers = [e for e in events if not e["summary"].startswith("Drive")]
+    assert {minutes(e) for e in prayers if e["summary"].startswith("Jumuah")} == {60}
+    assert {minutes(e) for e in prayers if not e["summary"].startswith("Jumuah")} == {15}
+    # Two Fridays in the window, so 2 Jumuah blocks.
+    assert len([e for e in prayers if e["summary"].startswith("Jumuah")]) == 2
+    # Thursday's Dhuhr at KMA is still 15 minutes.
+    assert minutes(titled(events, date(2026, 10, 29), "Dhuhr at KMA")) == 15

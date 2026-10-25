@@ -14,7 +14,8 @@ Which time each prayer uses:
    Jumuah picker chose. If no slot is picked, Dhuhr follows the weekly grid.
 
 Every masjid prayer gets 2 events: a drive block from the leave time to
-the arrival time, then the 15 minute prayer block at the target time.
+the arrival time, then the prayer block at the target time: 15 minutes,
+or 60 for Jumuah.
 No drive time means no drive block.
 """
 
@@ -28,7 +29,16 @@ from app.jumuah import JumuahSlot, pick_jumuah
 from app.masjid_times.freshness import Freshness
 from app.masjid_times.store import MasjidTimes
 from app.models import Masjid
-from app.prayer_sync import ASR_NAMES, METHOD_NAMES, PRAYER_TITLES, PRAYERS, event_end, source_description
+from app.prayer_sync import (
+    ASR_NAMES,
+    EVENT_LENGTH,
+    JUMUAH_LENGTH,
+    METHOD_NAMES,
+    PRAYER_TITLES,
+    PRAYERS,
+    event_end,
+    source_description,
+)
 from app.prayer_times import DailyPrayerTimes, PrayerTime
 from app.prayer_times.methods import METHODS
 from app.user_settings import Setup
@@ -143,10 +153,6 @@ class MasjidContext:
     drive_seconds: int | None
 
 
-def _with_end(start: datetime) -> datetime:
-    return event_end(start)
-
-
 def _masjid_events(
     setup: Setup,
     local_date: date,
@@ -157,6 +163,7 @@ def _masjid_events(
     lines: list[str],
     aim: str,
     user_zone: str,
+    length: timedelta = EVENT_LENGTH,
 ) -> list[PlannedEvent]:
     """The drive block (when the drive time is known) and the prayer block."""
     events = []
@@ -189,7 +196,7 @@ def _masjid_events(
             local_date=local_date,
             prayer=prayer,
             starts_at=target,
-            ends_at=_with_end(target),
+            ends_at=event_end(target, length),
             time_zone=user_zone,
             source_description=lines[0],
             place="masjid",
@@ -229,7 +236,9 @@ def _jumuah(
         *_stale_note(where.times, user_zone),
         choice.reason,
     ]
-    events = _masjid_events(setup, local_date, "dhuhr", "Jumuah", where, choice.slot.starts_at, lines, "Jumuah", user_zone)
+    events = _masjid_events(
+        setup, local_date, "dhuhr", "Jumuah", where, choice.slot.starts_at, lines, "Jumuah", user_zone, JUMUAH_LENGTH
+    )
     return events, None
 
 
@@ -298,7 +307,7 @@ def plan_day(
                 local_date=local_date,
                 prayer=name,
                 starts_at=target,
-                ends_at=_with_end(target),
+                ends_at=event_end(target),
                 time_zone=user_zone,
                 source_description=lines[0],
                 place="home",

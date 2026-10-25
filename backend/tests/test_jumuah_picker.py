@@ -96,3 +96,15 @@ def test_leave_time_is_rounded_down_to_the_minute():
     assert choice.trip.leave_at == at(13, 11)  # 13:25 - 13.5 min = 13:11:30, rounded down
     assert choice.trip.leave_at.second == 0
     assert choice.trip.target - choice.trip.arrive_at == timedelta(minutes=5)
+
+
+def test_the_whole_60_minute_jumuah_has_to_be_free():
+    # 2:00 to 2:10 pm is after a 1:30 start, but inside its 60 minute block.
+    only_kma = [s for s in SLOTS if s.masjid_id == KMA]
+    choice = pick_jumuah(only_kma, DRIVES, 0, [(at(14, 0), at(14, 10))], LISTED)
+    assert choice.slot.starts_at == at(14, 30)
+    # Busy from 2:30 pm, right when the 1:30 block ends: 1:30 still fits, and
+    # it's the only one, since the 2:30 slot clashes.
+    choice = pick_jumuah(only_kma, DRIVES, 0, [(at(14, 30), at(14, 40))], LISTED)
+    assert choice.slot.starts_at == at(13, 30)
+    assert "Other times clash" in choice.reason
