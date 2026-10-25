@@ -97,6 +97,17 @@ export class MockApi {
     return this.requests.filter((r) => r.method === method && r.path === path);
   }
 
+  // Waits until the page has sent at least `count` of these requests. A click
+  // only starts a request, so checking straight after it can be too early.
+  async sent(method: string, path: string, count = 1): Promise<Recorded[]> {
+    const deadline = Date.now() + 5000;
+    while (this.calls(method, path).length < count) {
+      if (Date.now() > deadline) throw new Error(`The page didn't send ${count} × ${method} ${path}`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return this.calls(method, path);
+  }
+
   private missing(): Step[] {
     const s = this.settings;
     const missing: Step[] = [];
@@ -147,6 +158,8 @@ export class MockApi {
       case "POST /api/setup/location/suggest":
         return json(200, { suggestions: suggest(body.query).map((label, index) => ({ index, label })), ...CREDIT });
       case "PUT /api/settings/location": {
+        // A real save takes a moment. Without this, tests could race ahead of the page.
+        await new Promise((resolve) => setTimeout(resolve, 300));
         const label = suggest(body.query)[body.index];
         Object.assign(s, { address: label, place_name: label, time_zone: "America/Toronto" });
         return json(200, this.saved());

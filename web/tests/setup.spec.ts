@@ -22,6 +22,9 @@ async function pickMasjid(page: Page, typed: string, name: string) {
 async function pickHome(page: Page) {
   await page.getByRole("combobox").pressSequentially("200 Kanata", { delay: 30 });
   await page.getByRole("option", { name: HOME_PLACE }).click();
+  // Wait for the masjid question, so the next typing goes into its box,
+  // not the location box that's still on screen while the location saves.
+  await expect(page.getByRole("heading", { level: 1, name: MASJID })).toBeVisible();
 }
 
 test("the full setup: location, masjid, weekly grid, then a filled calendar", async ({ page }) => {
@@ -49,10 +52,10 @@ test("the full setup: location, masjid, weekly grid, then a filled calendar", as
   await box.pressSequentially("0 Kanata", { delay: 30 });
   const options = page.getByRole("option");
   await expect(options).toHaveText([HOME_PLACE, "200 Kanata Avenue, Rochester, New York, United States"]);
-  expect(api.calls("POST", "/api/setup/location/suggest").map((c) => c.body)).toEqual([{ query: "200 Kanata" }]);
+  expect((await api.sent("POST", "/api/setup/location/suggest")).map((c) => c.body)).toEqual([{ query: "200 Kanata" }]);
 
   await options.first().click();
-  expect(api.calls("PUT", "/api/settings/location")[0].body).toEqual({ query: "200 Kanata", index: 0 });
+  expect((await api.sent("PUT", "/api/settings/location", 1))[0].body).toEqual({ query: "200 Kanata", index: 0 });
 
   // 2. Masjid: a search box like the location step, closest first, with distances.
   await expect(page.getByRole("heading", { level: 1, name: MASJID })).toBeVisible();
@@ -66,14 +69,14 @@ test("the full setup: location, masjid, weekly grid, then a filled calendar", as
     /^Kanata Muslim Association1\.1 km away · 351 Sandhill Rd/,
     /^Kanata Masjid Toronto352\.1 km away/,
   ]);
-  expect(api.calls("POST", "/api/setup/masjid/suggest").map((c) => c.body)).toEqual([{ query: "Kanata" }]);
+  expect((await api.sent("POST", "/api/setup/masjid/suggest")).map((c) => c.body)).toEqual([{ query: "Kanata" }]);
   await page.getByRole("option", { name: /^Kanata Muslim Association/ }).click();
-  expect(api.calls("POST", "/api/masjids/from-suggestion")[0].body).toEqual({ query: "Kanata", index: 0 });
+  expect((await api.sent("POST", "/api/masjids/from-suggestion", 1))[0].body).toEqual({ query: "Kanata", index: 0 });
   await expect(page.locator(".picked-masjid")).toContainText("Kanata Muslim Association · 1.1 km away");
   await page.getByLabel("Short name for your calendar (optional)").fill("KMA");
   await expect(page.getByText('Events will say "Dhuhr at KMA".')).toBeVisible();
   await page.getByRole("button", { name: "Next" }).click();
-  expect(api.calls("PUT", "/api/settings/main-masjid")[0].body).toEqual({ choice: "masjid", masjid_id: KMA.id, short_name: "KMA" });
+  expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({ choice: "masjid", masjid_id: KMA.id, short_name: "KMA" });
 
   // 3. Weekly grid: prayers are rows, days are columns.
   await expect(page.getByRole("heading", { level: 1, name: "Which prayers do you usually pray at KMA?" })).toBeVisible();
@@ -86,7 +89,7 @@ test("the full setup: location, masjid, weekly grid, then a filled calendar", as
   await page.getByLabel("Fajr on Sunday at the masjid").check();
   await page.getByRole("button", { name: "Finish" }).click();
 
-  const days = (api.calls("PUT", "/api/settings/weekly")[0].body as { days: Record<string, unknown>[] }).days;
+  const days = ((await api.sent("PUT", "/api/settings/weekly", 1))[0].body as { days: Record<string, unknown>[] }).days;
   expect(days).toHaveLength(7);
   expect(days[0]).toEqual({ weekday: 0, fajr: false, dhuhr: true, asr: false, maghrib: false, isha: false });
   expect(days[4].isha).toBe(true);
@@ -136,7 +139,7 @@ test("the arrow keys and Enter pick a suggestion", async ({ page }) => {
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
 
-  expect(api.calls("PUT", "/api/settings/location")[0].body).toEqual({ query: "200 Kanata", index: 1 });
+  expect((await api.sent("PUT", "/api/settings/location", 1))[0].body).toEqual({ query: "200 Kanata", index: 1 });
 });
 
 test("no match says so", async ({ page }) => {
@@ -159,7 +162,7 @@ test("Skip means every prayer at home, with no weekly grid", async ({ page }) =>
   // Straight to the calendar, with no weekly grid.
   await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
   await expect(page.getByText("I pray at home")).toBeVisible();
-  expect(api.calls("PUT", "/api/settings/main-masjid")[0].body).toEqual({ choice: "home" });
+  expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({ choice: "home" });
   expect(api.calls("PUT", "/api/settings/weekly")).toHaveLength(0);
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
 });
@@ -179,7 +182,7 @@ test("a masjid that isn't on the map can be picked by typing its address", async
   await page.getByLabel("Short name for your calendar (optional)").fill("Barrhaven Musalla");
   await page.getByRole("button", { name: "Next" }).click();
 
-  expect(api.calls("PUT", "/api/settings/main-masjid")[0].body).toEqual({
+  expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({
     choice: "masjid", masjid_id: "44444444-4444-4444-4444-444444444444", short_name: "Barrhaven Musalla",
   });
   await expect(page.getByRole("heading", { level: 1, name: "Which prayers do you usually pray at Barrhaven Musalla?" })).toBeVisible();
@@ -198,7 +201,7 @@ test("the masjid search waits for a typing pause and 3 characters", async ({ pag
 
   await box.pressSequentially("nata Muslim", { delay: 30 });
   await expect(page.getByRole("option")).toHaveCount(1);
-  expect(api.calls("POST", "/api/setup/masjid/suggest").map((c) => c.body)).toEqual([{ query: "Kanata Muslim" }]);
+  expect((await api.sent("POST", "/api/setup/masjid/suggest")).map((c) => c.body)).toEqual([{ query: "Kanata Muslim" }]);
 });
 
 test("Change goes back to the masjid search box", async ({ page }) => {
@@ -237,7 +240,7 @@ test("ticking nothing in the grid means every prayer at home", async ({ page }) 
 
   await page.getByRole("button", { name: "Finish" }).click();
 
-  const days = (api.calls("PUT", "/api/settings/weekly")[0].body as { days: Record<string, boolean>[] }).days;
+  const days = ((await api.sent("PUT", "/api/settings/weekly", 1))[0].body as { days: Record<string, boolean>[] }).days;
   expect(days.every((d) => !d.fajr && !d.dhuhr && !d.asr && !d.maghrib && !d.isha)).toBe(true);
   await expect(page.getByRole("heading", { name: "Your prayers" })).toBeVisible();
 });

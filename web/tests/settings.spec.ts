@@ -26,7 +26,7 @@ test("editing a setting saves it and says what changed in the calendar", async (
   await page.getByRole("radio", { name: /Hanafi/ }).check();
   await page.getByRole("button", { name: "Save" }).click();
 
-  expect(api.calls("PUT", "/api/settings/methods")[0].body).toEqual({ method: "isna", asr_method: "hanafi" });
+  expect((await api.sent("PUT", "/api/settings/methods", 1))[0].body).toEqual({ method: "isna", asr_method: "hanafi" });
   await expect(page.getByText("ISNA, Hanafi Asr")).toBeVisible();
   await expect(page.getByRole("status")).toHaveText("Calendar updated. 3 events sent to Google.");
 });
@@ -60,7 +60,7 @@ test("editing the location picks a new place from the suggestions", async ({ pag
   await page.getByRole("combobox").pressSequentially("Robson", { delay: 30 });
   await page.getByRole("option", { name: "1 Robson Street, Vancouver, British Columbia, Canada" }).click();
 
-  expect(api.calls("PUT", "/api/settings/location")[0].body).toEqual({ query: "Robson", index: 0 });
+  expect((await api.sent("PUT", "/api/settings/location", 1))[0].body).toEqual({ query: "Robson", index: 0 });
   await expect(page.getByText("1 Robson Street, Vancouver, British Columbia, Canada")).toBeVisible();
 });
 
@@ -106,7 +106,7 @@ test("picking a different masjid clears the old short name", async ({ page }) =>
   await expect(shortName).toHaveValue("");
   await page.getByRole("button", { name: "Save" }).click();
 
-  expect(api.calls("PUT", "/api/settings/main-masjid")[0].body).toEqual({
+  expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({
     choice: "masjid", masjid_id: "22222222-2222-2222-2222-222222222222",
   });
 });
@@ -119,7 +119,7 @@ test("I pray at home on the settings page moves every prayer home", async ({ pag
   await page.getByRole("button", { name: "Edit main masjid" }).click();
   await page.getByRole("button", { name: "I pray at home" }).click();
 
-  expect(api.calls("PUT", "/api/settings/main-masjid")[0].body).toEqual({ choice: "home" });
+  expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({ choice: "home" });
   await expect(page.getByRole("region", { name: "Main masjid" })).toContainText("I pray at home");
   await expect(page.getByRole("region", { name: "Prayers at the masjid" })).toHaveCount(0);
 });
@@ -135,7 +135,7 @@ test("Jumuah masjids are added with the masjid search and can be removed", async
   await page.getByRole("option", { name: /^Kanata Masjid Toronto/ }).click();
   await page.getByRole("button", { name: "Save", exact: true }).click();
 
-  expect(api.calls("PUT", "/api/settings/jumuah")[0].body).toEqual({
+  expect((await api.sent("PUT", "/api/settings/jumuah", 1))[0].body).toEqual({
     masjid_ids: ["11111111-1111-1111-1111-111111111111", "33333333-3333-3333-3333-333333333333"],
   });
   await expect(page.getByRole("region", { name: "Jumuah masjids" })).toContainText("Kanata Masjid Toronto");
