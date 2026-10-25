@@ -16,6 +16,7 @@ message, and the cache stores it encrypted under a keyed hash.
 """
 
 import json
+import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 
@@ -27,6 +28,7 @@ from app.auth.crypto import decrypt, encrypt, keyed_hash
 from app.config import get_osm_settings
 from app.geo.errors import OsmServiceError
 from app.geo.throttle import wait_for_turn
+from app.http_client import log_failure, transport_reason
 from app.models import GeocodeCache
 
 MIN_QUERY_LENGTH = 3
@@ -102,15 +104,19 @@ def suggest(db: Session, http: httpx2.Client, query: str, now: datetime) -> list
 
     settings = get_osm_settings()
     wait_for_turn(db, "photon", MIN_GAP)
+    started = time.monotonic()
     try:
         response = http.get(
             f"{settings.photon_url}/api/",
             params={"q": query, "limit": ASK_FOR, "lang": "en", **CANADA_BIAS},
             headers={"User-Agent": settings.user_agent},
         )
-    except httpx2.TransportError:
+    except httpx2.TransportError as error:
         # The error text can include the URL, which has what the user typed in it.
+        log_failure("Photon", transport_reason(error), started)
         raise OsmServiceError("Couldn't reach the address search. Try again in a minute.")
+    if response.status_code != 200:
+        log_failure("Photon", f"status {response.status_code}", started)
     if response.status_code == 429 or response.status_code >= 500:
         raise OsmServiceError("The address search is busy. Try again in a minute.")
     if response.status_code != 200:
@@ -118,6 +124,7 @@ def suggest(db: Session, http: httpx2.Client, query: str, now: datetime) -> list
     try:
         found = _suggestions(response.json()["features"])
     except (ValueError, KeyError, TypeError):
+        log_failure("Photon", "answer couldn't be read", started)
         raise OsmServiceError("The address search sent an answer we couldn't read.")
 
     values = {"result_encrypted": encrypt(json.dumps([asdict(s) for s in found])), "created_at": now}

@@ -1,5 +1,7 @@
 """Tests for filling and updating the 14-day window in Google Calendar."""
 
+import logging
+import re
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -216,6 +218,19 @@ def test_google_failing_partway_finishes_later_without_duplicates(signed_in, fak
     assert again.json()["sent"] == 41
     assert len(_events(fake_google)) == 70
     assert all(r.sync_status == "synced" for r in _rows(db))
+
+
+def test_google_failure_logs_the_reason_and_time_but_no_ids_or_address(signed_in, fake_osm, fake_google, caplog):
+    fake_google.fail_event_write = {3: 503, 4: "timeout"}
+    caplog.set_level(logging.DEBUG)
+
+    setup_through_api(signed_in, fake_osm)  # stops at the 3rd write
+    signed_in.post("/calendar/sync")  # the 1st write of this run times out
+
+    assert re.search(r"Google Calendar (POST|PUT) failed: status 503 after \d+\.\d s", caplog.text)
+    assert re.search(r"Google Calendar (POST|PUT) failed: timeout after \d+\.\d s", caplog.text)
+    assert "group.calendar.google.com" not in caplog.text
+    assert "Kanata" not in caplog.text
 
 
 def test_timeout_after_google_saved_it_makes_no_duplicate(signed_in, fake_osm, fake_google):
