@@ -1,110 +1,120 @@
-"""The Jumuah picker: shortest drive, then earliest slot, around busy times."""
+"""The Jumuah picker: the user's pick if it fits, otherwise the earliest that fits."""
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from app.jumuah import JumuahSlot, pick_jumuah
+from app.jumuah import JumuahPick, JumuahSlot, choose_jumuah, ordinal, slot_windows
 
 TORONTO = ZoneInfo("America/Toronto")
-KMA, STITTSVILLE, JAMIA = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-LISTED = [STITTSVILLE, JAMIA, KMA]
+KMA, STITTSVILLE = uuid.uuid4(), uuid.uuid4()
+LISTED = [KMA, STITTSVILLE]
 
 
 def at(hour: int, minute: int = 0) -> datetime:
     return datetime(2026, 10, 30, hour, minute, tzinfo=TORONTO)
 
 
+# KMA: 12:45, 2:00, 2:50 (like its real page). Stittsville: 1:15.
 SLOTS = [
-    JumuahSlot(KMA, at(13, 30)),
-    JumuahSlot(KMA, at(14, 30)),
-    JumuahSlot(STITTSVILLE, at(13, 15)),
-    JumuahSlot(JAMIA, at(13, 0)),
+    JumuahSlot(KMA, 1, at(12, 45)),
+    JumuahSlot(KMA, 2, at(14, 0)),
+    JumuahSlot(KMA, 3, at(14, 50)),
+    JumuahSlot(STITTSVILLE, 1, at(13, 15)),
 ]
-DRIVES = {KMA: 5 * 60, STITTSVILLE: 12 * 60, JAMIA: 20 * 60}
+DRIVES = {KMA: 10 * 60, STITTSVILLE: 20 * 60}
+LENGTHS = {KMA: 40, STITTSVILLE: 45}
 
 
-def test_shortest_drive_wins():
-    choice = pick_jumuah(SLOTS, DRIVES, 0, [], LISTED)
-    assert choice.slot == JumuahSlot(KMA, at(13, 30))
-    assert choice.trip.leave_at == at(13, 25)
-    assert "Shortest drive" in choice.reason and "5 min" in choice.reason
+def choose(pick=None, busy=(), slots=SLOTS, drives=DRIVES, early=5, listed=LISTED):
+    return choose_jumuah(list(slots), pick, drives, early, LENGTHS, list(busy), listed)
 
 
-def test_ties_are_broken_by_the_earliest_slot():
-    drives = {KMA: 600, STITTSVILLE: 600, JAMIA: 1200}
-    assert pick_jumuah(SLOTS, drives, 0, [], LISTED).slot == JumuahSlot(STITTSVILLE, at(13, 15))
-    # The same masjid: its earliest slot.
-    only_kma = [s for s in SLOTS if s.masjid_id == KMA]
-    assert pick_jumuah(only_kma, DRIVES, 0, [], LISTED).slot.starts_at == at(13, 30)
+def chosen(choice) -> tuple:
+    return (choice.window.slot.masjid_id, choice.window.slot.order)
 
 
-def test_busy_times_remove_slots():
-    busy = [(at(13, 0), at(13, 45))]  # clashes with KMA 1:30 and Stittsville 1:15 and Jamia 1:00
-    choice = pick_jumuah(SLOTS, DRIVES, 0, busy, LISTED)
-    assert choice.slot == JumuahSlot(KMA, at(14, 30))
-    assert "clash" in choice.reason
+def test_the_pick_is_used_when_it_fits():
+    choice = choose(pick=JumuahPick(KMA, 2))
+    assert chosen(choice) == (KMA, 2)
+    assert choice.reason == "Your pick (2nd Jumuah)."
 
 
-def test_a_busy_drive_removes_the_slot_too():
-    # The prayer is free, but the 5 minute drive to KMA's 1:30 starts at 1:25.
-    busy = [(at(13, 20), at(13, 26))]
-    only_kma = [s for s in SLOTS if s.masjid_id == KMA]
-    assert pick_jumuah(only_kma, DRIVES, 0, busy, LISTED).slot.starts_at == at(14, 30)
-    # Arriving 10 minutes early means leaving at 1:15, so a 1:12 to 1:14 errand still fits.
-    busy = [(at(13, 12), at(13, 14))]
-    assert pick_jumuah(only_kma, DRIVES, 10, busy, LISTED).slot.starts_at == at(13, 30)
-    # But 1:14 to 1:16 overlaps the drive.
-    busy = [(at(13, 14), at(13, 16))]
-    assert pick_jumuah(only_kma, DRIVES, 10, busy, LISTED).slot.starts_at == at(14, 30)
+def test_a_clashing_pick_gives_the_earliest_that_fits():
+    # Busy 12:30 to 1:00: KMA's 12:45 clashes, and so does the pick (1st).
+    choice = choose(pick=JumuahPick(KMA, 1), busy=[(at(12, 30), at(13, 0))])
+    assert chosen(choice) == (KMA, 2)  # Stittsville 1:15's commute starts at 12:50, so it clashes too
+    assert choice.reason == "Your pick (1st Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits."
 
 
-def test_unknown_drive_times_use_the_listed_order():
-    unknown = {KMA: None, STITTSVILLE: None, JAMIA: None}
-    choice = pick_jumuah(SLOTS, unknown, 0, [], LISTED)
-    assert choice.slot == JumuahSlot(STITTSVILLE, at(13, 15))
-    assert choice.trip.leave_at is None
-    assert "first masjid in your Jumuah list" in choice.reason
-    assert pick_jumuah(SLOTS, {}, 0, [], [JAMIA, KMA]).slot.masjid_id == JAMIA
+def test_the_earliest_that_fits_is_across_all_masjids():
+    choice = choose(pick=JumuahPick(KMA, 3), busy=[(at(14, 40), at(15, 0)), (at(12, 30), at(12, 40))])
+    assert chosen(choice) == (STITTSVILLE, 1)
 
 
-def test_known_drive_times_come_before_unknown_ones():
-    drives = {KMA: None, STITTSVILLE: None, JAMIA: 1500}
-    assert pick_jumuah(SLOTS, drives, 0, [], LISTED).slot.masjid_id == JAMIA
+def test_every_slot_clashing_keeps_the_pick_with_a_note():
+    choice = choose(pick=JumuahPick(KMA, 2), busy=[(at(12, 0), at(16, 0))])
+    assert chosen(choice) == (KMA, 2)
+    assert choice.reason == "Every Jumuah clashes with your calendar. Kept your pick (2nd Jumuah)."
+
+
+def test_a_pick_whose_slot_isnt_on_this_friday_is_treated_like_a_clash():
+    only_two = [s for s in SLOTS if s.order != 3]
+    choice = choose(pick=JumuahPick(KMA, 3), slots=only_two)
+    assert chosen(choice) == (KMA, 1)
+    assert choice.reason == "Your pick (3rd Jumuah) isn't on this Friday, so this is the earliest Jumuah that fits."
+
+
+def test_no_pick_yet_gives_the_earliest_that_fits():
+    choice = choose()
+    assert chosen(choice) == (KMA, 1)
+    assert choice.reason == "The earliest Jumuah that fits your calendar."
+    choice = choose(busy=[(at(12, 0), at(13, 30))])
+    assert chosen(choice) == (KMA, 2)
+
+
+def test_no_pick_and_everything_clashing_gives_the_earliest():
+    choice = choose(busy=[(at(11, 0), at(16, 0))])
+    assert chosen(choice) == (KMA, 1)
+    assert choice.reason == "Every Jumuah clashes with your calendar, so this is the earliest one."
+
+
+def test_a_pick_for_a_masjid_no_longer_listed_doesnt_count():
+    gone = uuid.uuid4()
+    assert choose(pick=JumuahPick(gone, 1)).reason == "The earliest Jumuah that fits your calendar."
 
 
 def test_no_slots():
-    choice = pick_jumuah([], DRIVES, 0, [], LISTED)
-    assert choice.slot is None
-    assert "have Jumuah times" in choice.reason
+    choice = choose(slots=[])
+    assert choice.window is None
 
 
-def test_every_slot_busy():
-    choice = pick_jumuah(SLOTS, DRIVES, 0, [(at(12, 0), at(16, 0))], LISTED)
-    assert choice.slot is None
-    assert "clashes" in choice.reason
+def test_the_window_counts_the_commute_how_early_and_the_jumuah_length():
+    kma_first = [SLOTS[0]]
+    window = slot_windows(kma_first, DRIVES, 5, LENGTHS, [])[0]
+    # 12:45 Jumuah, 5 minutes early, 10 minute commute: leave 12:30. 40 minutes long: ends 1:25.
+    assert (window.starts_at, window.ends_at) == (at(12, 30), at(13, 25))
+    # Busy until exactly 12:30, or from exactly 1:25: it still fits.
+    assert slot_windows(kma_first, DRIVES, 5, LENGTHS, [(at(12, 0), at(12, 30))])[0].fits
+    assert slot_windows(kma_first, DRIVES, 5, LENGTHS, [(at(13, 25), at(14, 0))])[0].fits
+    # One minute into the commute, or one minute before the end: it clashes.
+    assert not slot_windows(kma_first, DRIVES, 5, LENGTHS, [(at(12, 0), at(12, 31))])[0].fits
+    assert not slot_windows(kma_first, DRIVES, 5, LENGTHS, [(at(13, 24), at(14, 0))])[0].fits
+    # A longer "how early" moves the start back.
+    assert slot_windows(kma_first, DRIVES, 20, LENGTHS, [])[0].starts_at == at(12, 15)
 
 
-def test_no_jumuah_masjids():
-    # A user with no Jumuah masjids has no slots and no listed order.
-    assert pick_jumuah([], {}, 0, [], []).slot is None
+def test_an_unknown_commute_starts_the_window_at_arrival():
+    window = slot_windows([SLOTS[0]], {}, 5, LENGTHS, [])[0]
+    assert window.trip.leave_at is None
+    assert window.starts_at == at(12, 40)
 
 
-def test_leave_time_is_rounded_down_to_the_minute():
-    choice = pick_jumuah([JumuahSlot(KMA, at(13, 30))], {KMA: 13 * 60 + 30}, 5, [], [KMA])
-    assert choice.trip.arrive_at == at(13, 25)
-    assert choice.trip.leave_at == at(13, 11)  # 13:25 - 13.5 min = 13:11:30, rounded down
-    assert choice.trip.leave_at.second == 0
-    assert choice.trip.target - choice.trip.arrive_at == timedelta(minutes=5)
+def test_ties_go_to_the_masjid_listed_first():
+    same_time = [JumuahSlot(STITTSVILLE, 1, at(13, 0)), JumuahSlot(KMA, 1, at(13, 0))]
+    assert chosen(choose(slots=same_time)) == (KMA, 1)
+    assert chosen(choose(slots=same_time, listed=[STITTSVILLE, KMA])) == (STITTSVILLE, 1)
 
 
-def test_the_whole_60_minute_jumuah_has_to_be_free():
-    # 2:00 to 2:10 pm is after a 1:30 start, but inside its 60 minute block.
-    only_kma = [s for s in SLOTS if s.masjid_id == KMA]
-    choice = pick_jumuah(only_kma, DRIVES, 0, [(at(14, 0), at(14, 10))], LISTED)
-    assert choice.slot.starts_at == at(14, 30)
-    # Busy from 2:30 pm, right when the 1:30 block ends: 1:30 still fits, and
-    # it's the only one, since the 2:30 slot clashes.
-    choice = pick_jumuah(only_kma, DRIVES, 0, [(at(14, 30), at(14, 40))], LISTED)
-    assert choice.slot.starts_at == at(13, 30)
-    assert "Other times clash" in choice.reason
+def test_ordinals():
+    assert [ordinal(n) for n in (1, 2, 3)] == ["1st", "2nd", "3rd"]

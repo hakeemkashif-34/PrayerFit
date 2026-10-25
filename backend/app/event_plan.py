@@ -25,14 +25,13 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from app.event_times import drive_minutes, trip
-from app.jumuah import JumuahSlot, pick_jumuah
+from app.jumuah import DEFAULT_JUMUAH_MINUTES, JumuahChoice, JumuahSlot, choose_jumuah
 from app.masjid_times.freshness import Freshness
 from app.masjid_times.store import MasjidTimes
 from app.models import Masjid
 from app.prayer_sync import (
     ASR_NAMES,
     EVENT_LENGTH,
-    JUMUAH_LENGTH,
     METHOD_NAMES,
     PRAYER_TITLES,
     PRAYERS,
@@ -151,6 +150,14 @@ class MasjidContext:
     time_zone: str  # the masjid's own time zone, for its published times
     times: MasjidTimes | None  # None when it isn't linked to a source
     drive_seconds: int | None
+    # "user" (the user's own commute time) or "ors" (OpenRouteService's driving estimate).
+    commute_source: str = "ors"
+    # How long this masjid's Jumuah takes. None means unknown, so 45 is used.
+    jumuah_minutes: int | None = None
+
+    @property
+    def jumuah_length(self) -> int:
+        return self.jumuah_minutes or DEFAULT_JUMUAH_MINUTES
 
 
 def _masjid_events(
@@ -164,13 +171,18 @@ def _masjid_events(
     aim: str,
     user_zone: str,
     length: timedelta = EVENT_LENGTH,
+    early: int | None = None,
 ) -> list[PlannedEvent]:
-    """The drive block (when the drive time is known) and the prayer block."""
+    """The commute block (when the commute time is known) and the prayer block."""
     events = []
-    planned = trip(target, setup.arrive_early_minutes, where.drive_seconds)
+    early = setup.arrive_early_minutes if early is None else early
+    planned = trip(target, early, where.drive_seconds)
     if planned.leave_at is not None and planned.leave_at < planned.arrive_at:
-        early = setup.arrive_early_minutes
         arriving = f"Arriving {early} min before {aim}." if early else f"Arriving at {aim} time."
+        source = (
+            "your time" if where.commute_source == "user"
+            else "driving estimate from OpenRouteService, no live traffic"
+        )
         events.append(
             PlannedEvent(
                 local_date=local_date,
@@ -179,14 +191,11 @@ def _masjid_events(
                 starts_at=planned.leave_at,
                 ends_at=planned.arrive_at,
                 time_zone=user_zone,
-                source_description="OpenRouteService",
+                source_description="Your commute time" if where.commute_source == "user" else "OpenRouteService",
                 place="masjid",
                 masjid_id=where.masjid.id,
                 summary=f"Commute to {where.label}",
-                description=(
-                    f"{drive_minutes(where.drive_seconds)} min commute "
-                    f"(driving estimate from OpenRouteService, no live traffic). {arriving}"
-                ),
+                description=f"{drive_minutes(where.drive_seconds)} min commute ({source}). {arriving}",
                 color_id=setup.drive_color_id,
                 # A popup when it's time to leave.
                 reminder_minutes=0,
@@ -210,35 +219,57 @@ def _masjid_events(
     return events
 
 
-def _jumuah(
-    setup: Setup, local_date: date, jumuah: list[MasjidContext], user_zone: str
-) -> tuple[list[PlannedEvent] | None, str | None]:
-    """Friday's Jumuah events, or (None, why not) when no slot was picked."""
-    by_id = {c.masjid.id: c for c in jumuah}
+def jumuah_slots(jumuah: list[MasjidContext], local_date: date) -> list[JumuahSlot]:
+    """Every Jumuah slot from the user's Jumuah masjids on this Friday."""
     slots = []
     for context in jumuah:
         day = context.times.usable_day(local_date) if context.times else None
         for slot in day.jumuah if day else ():
-            slots.append(JumuahSlot(context.masjid.id, at_local(local_date, slot, context.time_zone)))
-    choice = pick_jumuah(
-        slots,
+            slots.append(JumuahSlot(context.masjid.id, slot.order, at_local(local_date, slot.time, context.time_zone)))
+    return slots
+
+
+def choose(
+    setup: Setup, local_date: date, jumuah: list[MasjidContext], busy: list[tuple[datetime, datetime]]
+) -> JumuahChoice:
+    """The Jumuah for this Friday, using the user's pick and their busy times."""
+    return choose_jumuah(
+        jumuah_slots(jumuah, local_date),
+        setup.jumuah_pick,
         {c.masjid.id: c.drive_seconds for c in jumuah},
-        setup.arrive_early_minutes,
-        busy=[],  # commitments come in milestone 7
+        setup.jumuah_arrive_early_minutes,
+        {c.masjid.id: c.jumuah_length for c in jumuah},
+        busy,
         listed_order=[c.masjid.id for c in jumuah],
     )
-    if choice.slot is None:
-        if not slots:
-            return None, "Jumuah times aren't available for your Jumuah masjids, so this follows your weekly prayers."
-        return None, f"{choice.reason} This follows your weekly prayers."
-    where = by_id[choice.slot.masjid_id]
+
+
+def _jumuah(
+    setup: Setup,
+    local_date: date,
+    jumuah: list[MasjidContext],
+    user_zone: str,
+    busy: list[tuple[datetime, datetime]],
+    upcoming_friday: date | None,
+) -> tuple[list[PlannedEvent] | None, str | None]:
+    """Friday's Jumuah events, or (None, why not) when there's no Jumuah to put in."""
+    if local_date != upcoming_friday:
+        # MAWAQIT only holds this week's Jumuah times. A later read covers this Friday.
+        return None, "This Friday's Jumuah times aren't published yet, so this follows your weekly prayers."
+    choice = choose(setup, local_date, jumuah, busy)
+    if choice.window is None:
+        return None, "Jumuah times aren't available for your Jumuah masjids, so this follows your weekly prayers."
+    where = next(c for c in jumuah if c.masjid.id == choice.window.slot.masjid_id)
     lines = [
         f"{where.label} Jumuah ({where.times.source_label}, updated {_updated(where.times, user_zone)})",
         *_stale_note(where.times, user_zone),
         choice.reason,
     ]
+    if where.jumuah_minutes is None:
+        lines.append(f"End time is estimated ({DEFAULT_JUMUAH_MINUTES} minutes).")
     events = _masjid_events(
-        setup, local_date, "dhuhr", "Jumuah", where, choice.slot.starts_at, lines, "Jumuah", user_zone, JUMUAH_LENGTH
+        setup, local_date, "dhuhr", "Jumuah", where, choice.window.slot.starts_at, lines, "Jumuah", user_zone,
+        timedelta(minutes=where.jumuah_length), early=setup.jumuah_arrive_early_minutes,
     )
     return events, None
 
@@ -249,6 +280,8 @@ def plan_day(
     day: DailyPrayerTimes,
     main: MasjidContext | None,
     jumuah: list[MasjidContext],
+    busy: list[tuple[datetime, datetime]] | None = None,
+    upcoming_friday: date | None = None,
 ) -> list[PlannedEvent]:
     """Every event for one day: 5 prayer blocks, plus a drive block before each masjid prayer."""
     user_zone = day.timezone
@@ -257,7 +290,7 @@ def plan_day(
 
     jumuah_note = None
     if local_date.weekday() == FRIDAY and jumuah:
-        friday, jumuah_note = _jumuah(setup, local_date, jumuah, user_zone)
+        friday, jumuah_note = _jumuah(setup, local_date, jumuah, user_zone, busy or [], upcoming_friday)
         if friday is not None:
             events.extend(friday)
 

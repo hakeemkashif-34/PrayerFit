@@ -1,81 +1,128 @@
-"""Pick the Jumuah slot that fits the user's Friday.
+"""Pick the Jumuah for one Friday.
 
 A pure function: it gets everything it needs as arguments and changes
-nothing, so it's easy to test every case.
+nothing, so every case is easy to test.
+
+Each slot has a window: from the leave time (the commute plus the Jumuah
+"how early" minutes) to the end of the masjid's Jumuah. A slot fits when
+its window doesn't overlap any busy time in the user's calendar.
 
 The rule:
-1. Drop every slot whose drive or prayer overlaps a busy time.
-2. Pick the masjid with the shortest drive.
-3. At that masjid, pick the earliest slot.
-4. Masjids with an unknown drive time come after the known ones, in the
-   order the user listed them.
-
-Busy times stay empty until milestone 7 adds commitments, but the rule
-already handles them.
+1. The user's pick (a masjid and a slot order), if its window fits.
+2. If it clashes, or that slot isn't on this Friday, the earliest Jumuah
+   that fits, across all their Jumuah masjids.
+3. If every Jumuah clashes, keep the user's pick, and say so.
+4. No pick yet: the earliest Jumuah that fits.
 """
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from app.event_times import MasjidTrip, drive_minutes, trip
-from app.prayer_sync import JUMUAH_LENGTH
+from app.event_times import MasjidTrip, trip
+
+# A masjid with no Jumuah length set (see admin.py set-jumuah-length) uses
+# this, and its Jumuah event says the end time is estimated.
+DEFAULT_JUMUAH_MINUTES = 45
 
 
 @dataclass(frozen=True)
 class JumuahSlot:
     masjid_id: uuid.UUID
+    order: int  # 1, 2, or 3: MAWAQIT's jumua, jumua2, jumua3
     starts_at: datetime  # time zone aware
 
 
 @dataclass(frozen=True)
+class JumuahPick:
+    masjid_id: uuid.UUID
+    order: int
+
+
+@dataclass(frozen=True)
+class SlotWindow:
+    slot: JumuahSlot
+    trip: MasjidTrip
+    ends_at: datetime
+    fits: bool
+
+    @property
+    def starts_at(self) -> datetime:
+        """When the window starts: leaving home, or arriving if the commute is unknown."""
+        return self.trip.leave_at or self.trip.arrive_at
+
+
+@dataclass(frozen=True)
 class JumuahChoice:
-    slot: JumuahSlot | None
-    trip: MasjidTrip | None
+    window: SlotWindow | None  # None when there are no slots at all
     reason: str
+
+
+def ordinal(order: int) -> str:
+    return {1: "1st", 2: "2nd", 3: "3rd"}.get(order, f"{order}th")
 
 
 def _overlaps(start: datetime, end: datetime, busy: list[tuple[datetime, datetime]]) -> bool:
     return any(start < busy_end and busy_start < end for busy_start, busy_end in busy)
 
 
-def pick_jumuah(
+def slot_windows(
     slots: list[JumuahSlot],
     drive_seconds: dict[uuid.UUID, int | None],
     early_minutes: int,
+    jumuah_minutes: dict[uuid.UUID, int],
+    busy: list[tuple[datetime, datetime]],
+) -> list[SlotWindow]:
+    """Every slot's window and whether it fits, in the order given."""
+    windows = []
+    for slot in slots:
+        planned = trip(slot.starts_at, early_minutes, drive_seconds.get(slot.masjid_id))
+        length = timedelta(minutes=jumuah_minutes[slot.masjid_id])
+        ends_at = (slot.starts_at.astimezone(UTC) + length).astimezone(slot.starts_at.tzinfo)
+        start = planned.leave_at or planned.arrive_at
+        windows.append(SlotWindow(slot, planned, ends_at, fits=not _overlaps(start, ends_at, busy)))
+    return windows
+
+
+def choose_jumuah(
+    slots: list[JumuahSlot],
+    pick: JumuahPick | None,
+    drive_seconds: dict[uuid.UUID, int | None],
+    early_minutes: int,
+    jumuah_minutes: dict[uuid.UUID, int],
     busy: list[tuple[datetime, datetime]],
     listed_order: list[uuid.UUID],
 ) -> JumuahChoice:
-    """The chosen slot and why. slot is None when nothing fits."""
+    """The Jumuah for this Friday, and why it was chosen."""
     if not slots:
-        return JumuahChoice(None, None, "None of your Jumuah masjids have Jumuah times.")
+        return JumuahChoice(None, "None of your Jumuah masjids have Jumuah times.")
 
-    fitting = []
-    for slot in slots:
-        seconds = drive_seconds.get(slot.masjid_id)
-        planned = trip(slot.starts_at, early_minutes, seconds)
-        start = planned.leave_at or planned.arrive_at
-        # The whole 60 minute Jumuah block has to be free, not just the start.
-        end = (slot.starts_at.astimezone(UTC) + JUMUAH_LENGTH).astimezone(slot.starts_at.tzinfo)
-        if not _overlaps(start, end, busy):
-            fitting.append((slot, planned, seconds))
-    if not fitting:
-        return JumuahChoice(None, None, "Every Jumuah time clashes with something else on your Friday.")
+    def order_key(window: SlotWindow) -> tuple:
+        listed = listed_order.index(window.slot.masjid_id) if window.slot.masjid_id in listed_order else len(listed_order)
+        return (window.slot.starts_at, listed, window.slot.order)
 
-    def order(item) -> tuple:
-        slot, _, seconds = item
-        listed = listed_order.index(slot.masjid_id) if slot.masjid_id in listed_order else len(listed_order)
-        if seconds is None:
-            return (1, 0, listed, slot.starts_at)
-        return (0, seconds, listed, slot.starts_at)
+    windows = sorted(slot_windows(slots, drive_seconds, early_minutes, jumuah_minutes, busy), key=order_key)
+    fitting = [w for w in windows if w.fits]
+    # A pick for a masjid that's no longer in their Jumuah list doesn't count.
+    if pick is not None and pick.masjid_id not in listed_order:
+        pick = None
+    picked = next(
+        (w for w in windows if pick and (w.slot.masjid_id, w.slot.order) == (pick.masjid_id, pick.order)), None
+    )
 
-    slot, planned, seconds = min(fitting, key=order)
-    if seconds is None:
-        reason = "Drive times aren't known, so this is the first masjid in your Jumuah list, at its earliest time."
-    elif len({s.masjid_id for s, _, _ in fitting}) == 1:
-        reason = f"Earliest Jumuah that fits, {drive_minutes(seconds)} min away."
-    else:
-        reason = f"Shortest drive of your Jumuah masjids ({drive_minutes(seconds)} min), at its earliest time."
-    if len(fitting) < len(slots):
-        reason += " Other times clash with your Friday."
-    return JumuahChoice(slot, planned, reason)
+    if pick is None:
+        if fitting:
+            return JumuahChoice(fitting[0], "The earliest Jumuah that fits your calendar.")
+        return JumuahChoice(windows[0], "Every Jumuah clashes with your calendar, so this is the earliest one.")
+
+    yours = f"Your pick ({ordinal(pick.order)} Jumuah)"
+    if picked is not None and picked.fits:
+        return JumuahChoice(picked, f"{yours}.")
+    if fitting:
+        why = "clashes with your calendar" if picked is not None else "isn't on this Friday"
+        return JumuahChoice(fitting[0], f"{yours} {why}, so this is the earliest Jumuah that fits.")
+    if picked is not None:
+        return JumuahChoice(picked, f"Every Jumuah clashes with your calendar. Kept your pick ({ordinal(pick.order)} Jumuah).")
+    return JumuahChoice(
+        windows[0], f"Every Jumuah clashes with your calendar, and {yours.lower()} isn't on this Friday, so this is the earliest one."
+    )

@@ -11,6 +11,7 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.auth.crypto import decrypt, encrypt
+from app.jumuah import JumuahPick
 from app.models import Masjid, UserJumuahMasjid, UserSettings, WeeklyMasjidPrayers
 from app.prayer_times import AsrMethod, CalculationMethod
 
@@ -158,6 +159,9 @@ class Setup:
     # In the order the user listed them. Empty means no Jumuah.
     jumuah_masjids: tuple[Masjid, ...] = ()
     arrive_early_minutes: int = 0
+    jumuah_arrive_early_minutes: int = 5
+    # The Jumuah the user picked, or None for the earliest that fits.
+    jumuah_pick: "JumuahPick | None" = None
     # Google event colours, "1" to "11". None uses the calendar's colour.
     prayer_color_id: str | None = None
     drive_color_id: str | None = None
@@ -203,6 +207,12 @@ def load_setup(db: Session, user_id: uuid.UUID) -> Setup | None:
         user_id=user_id,
         jumuah_masjids=tuple(jumuah_masjids(db, user_id)),
         arrive_early_minutes=row.arrive_early_minutes or 0,
+        jumuah_arrive_early_minutes=row.jumuah_arrive_early_minutes,
+        jumuah_pick=(
+            JumuahPick(row.jumuah_pick_masjid_id, row.jumuah_pick_order)
+            if row.jumuah_pick_masjid_id is not None and row.jumuah_pick_order is not None
+            else None
+        ),
         prayer_color_id=row.prayer_color_id,
         drive_color_id=row.drive_color_id,
     )

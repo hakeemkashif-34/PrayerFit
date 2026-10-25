@@ -29,6 +29,7 @@ from app.geo.timezones import masjid_time_zone
 from app.event_plan import MasjidContext, PlannedEvent, drive_event_id, plan_day
 from app.google_calendar import GoogleCalendar
 from app.locks import advisory_lock
+from app.masjid_times.source import next_friday
 from app.masjid_times.store import load_masjid_times
 from app.models import Masjid, PrayerEvent
 from app.prayer_sync import PRAYERS, event_hash, send_to_google
@@ -81,6 +82,7 @@ def masjid_inputs(db: Session, http: httpx2.Client, setup: Setup, dates: list[da
             time_zone=masjid_time_zone(masjid),
             times=times.get(masjid.id),
             drive_seconds=drives.get(masjid.id),
+            jumuah_minutes=masjid.jumuah_minutes,
         )
 
     return MasjidInputs(
@@ -89,13 +91,17 @@ def masjid_inputs(db: Session, http: httpx2.Client, setup: Setup, dates: list[da
     )
 
 
-def plan_window(setup: Setup, dates: list[date], inputs: MasjidInputs) -> list[PlannedEvent]:
+def plan_window(
+    setup: Setup, dates: list[date], inputs: MasjidInputs, busy: list[tuple[datetime, datetime]] | None = None
+) -> list[PlannedEvent]:
+    # MAWAQIT's Jumuah times are only for this one Friday (today, if it's Friday).
+    upcoming_friday = next_friday(dates[0])
     planned = []
     for local_date in dates:
         day = calculate_prayer_times(
             setup.latitude, setup.longitude, local_date, setup.time_zone, setup.method, setup.asr_method
         )
-        planned.extend(plan_day(setup, local_date, day, inputs.main, inputs.jumuah))
+        planned.extend(plan_day(setup, local_date, day, inputs.main, inputs.jumuah, busy, upcoming_friday))
     return planned
 
 

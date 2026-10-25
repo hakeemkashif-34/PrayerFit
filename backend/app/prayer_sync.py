@@ -30,8 +30,6 @@ from app.prayer_times import AsrMethod, CalculationMethod, DailyPrayerTimes, Pra
 PRAYERS = ("fajr", "dhuhr", "asr", "maghrib", "isha")
 PRAYER_TITLES = {"fajr": "Fajr", "dhuhr": "Dhuhr", "asr": "Asr", "maghrib": "Maghrib", "isha": "Isha"}
 EVENT_LENGTH = timedelta(minutes=15)
-# Jumuah has the khutbah before the prayer, so its block is longer.
-JUMUAH_LENGTH = timedelta(minutes=60)
 
 METHOD_NAMES = {
     CalculationMethod.ISNA: "ISNA",
