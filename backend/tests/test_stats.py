@@ -9,7 +9,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app import admin
-from app.models import BusyCheckJob, MasjidSource, NightlyJob, UpdateJob, UsageStats, User
+from app.models import BusyCheckJob, MasjidSource, NightlyJob, UpdateJob, UsageStats, User, UserSettings
 from app.stats import counts, save_daily_stats
 from tests.conftest import new_client, sign_in
 from tests.masjid_helpers import add_masjid, link, user_id
@@ -174,3 +174,26 @@ def test_masjid_times_lists_failing_and_old_reads(db, fake_google, fake_mawaqit,
         problems = browser.get("/admin/stats").json()["masjid_times"]
     assert [(p["name"], p["error"]) for p in problems] == [("Failing Masjid", "status 403"), ("Old Masjid", None)]
     assert all(p["source"] == "mawaqit" and p["last_success_at"] for p in problems)
+
+
+def test_masjids_that_arent_linked_yet_are_listed_with_their_user_counts(db, fake_google, fake_mawaqit, admin_email):
+    make_users(db, fake_google, finished=0)
+    kma, omar, linked = add_masjid(db, "Kanata Muslim Association"), add_masjid(db, "Jamia Omar"), add_masjid(db, "Linked Masjid")
+    link(db, linked, "linked")
+    with Session(db) as session:
+        for n, masjid in enumerate([kma, kma, omar]):
+            row = session.scalars(select(UserSettings).where(UserSettings.user_id == user_id(db, f"user-{n}"))).first()
+            if row is None:
+                row = UserSettings(user_id=user_id(db, f"user-{n}"), optional_saved=False, arrive_early_minutes=0)
+                session.add(row)
+            row.main_masjid_choice, row.main_masjid_id = "masjid", masjid
+        session.commit()
+    # A home user and a masjid nobody picked don't count.
+    add_masjid(db, "Nobody's Masjid")
+
+    with browser_for(fake_google, 0) as browser:
+        unlinked = browser.get("/admin/stats").json()["unlinked_masjids"]
+    assert unlinked == [
+        {"id": str(kma), "name": "Kanata Muslim Association", "users": 2},
+        {"id": str(omar), "name": "Jamia Omar", "users": 1},
+    ]

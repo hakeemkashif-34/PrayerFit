@@ -10,7 +10,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth.sessions import current_user
@@ -18,7 +18,7 @@ from app.clock import get_now
 from app.config import admin_email
 from app.db import get_db
 from app.masjid_times.freshness import Freshness, freshness
-from app.models import Masjid, MasjidSource
+from app.models import Masjid, MasjidSource, UserSettings
 from app.stats import counts, history
 
 router = APIRouter(tags=["stats"])
@@ -51,6 +51,13 @@ class MasjidTimesProblem(BaseModel):
     error: str | None
 
 
+class UnlinkedMasjid(BaseModel):
+    # The ID is what `python -m app.admin link-mawaqit --masjid <id>` needs.
+    id: str
+    name: str
+    users: int
+
+
 class StatsOut(BaseModel):
     signed_up: int
     finished_setup: int
@@ -60,6 +67,8 @@ class StatsOut(BaseModel):
     history: list[Day]
     # Linked masjids whose read is failing or older than 24 hours.
     masjid_times: list[MasjidTimesProblem]
+    # Masjids someone picked that aren't linked to MAWAQIT yet, most users first.
+    unlinked_masjids: list[UnlinkedMasjid]
 
 
 def masjid_problems(db: Session, now: datetime) -> list[MasjidTimesProblem]:
@@ -78,6 +87,27 @@ def masjid_problems(db: Session, now: datetime) -> list[MasjidTimesProblem]:
     return problems
 
 
+def unlinked_masjids(db: Session) -> list[UnlinkedMasjid]:
+    """Main masjids with no MAWAQIT link, and how many users have each, so I know which to link first.
+
+    A count, never who the users are. A masjid picked by its address has no
+    name, so its address is shown instead.
+    """
+    users = func.count(UserSettings.user_id)
+    rows = db.execute(
+        select(Masjid, users)
+        .join(UserSettings, UserSettings.main_masjid_id == Masjid.id)
+        .outerjoin(MasjidSource, MasjidSource.masjid_id == Masjid.id)
+        .where(UserSettings.main_masjid_choice == "masjid", MasjidSource.masjid_id.is_(None))
+        .group_by(Masjid.id)
+        .order_by(users.desc(), Masjid.name)
+    )
+    return [
+        UnlinkedMasjid(id=str(masjid.id), name=masjid.name or masjid.address or "Unnamed masjid", users=count)
+        for masjid, count in rows
+    ]
+
+
 @router.get("/admin/stats", response_model=StatsOut, dependencies=[Depends(require_admin)])
 def read_stats(db: DbDep, now: NowDep) -> StatsOut:
     found = counts(db, now)
@@ -88,4 +118,5 @@ def read_stats(db: DbDep, now: NowDep) -> StatsOut:
         new_this_week=found.new_this_week,
         history=[Day(day=row.day.isoformat(), signed_up=row.signed_up, active=row.active) for row in history(db)],
         masjid_times=masjid_problems(db, now),
+        unlinked_masjids=unlinked_masjids(db),
     )
