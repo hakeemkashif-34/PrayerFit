@@ -51,7 +51,7 @@ def test_the_example_from_the_plan(db, http, fetched, fake_google):
     events = google_events(fake_google)
     isha = titled(events, MONDAY, "Isha at KMA")
     assert [e["summary"] for e in on(events, MONDAY)] == [
-        "Fajr at home", "Drive to KMA", "Dhuhr at KMA", "Asr at home", "Maghrib at home", "Drive to KMA", "Isha at KMA",
+        "Fajr", "Drive to KMA", "Dhuhr at KMA", "Asr", "Maghrib", "Drive to KMA", "Isha at KMA",
     ]
     evening = [e for e in on(events, MONDAY) if e["summary"] == "Drive to KMA"][1]
     assert (clock(evening), clock(evening, end=True)) == ("19:56", "20:10")
@@ -188,7 +188,7 @@ def test_switching_a_prayer_home_deletes_only_its_future_drive_block(db, http, f
     # Every prayer block is still there.
     assert {r.id.hex for r in rows(db, fetched) if r.kind == "prayer"} <= set(live)
     assert before_ids - set(live) == {r.id.hex for r in deleted}
-    assert titled(list(live.values()), date(2026, 11, 2), "Isha at home")
+    assert titled(list(live.values()), date(2026, 11, 2), "Isha")
 
 
 def test_a_deleted_drive_block_comes_back_when_needed(db, http, fetched, fake_google, fake_ors):
@@ -300,5 +300,40 @@ def test_old_15_minute_blocks_are_shortened_in_place(db, http, fetched, fake_goo
     assert {w.method for w in changed} == {"PUT"}
     assert {w.body["summary"].split()[0] for w in changed} == {"Fajr", "Asr", "Maghrib"}
     assert all(datetime.fromisoformat(w.body["start"]["dateTime"]) > later for w in changed)
-    asr = titled(google_events(fake_google), MONDAY, "Asr at home")
+    asr = titled(google_events(fake_google), MONDAY, "Asr")
     assert (datetime.fromisoformat(asr["end"]["dateTime"]) - datetime.fromisoformat(asr["start"]["dateTime"])) == timedelta(minutes=10)
+
+
+def test_old_at_home_titles_are_renamed_in_place(db, http, fetched, fake_google, monkeypatch):
+    from app import prayer_sync
+
+    # Before this change, home prayers were "Fajr at home". Masjid prayers keep "Dhuhr at KMA".
+    real_event = prayer_sync.google_event
+
+    def old_event(row):
+        body = real_event(row)
+        if body["summary"] in ("Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"):
+            body["summary"] += " at home"
+        return body
+
+    monkeypatch.setattr(prayer_sync, "google_event", old_event)
+    refresh(db, http, fetched, NOW)
+    old = {e["id"]: e for e in google_events(fake_google)}
+    assert titled(list(old.values()), MONDAY, "Fajr at home")
+    monkeypatch.setattr(prayer_sync, "google_event", real_event)
+    before = len(fake_google.writes())
+
+    later = datetime(2026, 10, 25, 13, 30, tzinfo=TORONTO)  # the same Sunday, after Dhuhr
+    refresh(db, http, fetched, later)
+    changed = fake_google.writes()[before:]
+
+    # The same IDs, updated in place: only future home prayers, now just the prayer's name.
+    new = {e["id"]: e for e in google_events(fake_google)}
+    assert set(new) == set(old)
+    assert {w.method for w in changed} == {"PUT"}
+    assert {w.body["summary"] for w in changed} == {"Fajr", "Asr", "Maghrib", "Dhuhr", "Isha"}
+    assert all(datetime.fromisoformat(w.body["start"]["dateTime"]) > later for w in changed)
+    monday = [e["summary"] for e in on(google_events(fake_google), MONDAY)]
+    assert monday == ["Fajr", "Drive to KMA", "Dhuhr at KMA", "Asr", "Maghrib", "Drive to KMA", "Isha at KMA"]
+    # Past events weren't touched, so this morning's Fajr keeps its old title.
+    assert titled(list(new.values()), date(2026, 10, 25), "Fajr at home")

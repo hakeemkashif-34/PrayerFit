@@ -50,7 +50,7 @@ def test_adds_the_five_prayers(signed_in, fake_google):
     assert calendar.time_zone == "America/Toronto"
     events = fake_google.live_events(calendar.id)
     assert [e["summary"] for e in events] == [
-        "Fajr at home", "Dhuhr at home", "Asr at home", "Maghrib at home", "Isha at home"
+        "Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"
     ]
 
 
@@ -148,7 +148,7 @@ def test_google_failing_partway_leaves_no_duplicates(signed_in, fake_google, db,
     assert again.status_code == 200
     events = fake_google.live_events(_only_calendar(fake_google).id)
     assert sorted(e["summary"] for e in events) == [
-        "Asr at home", "Dhuhr at home", "Fajr at home", "Isha at home", "Maghrib at home"
+        "Asr", "Dhuhr", "Fajr", "Isha", "Maghrib"
     ]
 
 

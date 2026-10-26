@@ -60,7 +60,7 @@ def test_jumuah_replaces_friday_dhuhr_at_the_earliest_slot(db, http, user, fake_
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
     assert friday(fake_google) == [
-        "Fajr at home", "Drive to KMA", "Jumuah at KMA", "Asr at home", "Maghrib at home", "Drive to KMA", "Isha at KMA",
+        "Fajr", "Drive to KMA", "Jumuah at KMA", "Asr", "Maghrib", "Drive to KMA", "Isha at KMA",
     ]
     jumuah = titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")
     # No length set for KMA, so 45 minutes, and the description says it's estimated.
@@ -170,7 +170,7 @@ def test_someone_who_prays_at_home_still_gets_jumuah(db, http, fake_google, fake
     fetch(db, http, NOW)
     refresh(db, http, uid, NOW)
     assert "Jumuah at Kanata Muslim Association" in friday(fake_google)
-    fajr = titled(google_events(fake_google), FRIDAY, "Fajr at home")
+    fajr = titled(google_events(fake_google), FRIDAY, "Fajr")
     assert fajr["description"].startswith("Calculated (ISNA, standard Asr)")
 
 

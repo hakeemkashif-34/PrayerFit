@@ -284,7 +284,7 @@ def test_ticking_nothing_means_every_prayer_at_home(signed_in, osm, fake_google)
     assert all(not any(d[p] for p in ("fajr", "dhuhr", "asr", "maghrib", "isha")) for d in response.json()["settings"]["weekly"])
     events = fake_google.live_events(fake_google.calendars_of("user-a")[0].id)
     assert len(events) == 70
-    assert all(e["summary"].endswith(" at home") for e in events)
+    assert {e["summary"] for e in events} == {"Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"}
 
 
 def test_saving_the_grid_again_replaces_it(signed_in, db):
@@ -371,7 +371,7 @@ def test_setup_with_home_only(signed_in, osm, fake_google):
 
     assert response.json()["calendar"]["sent"] == 70
     events = fake_google.live_events(fake_google.calendars_of("user-a")[0].id)
-    assert all(e["summary"].endswith(" at home") for e in events)
+    assert {e["summary"] for e in events} == {"Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"}
 
 
 def test_finishing_twice_adds_nothing(signed_in, osm, fake_google):

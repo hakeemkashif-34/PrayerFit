@@ -343,7 +343,8 @@ def plan_day(
                 source_description=lines[0],
                 place="home",
                 masjid_id=None,
-                summary=f"{PRAYER_TITLES[name]} at home",
+                # Just the prayer's name. Only masjid prayers say where.
+                summary=PRAYER_TITLES[name],
                 description="\n".join(lines),
                 color_id=setup.prayer_color_id,
             )

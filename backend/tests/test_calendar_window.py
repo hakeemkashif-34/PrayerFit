@@ -62,11 +62,11 @@ def test_titles_say_home_or_the_masjid(signed_in, fake_photon, fake_google):
 
     titles = {(_local_start(e).date(), e["summary"]) for e in _events(fake_google)}
     monday = date(2026, 10, 26)
-    assert (monday, "Fajr at home") in titles
+    assert (monday, "Fajr") in titles
     assert (monday, "Dhuhr at KMA") in titles
-    assert (monday, "Asr at home") in titles
+    assert (monday, "Asr") in titles
     assert (monday, "Isha at KMA") in titles
-    assert (DAY, "Dhuhr at home") in titles  # Saturday isn't ticked
+    assert (DAY, "Dhuhr") in titles  # Saturday isn't ticked
     assert sum(t.endswith("at KMA") for _, t in titles) == 20  # 10 weekdays x 2
 
 
@@ -97,7 +97,7 @@ def test_dhuhr_description_explains_the_extra_minute(signed_in, fake_google, db)
 
     dhuhr = next(
         e for e in _events(fake_google)
-        if e["summary"] == "Dhuhr at home" and _local_start(e).date() == DAY
+        if e["summary"] == "Dhuhr" and _local_start(e).date() == DAY
     )
     assert _local_start(dhuhr).strftime("%H:%M") == "12:48"
     assert dhuhr["description"].splitlines() == [
@@ -174,7 +174,8 @@ def test_switching_to_home_renames_the_masjid_events(signed_in, fake_photon, fak
     response = signed_in.put("/settings/main-masjid", json={"choice": "home"})
 
     assert response.json()["calendar"]["sent"] == 20
-    assert all(e["summary"].endswith("at home") for e in _events(fake_google))
+    # Home prayers are just the prayer's name.
+    assert {e["summary"] for e in _events(fake_google)} == {"Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"}
 
 
 def test_moving_updates_the_calendar_and_event_time_zones(signed_in, fake_photon, fake_google):

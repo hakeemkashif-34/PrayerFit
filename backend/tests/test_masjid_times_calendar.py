@@ -46,11 +46,11 @@ def test_masjid_prayers_use_the_iqamah(db, http, user, fake_google):
 def test_home_prayers_use_the_masjids_adhan(db, http, user, fake_google):
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
-    fajr = titled(google_events(fake_google), MONDAY, "Fajr at home")
+    fajr = titled(google_events(fake_google), MONDAY, "Fajr")
     assert clock(fajr) == "05:30"
     assert fajr["description"] == "KMA adhan time (MAWAQIT)"
     # Sunday: every prayer at home, all from KMA's page.
-    sunday = [e for e in on(google_events(fake_google), date(2026, 11, 1)) if e["summary"].endswith("at home")]
+    sunday = [e for e in on(google_events(fake_google), date(2026, 11, 1)) if " at " not in e["summary"]]
     assert [clock(e) for e in sunday] == ["05:30", "12:30", "15:30", "18:00", "19:30"]
 
 
@@ -58,7 +58,7 @@ def test_home_prayers_are_calculated_without_a_link(db, http, fake_google):
     uid = add_user(fake_google, db, "user-a", masjid_name="Kanata Muslim Association", short_name="KMA",
                    at_masjid=WEEKDAYS_AT_KMA)
     refresh(db, http, uid, NOW)
-    fajr = titled(google_events(fake_google), MONDAY, "Fajr at home")
+    fajr = titled(google_events(fake_google), MONDAY, "Fajr")
     assert fajr["description"].startswith("Calculated (ISNA, standard Asr)")
     isha = titled(google_events(fake_google), MONDAY, "Isha at KMA")
     assert isha["description"] == "Calculated start time (ISNA, standard Asr). KMA's iqamah time isn't available."
@@ -82,7 +82,7 @@ def test_stale_times_are_used_with_a_note(db, http, user, fake_google, fake_mawa
     assert isha["description"] == (
         "KMA iqamah (MAWAQIT, updated Oct 23, 2026)\nMAWAQIT times may be out of date (last updated Oct 23, 2026)"
     )
-    fajr = titled(google_events(fake_google), MONDAY, "Fajr at home")
+    fajr = titled(google_events(fake_google), MONDAY, "Fajr")
     assert fajr["description"] == "KMA adhan time (MAWAQIT)\nMAWAQIT times may be out of date (last updated Oct 23, 2026)"
 
 
@@ -94,7 +94,7 @@ def test_times_over_7_days_old_are_not_used(db, http, user, fake_google):
     assert clock(isha) != "20:15"
     assert isha["description"].startswith("Calculated start time (ISNA, standard Asr). KMA's iqamah time isn't available.")
     assert "more than 7 days old" in isha["description"]
-    fajr = titled(google_events(fake_google), MONDAY, "Fajr at home")
+    fajr = titled(google_events(fake_google), MONDAY, "Fajr")
     assert fajr["description"].startswith("Calculated (ISNA, standard Asr)")
 
 
@@ -108,7 +108,7 @@ def test_times_over_7_days_old_are_not_used(db, http, user, fake_google):
 def test_fall_daylight_saving_keeps_the_masjids_clock_time(db, http, user, fake_google, day, utc_hour):
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
-    fajr = titled(google_events(fake_google), day, "Fajr at home")
+    fajr = titled(google_events(fake_google), day, "Fajr")
     start = datetime.fromisoformat(fajr["start"]["dateTime"])
     assert start.strftime("%H:%M") == "05:30"
     assert start.astimezone(ZoneInfo("UTC")).strftime("%H:%M") == utc_hour
@@ -118,8 +118,8 @@ def test_spring_daylight_saving_keeps_the_masjids_clock_time(db, http, user, fak
     spring = datetime(2026, 3, 7, 8, 0, tzinfo=TORONTO)  # the clocks go forward on Sunday, March 8
     fetch(db, http, spring)
     refresh(db, http, user, spring)
-    before = titled(google_events(fake_google), date(2026, 3, 7), "Fajr at home")
-    after = titled(google_events(fake_google), date(2026, 3, 8), "Fajr at home")
+    before = titled(google_events(fake_google), date(2026, 3, 7), "Fajr")
+    after = titled(google_events(fake_google), date(2026, 3, 8), "Fajr")
     utc = ZoneInfo("UTC")
     assert datetime.fromisoformat(before["start"]["dateTime"]).astimezone(utc).strftime("%H:%M") == "10:30"
     assert datetime.fromisoformat(after["start"]["dateTime"]).astimezone(utc).strftime("%H:%M") == "09:30"

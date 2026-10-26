@@ -51,7 +51,7 @@ def test_deleted_calendar_is_recreated_with_all_five_prayers(client, fake_google
     assert _saved_calendar_ids(db) == [new_id]
     events = fake_google.live_events(new_id)
     assert sorted(e["summary"] for e in events) == [
-        "Asr at home", "Dhuhr at home", "Fajr at home", "Isha at home", "Maghrib at home"
+        "Asr", "Dhuhr", "Fajr", "Isha", "Maghrib"
     ]
 
 

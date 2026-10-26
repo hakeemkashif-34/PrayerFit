@@ -98,7 +98,7 @@ def test_kma_in_the_calendar(db, http, fake_google, fake_mawaqit):
     isha = titled(events, monday, "Isha at KMA")
     assert clock(isha) == day(monday).iqamah["isha"].strftime("%H:%M")
     assert isha["description"] == "KMA iqamah (MAWAQIT, updated Oct 25, 2026)"
-    fajr = titled(events, monday, "Fajr at home")
+    fajr = titled(events, monday, "Fajr")
     assert fajr["start"]["dateTime"].startswith("2026-10-26T06:13")
     assert clock(fajr) == day(monday).adhan["fajr"].strftime("%H:%M")
     assert fajr["description"] == "KMA adhan time (MAWAQIT)"
