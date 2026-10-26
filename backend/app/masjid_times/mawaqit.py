@@ -29,7 +29,7 @@ import logging
 import re
 import time as clock
 from datetime import date, time, timedelta
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import httpx2
 
@@ -55,6 +55,11 @@ HOSTS = {"mawaqit.net", "www.mawaqit.net"}
 BASE_URL = "https://mawaqit.net"
 # MAWAQIT page names are lowercase words joined by hyphens, like "kma-kanata".
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+# A share link's masjid ID, saved as "id/9793". Share links look like mawaqit.net/en/id/9793.
+ID_EXTERNAL = re.compile(r"^id/([0-9]{1,12})$")
+# MAWAQIT answers a share link with the page itself. If that ever turns into
+# a redirect, a few hops within mawaqit.net are followed, and nothing else.
+MAX_REDIRECTS = 3
 # Path parts that can come before the page name: a language, and "m" or "w"
 # for the mobile and widget versions of the same page.
 LANGUAGE = re.compile(r"^[a-z]{2}$")
@@ -66,6 +71,19 @@ class BadLink(ValueError):
     """The link isn't a MAWAQIT masjid page."""
 
 
+def _mawaqit_path(link: str, strip_language: bool = True) -> list[str]:
+    """The parts of an https://mawaqit.net link's path, without the language. Anything else is a BadLink."""
+    parts = urlsplit(link.strip())
+    if parts.scheme != "https" or (parts.hostname or "").lower() not in HOSTS:
+        raise BadLink("Only https://mawaqit.net links are accepted.")
+    if parts.port is not None or parts.username or parts.password:
+        raise BadLink("Only https://mawaqit.net links are accepted.")
+    path = [p for p in parts.path.split("/") if p]
+    if strip_language and path and LANGUAGE.match(path[0]):
+        path = path[1:]
+    return path
+
+
 def slug_from_link(link: str) -> str:
     """"https://mawaqit.net/en/kma-kanata" -> "kma-kanata".
 
@@ -73,14 +91,7 @@ def slug_from_link(link: str) -> str:
     kept. The app builds the URL from it again, so nothing else from the
     link is ever used.
     """
-    parts = urlsplit(link.strip())
-    if parts.scheme != "https" or (parts.hostname or "").lower() not in HOSTS:
-        raise BadLink("Only https://mawaqit.net links are accepted.")
-    if parts.port is not None or parts.username or parts.password:
-        raise BadLink("Only https://mawaqit.net links are accepted.")
-    path = [p for p in parts.path.split("/") if p]
-    if path and LANGUAGE.match(path[0]):
-        path = path[1:]
+    path = _mawaqit_path(link)
     if path and path[0] in VIEW_PREFIXES:
         path = path[1:]
     if len(path) != 1 or not SLUG.match(path[0].lower()):
@@ -88,40 +99,87 @@ def slug_from_link(link: str) -> str:
     return path[0].lower()
 
 
-def page_url(slug: str) -> str:
-    if not SLUG.match(slug):
+def external_id_from_link(link: str) -> str:
+    """A share link gives "id/9793". A page link gives its name, like "cio-gatineau".
+
+    "https://mawaqit.net/en/id/9793" -> "id/9793"
+    "https://mawaqit.net/en/cio-gatineau" -> "cio-gatineau"
+    """
+    raw = _mawaqit_path(link, strip_language=False)
+    # "id" is also a language code (Indonesian), so try the path with and without a language in front.
+    paths = [raw, raw[1:] if raw and LANGUAGE.match(raw[0]) else []]
+    for path in paths:
+        if len(path) == 2 and path[0] == "id" and ID_EXTERNAL.match(f"id/{path[1]}"):
+            return f"id/{path[1]}"
+    # Like "/en/id/abc": a share link with a typo, not a page.
+    if paths[1][:1] == ["id"] or (len(raw) == 1 and raw[0] == "id"):
+        raise BadLink("A MAWAQIT share link ends in a number, like https://mawaqit.net/en/id/9793.")
+    slug = slug_from_link(link)
+    if slug == "id":
+        raise BadLink("A MAWAQIT share link ends in a number, like https://mawaqit.net/en/id/9793.")
+    return slug
+
+
+def page_url(external_id: str) -> str:
+    """The URL for a saved ID. It's always built here, so a saved value can't point anywhere else."""
+    found = ID_EXTERNAL.match(external_id)
+    if found:
+        return f"{BASE_URL}/en/id/{found.group(1)}"
+    if not SLUG.match(external_id):
         raise BadLink("Saved MAWAQIT ID isn't valid.")
-    return f"{BASE_URL}/en/{slug}"
+    return f"{BASE_URL}/en/{external_id}"
 
 
-def download(http: httpx2.Client, slug: str) -> str:
+def _redirect_target(url: str, location: str | None) -> str:
+    """Where a redirect goes, only if it stays on https://mawaqit.net."""
+    target = urlsplit(urljoin(url, location or ""))
+    if (
+        target.scheme != "https"
+        or (target.hostname or "").lower() not in HOSTS
+        or target.port is not None
+        or target.username
+        or target.password
+    ):
+        raise SourceFailed("MAWAQIT redirected to another site")
+    return target.geturl()
+
+
+def download(http: httpx2.Client, external_id: str) -> str:
     """The page's HTML. Raises SourceBlocked or SourceFailed."""
     started = clock.monotonic()
+    url = page_url(external_id)
     try:
-        with http.stream(
-            "GET",
-            page_url(slug),
-            headers={"User-Agent": get_osm_settings().user_agent},
-            timeout=TIMEOUT_SECONDS,
-            follow_redirects=False,
-        ) as response:
-            if response.status_code in (403, 429):
-                log_failure("MAWAQIT", f"status {response.status_code}", started)
-                raise SourceBlocked(f"MAWAQIT answered {response.status_code}")
-            if response.status_code != 200:
-                log_failure("MAWAQIT", f"status {response.status_code}", started)
-                raise SourceFailed(f"MAWAQIT answered {response.status_code}")
-            body = bytearray()
-            for chunk in response.iter_bytes():
-                body.extend(chunk)
-                if len(body) > MAX_PAGE_BYTES:
-                    log_failure("MAWAQIT", "page too big", started)
-                    raise SourceFailed("MAWAQIT page is bigger than 3 MB")
+        for _ in range(MAX_REDIRECTS + 1):
+            with http.stream(
+                "GET",
+                url,
+                headers={"User-Agent": get_osm_settings().user_agent},
+                timeout=TIMEOUT_SECONDS,
+                # Followed by hand below, so each hop is checked first.
+                follow_redirects=False,
+            ) as response:
+                if response.status_code in (301, 302, 303, 307, 308):
+                    url = _redirect_target(url, response.headers.get("location"))
+                    continue
+                if response.status_code in (403, 429):
+                    log_failure("MAWAQIT", f"status {response.status_code}", started)
+                    raise SourceBlocked(f"MAWAQIT answered {response.status_code}")
+                if response.status_code != 200:
+                    log_failure("MAWAQIT", f"status {response.status_code}", started)
+                    raise SourceFailed(f"MAWAQIT answered {response.status_code}")
+                body = bytearray()
+                for chunk in response.iter_bytes():
+                    body.extend(chunk)
+                    if len(body) > MAX_PAGE_BYTES:
+                        log_failure("MAWAQIT", "page too big", started)
+                        raise SourceFailed("MAWAQIT page is bigger than 3 MB")
+                return body.decode("utf-8", errors="replace")
     except httpx2.TransportError as error:
         reason = transport_reason(error)
         log_failure("MAWAQIT", reason, started)
         raise SourceFailed(f"Couldn't reach MAWAQIT: {reason}") from error
-    return body.decode("utf-8", errors="replace")
+    log_failure("MAWAQIT", "too many redirects", started)
+    raise SourceFailed(f"MAWAQIT redirected more than {MAX_REDIRECTS} times")
 
 
 def conf_data(html: str) -> dict:
