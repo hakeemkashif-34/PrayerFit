@@ -474,7 +474,10 @@ test("an item opens and closes smoothly, and not at all with motion turned off",
 
 
 test("a notice at the top says when a masjid's times couldn't be confirmed", async ({ page }) => {
-  const notice = "KMA's times couldn't be confirmed since Oct 24, 2026. Your calendar is using calculated times until they're back.";
+  // From 24 hours to 7 days the last MAWAQIT times are still used, and the notice says when that stops.
+  const notice =
+    "KMA's times couldn't be confirmed since Oct 24, 2026. Your calendar is still using the last times read " +
+    "from MAWAQIT, and switches to calculated times on Oct 31, 2026 if they still can't be read.";
   await new MockApi().signedIn({ ...finishedSettings(), masjid_notices: [notice] }).install(page);
   await page.goto("/");
   const shown = page.getByRole("status").filter({ hasText: notice });
