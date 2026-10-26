@@ -26,6 +26,7 @@ from app.geo.timezones import timezone_for
 from app.google_errors import CalendarAccessMissing, GoogleError, ReauthRequired
 from app.http_client import get_http
 from app.event_plan import date_text
+from app.masjid_times.auto_link import link_and_fetch
 from app.masjid_times.freshness import FRESH_FOR, Freshness, freshness
 from app.jumuah_choices import JumuahChoices, jumuah_choices
 from app.models import Masjid, MasjidSource, PrayerEvent, User, WeeklyMasjidPrayers
@@ -463,6 +464,8 @@ def masjid_from_suggestion(request: PickRequest, user: UserDep, db: DbDep, http:
         )
     masjid = _masjid_from(db, user.id, found[request.index])
     db.commit()
+    # Link it to MAWAQIT from my list and read its times now, so the Jumuah question has real times.
+    link_and_fetch(db, http, masjid, now)
     zone = find_settings(db, user.id).time_zone or DEFAULT_TIMEZONE
     return _masjid_out(db, masjid, home, now, zone)
 

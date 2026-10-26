@@ -216,3 +216,36 @@ def test_migration_0010_keeps_jumuah_at_the_main_masjid(db):
     tables = set(inspect(db).get_table_names())
     assert "user_jumuah_masjids" not in tables
     assert "jumuah_saved" not in {c["name"] for c in inspect(db).get_columns("user_settings")}
+
+
+def test_migration_0011_marks_existing_links_as_mine(db):
+    """Links made before automatic matching were all made with link-mawaqit, so they're "admin"."""
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import inspect, text
+
+    config = Config("alembic.ini")
+    config.attributes["configure_logger"] = False
+    command.downgrade(config, "0010")
+    try:
+        assert "mawaqit_list" not in inspect(db).get_table_names()
+        with db.begin() as connection:
+            connection.execute(text("""
+                INSERT INTO masjids (id, source, osm_type, osm_id, name, updated_at) VALUES
+                    ('00000000-0000-0000-0000-0000000000f1', 'openstreetmap', 'node', 1, 'Kanata Muslim Association', now());
+                INSERT INTO masjid_sources (masjid_id, source, external_id, linked_at, consecutive_failures) VALUES
+                    ('00000000-0000-0000-0000-0000000000f1', 'mawaqit', 'kma-kanata', now(), 0);
+            """))
+        command.upgrade(config, "0011")
+        with db.connect() as connection:
+            link = connection.execute(text(
+                "SELECT external_id, origin, list_external_id, match_distance_m FROM masjid_sources"
+            )).one()
+            no_auto_link = connection.execute(text("SELECT no_auto_link FROM masjids")).scalar_one()
+            listed = connection.execute(text("SELECT count(*) FROM mawaqit_list")).scalar_one()
+        assert tuple(link) == ("kma-kanata", "admin", None, None)
+        assert no_auto_link is False
+        # The list itself is loaded from the CSV when the app starts, not by the migration.
+        assert listed == 0
+    finally:
+        command.upgrade(config, "head")

@@ -10,6 +10,7 @@ from datetime import date, datetime, time
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     Date,
     DateTime,
     Float,
@@ -212,9 +213,31 @@ class Masjid(Base):
     # How long its Jumuah (khutbah and prayer) takes, 15 to 90 minutes. Set
     # with the admin command, since MAWAQIT doesn't publish it. Empty uses 45.
     jumuah_minutes: Mapped[int | None] = mapped_column(SmallInteger)
+    # Set by unlink-mawaqit, so a link I removed by hand isn't added back automatically.
+    no_auto_link: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class MawaqitListEntry(Base):
+    """One masjid on my list of MAWAQIT masjids (app/data/mawaqit_masjids.csv).
+
+    MAWAQIT's search needs a login, so the app can't find a masjid's page by
+    itself. I collect them by hand, and the app matches users' masjids to
+    this list by distance and name (see masjid_times/match.py).
+    """
+
+    __tablename__ = "mawaqit_list"
+
+    # "id/9793" for a share link (mawaqit.net/en/id/9793), or a page name like "cio-gatineau".
+    external_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    latitude: Mapped[float] = mapped_column(Float)
+    longitude: Mapped[float] = mapped_column(Float)
+    # "file" (the CSV) or "admin" (python -m app.admin add-mawaqit).
+    added_by: Mapped[str] = mapped_column(String(8))
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class WeeklyMasjidPrayers(Base):
@@ -235,10 +258,15 @@ class WeeklyMasjidPrayers(Base):
 
 
 class MasjidSource(Base):
-    """Where a masjid's times are read from. Only the admin command adds these.
+    """Where a masjid's times are read from.
 
-    external_id is the masjid's ID on that source, like the MAWAQIT page
-    name. The app builds the URL itself, so a saved value can't point anywhere else.
+    I add these with link-mawaqit (origin "admin"), or the app adds them by
+    matching the masjid to my MAWAQIT list (origin "auto"). An automatic
+    link never replaces one of mine.
+
+    external_id is the masjid's ID on that source: a MAWAQIT page name, or
+    "id/9793" for a share link. The app builds the URL itself, so a saved
+    value can't point anywhere else.
     """
 
     __tablename__ = "masjid_sources"
@@ -249,6 +277,13 @@ class MasjidSource(Base):
     # "mawaqit" for now. Each source has its own adapter.
     source: Mapped[str] = mapped_column(String(16))
     external_id: Mapped[str] = mapped_column(String(200))
+    # "admin" or "auto". Links made before automatic matching are all "admin".
+    origin: Mapped[str] = mapped_column(String(8), default="admin", server_default="admin")
+    # For an automatic link: the list entry it matched, and how far apart they are, for spot-checks.
+    list_external_id: Mapped[str | None] = mapped_column(
+        ForeignKey("mawaqit_list.external_id", ondelete="SET NULL")
+    )
+    match_distance_m: Mapped[int | None] = mapped_column(Integer)
     linked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # The last fetch that passed every check. Freshness is measured from this.

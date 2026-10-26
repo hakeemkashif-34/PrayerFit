@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from app.busy_checks import run_due_checks
 from app.db import get_engine
 from app.http_client import new_http_client
+from app.masjid_times.auto_link import load_list_on_start
 from app.masjid_times.scheduler import run_due_fetches
 from app.nightly import run_due_jobs, run_now
 from app.stats import save_daily_stats
@@ -51,6 +52,8 @@ def run_once() -> None:
 
 def loop() -> None:
     logger.info("Worker started. Checking for due jobs every %d seconds.", CHECK_EVERY_SECONDS)
+    # The backend loads it too. Loading it twice adds nothing, and the list is there even if only the worker restarted.
+    load_list_on_start(get_engine())
     while True:
         run_once()
         time.sleep(CHECK_EVERY_SECONDS)

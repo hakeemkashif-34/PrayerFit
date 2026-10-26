@@ -4,6 +4,7 @@ Uvicorn (the web server) loads the `app` object from this file.
 Run locally with:  uvicorn app.main:app --reload
 """
 
+from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
@@ -15,9 +16,18 @@ from app.config import get_app_settings
 from app.db import get_engine
 from app.geo.errors import OsmServiceError
 from app.google_errors import CalendarAccessMissing, ReauthRequired
+from app.masjid_times.auto_link import load_list_on_start
 from app.routers import auth, prayer_times, prayers, settings, stats
 
-app = FastAPI(title="Muslim Calendar API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # My MAWAQIT list (app/data/mawaqit_masjids.csv), loaded on every start.
+    load_list_on_start(get_engine())
+    yield
+
+
+app = FastAPI(title="Muslim Calendar API", lifespan=lifespan)
 app.include_router(prayer_times.router)
 app.include_router(auth.router)
 app.include_router(prayers.router)
