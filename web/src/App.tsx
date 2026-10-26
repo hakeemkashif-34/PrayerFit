@@ -6,6 +6,7 @@ import { api, ApiError, whenSignInExpires } from "./api";
 import { NO_TAB, type FinishTab } from "./finishTab";
 import { googleCalendarUrl } from "./googleCalendar";
 import { SettingsPage } from "./SettingsPage";
+import { PrivacyPage } from "./PrivacyPage";
 import { Setup } from "./Setup";
 import { SignIn } from "./SignIn";
 import { StatsPage } from "./StatsPage";
@@ -38,6 +39,8 @@ export function App() {
   if (window.location.pathname === "/adding") return <AddingPage />;
   // The private stats page. It isn't linked from anywhere.
   if (window.location.pathname === "/stats") return <StatsPage />;
+  // Public, so Google and anyone signed out can read it.
+  if (window.location.pathname === "/privacy") return <PrivacyPage />;
   return <Main />;
 }
 
