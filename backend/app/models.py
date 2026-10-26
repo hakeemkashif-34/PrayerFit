@@ -381,10 +381,10 @@ class UpdateJob(Base):
 
 
 class BusyCheckJob(Base):
-    """One 15-minute check of a user's busy times for today and tomorrow.
+    """One 5-minute check of a user's busy times for today and tomorrow.
 
     Saved before it runs. The ID is "busy:{user_id}:{block}", where the
-    block is the 15 minutes in UTC it belongs to, so a second worker or a
+    block is the 5 minutes in UTC it belongs to, so a second worker or a
     retry in the same block finds the same row and does nothing.
     """
 

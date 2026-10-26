@@ -254,7 +254,7 @@ def refresh_calendar(
 ) -> RefreshResult:
     """Bring the user's calendar up to date for today plus days - 1.
 
-    busy_check: the 15-minute check (busy_checks.py). It stops without
+    busy_check: the 5-minute check (busy_checks.py). It stops without
     changing anything if free/busy doesn't answer, and skips every other
     Google call when nothing changed.
 

@@ -3,7 +3,7 @@
 Every minute it runs, in order:
 1. Nightly jobs that are due (3:00 am in each user's time zone).
 2. MAWAQIT fetches that are due (each linked masjid, once every 6 hours).
-3. Busy time checks that are due (each user, once every 15 minutes).
+3. Busy time checks that are due (each user, once every 5 minutes).
 4. Queued calendar updates, like the ones a masjid time change adds.
 5. Today's usage counts, saved once a day after 4:00 am.
 Each step has its own try, so one failing doesn't stop the others.

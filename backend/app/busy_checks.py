@@ -1,13 +1,13 @@
-"""Check each user's busy times every 15 minutes, for today and tomorrow.
+"""Check each user's busy times every 5 minutes, for today and tomorrow.
 
 The nightly job covers all 14 days, but an event added at noon should move
-that evening's Isha before Isha, not the next night. So every 15 minutes
+that evening's Isha before Isha, not the next night. So every 5 minutes
 the worker updates today and tomorrow for each user who allowed free/busy,
 and Google only gets the events that changed.
 
 How it avoids duplicate work:
 1. Each check is saved before it runs, with the ID
-   "busy:{user_id}:{15-minute block in UTC}". Saving it again does nothing.
+   "busy:{user_id}:{5-minute block in UTC}". Saving it again does nothing.
 2. It's claimed by switching it from "pending" to "running" in one UPDATE,
    so only one worker runs it.
 3. The calendar update itself never duplicates events (see calendar_window.py).
@@ -34,7 +34,10 @@ from app.prayer_sync import SyncIncomplete
 
 logger = logging.getLogger("app.busy_checks")
 
-CHECK_EVERY_MINUTES = 15
+# Google Calendar's free threshold is 1,000,000 requests a day per project.
+# A quiet check is 1 free/busy call, so 1,000 users is 1,000 x 288 checks a
+# day = 288,000, plus the nightly and changed events. See LEARNING.md.
+CHECK_EVERY_MINUTES = 5
 # Today and tomorrow.
 CHECK_DAYS = 2
 # Old check rows are deleted after this, so the table stays small.
@@ -42,7 +45,7 @@ KEEP_CHECKS_FOR = timedelta(days=2)
 
 
 def block_start(now: datetime) -> datetime:
-    """The start of the 15 minutes (in UTC) that now falls in."""
+    """The start of the 5 minutes (in UTC) that now falls in."""
     utc = now.astimezone(UTC)
     return utc.replace(minute=utc.minute - utc.minute % CHECK_EVERY_MINUTES, second=0, microsecond=0)
 

@@ -3,7 +3,7 @@
 1. Signed up: everyone who ever signed in.
 2. Finished setup.
 3. Active: the calendar was updated (the nightly job, a settings change,
-   or a 15-minute check finished) in the last 2 days.
+   or a 5-minute check finished) in the last 2 days.
 4. New this week: signed in for the first time in the last 7 days.
 
 The worker saves these 4 numbers once a day (usage_stats), so there's a

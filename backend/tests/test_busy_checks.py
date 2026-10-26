@@ -1,4 +1,4 @@
-"""The 15-minute busy check: today and tomorrow, stable IDs, and never undoing a move.
+"""The 5-minute busy check: today and tomorrow, stable IDs, and never undoing a move.
 
 Uses the same user as test_moving_calendar.py: Asr and Isha at KMA on
 Tuesdays, Isha iqamah 7:40 pm, a 10 minute drive, 5 minutes early.
@@ -50,9 +50,9 @@ def test_a_new_event_moves_the_prayer_and_removing_it_puts_it_back(db, http, use
     assert clock(isha) == "20:30"
     assert isha["description"] == moved("1 hour 7 minutes after Isha's start time")
 
-    # The event is removed. The next check, 15 minutes later, puts Isha back at KMA.
+    # The event is removed. The next check, 5 minutes later, puts Isha back at KMA.
     fake_google.busy["user-a"] = []
-    [result] = check(db, http, NOW.replace(hour=9, minute=15))
+    [result] = check(db, http, NOW.replace(hour=9, minute=5))
     assert (result.status, result.events_sent) == ("done", 2)
     assert titles(fake_google) == ALL_AT_KMA
     assert clock(titled(google_events(fake_google), TUESDAY, "Isha at KMA")) == "19:40"
@@ -76,7 +76,7 @@ def test_only_today_and_tomorrow_are_checked(db, http, user, fake_google):
 def test_nothing_changed_means_zero_writes_and_only_a_free_busy_call(db, http, user, fake_google):
     run(db, http, user)
     since = len(fake_google.requests)
-    for minute in (0, 15, 30):
+    for minute in (0, 5, 10):
         [result] = check(db, http, NOW.replace(hour=9, minute=minute))
         assert (result.status, result.events_sent) == ("done", 0)
     # No event writes, and not even the calendar lookup. Just 3 free/busy calls.
@@ -111,7 +111,7 @@ def test_a_free_busy_failure_leaves_every_event_as_it_is(db, http, user, fake_go
     # The next block tries again, and works once Google answers.
     fake_google.freebusy_failure = None
     fake_google.busy["user-a"] = []
-    [result] = check(db, http, NOW.replace(hour=9, minute=15))
+    [result] = check(db, http, NOW.replace(hour=9, minute=5))
     assert result.status == "done"
     assert titles(fake_google) == ALL_AT_KMA
 
@@ -170,18 +170,18 @@ def test_users_who_need_to_sign_in_again_are_not_checked(db, http, user, fake_go
     assert check(db, http, NOW.replace(hour=9)) == []
 
 
-def test_one_check_per_user_per_15_minutes(db, http, user, fake_google):
+def test_one_check_per_user_per_5_minutes(db, http, user, fake_google):
     run(db, http, user)
     requests = len(fake_google.freebusy_requests())
     assert len(check(db, http, NOW.replace(hour=9, minute=1))) == 1
     # Same block: the worker checks every minute, but the job already ran.
-    assert check(db, http, NOW.replace(hour=9, minute=14, second=59)) == []
-    assert len(check(db, http, NOW.replace(hour=9, minute=15))) == 1
+    assert check(db, http, NOW.replace(hour=9, minute=4, second=59)) == []
+    assert len(check(db, http, NOW.replace(hour=9, minute=5))) == 1
     assert len(fake_google.freebusy_requests()) == requests + 2
     assert sorted(j.id for j in jobs(db)) == sorted(
-        [check_id(user, NOW.replace(hour=9)), check_id(user, NOW.replace(hour=9, minute=15))]
+        [check_id(user, NOW.replace(hour=9)), check_id(user, NOW.replace(hour=9, minute=5))]
     )
-    assert check_id(user, NOW.replace(hour=9, minute=7)) == f"busy:{user}:2026-10-26T13:00"
+    assert check_id(user, NOW.replace(hour=9, minute=7)) == f"busy:{user}:2026-10-26T13:05"
 
 
 def test_two_workers_in_the_same_block_check_once(db, user, fake_google, fake_photon, fake_mawaqit, fake_ors, http):
