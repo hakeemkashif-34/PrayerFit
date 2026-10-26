@@ -98,6 +98,10 @@ class GoogleCalendar:
         created = self._request("POST", "/calendars", {"summary": summary, "timeZone": time_zone})
         return created["id"]
 
+    def delete_calendar(self, calendar_id: str) -> None:
+        """Delete a whole calendar and every event in it. Only ever the app's own Prayers calendar."""
+        self._request("DELETE", self._calendar_path(calendar_id))
+
     def get_calendar(self, calendar_id: str) -> dict:
         return self._request("GET", self._calendar_path(calendar_id))
 
