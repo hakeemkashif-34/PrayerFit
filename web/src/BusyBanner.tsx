@@ -32,7 +32,7 @@ export function BusyBanner() {
   return (
     <section className="notice banner" aria-labelledby="busy-banner-title">
       <p id="busy-banner-title">
-        <strong>Sign in again so Jumuah can fit around your calendar.</strong>
+        <strong>Sign in again so your prayers can fit around your calendar.</strong>
       </p>
       <p>We only see when you're busy, never what your events are.</p>
       <div className="actions">

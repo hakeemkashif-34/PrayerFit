@@ -396,7 +396,7 @@ test("users without free/busy access get a banner to sign in again", async ({ pa
   await api.install(page);
   await page.goto("/");
 
-  const banner = page.getByRole("region", { name: "Sign in again so Jumuah can fit around your calendar." });
+  const banner = page.getByRole("region", { name: "Sign in again so your prayers can fit around your calendar." });
   await expect(banner).toBeVisible();
   await expect(banner).toContainText("We only see when you're busy, never what your events are.");
   await expect(banner.getByRole("link", { name: "Sign in again" })).toHaveAttribute("href", "/auth/google/login");
