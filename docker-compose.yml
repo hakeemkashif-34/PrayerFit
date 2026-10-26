@@ -7,6 +7,10 @@
 #   worker  the nightly job (same image as backend)
 #   db      Postgres
 
+# The project name. Containers and the volume are named after it
+# (prayerfit-db-1, prayerfit_db-data), whatever the folder is called.
+name: prayerfit
+
 x-backend-environment: &backend-environment
   DATABASE_URL: ${DATABASE_URL}
   DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE}
