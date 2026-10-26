@@ -258,8 +258,37 @@ def test_masjid_cache_runs_out_after_7_days(session, http, fake_photon):
 
 def test_unnamed_places_of_worship_arent_suggested(session, http, fake_photon):
     fake_photon.add_masjid(501, None, HOME[0] + 0.01, HOME[1], street="Sandhill Road", city="Ottawa")
-    found = suggest_masjids(session, http, "Sandhill", HOME, NOW)
-    assert all(s.kind == "address" for s in found)
+    assert suggest_masjids(session, http, "Sandhill", HOME, NOW) == []
+
+
+def test_only_masjids_within_100_km_are_suggested_nearest_first(session, http, fake_photon):
+    # 2 nearby, one 105 km north (inside Photon's box, but too far), and one in Toronto.
+    fake_photon.add_masjid(601, "Kanata Muslim Association", HOME[0] + 0.01, HOME[1], city="Ottawa")
+    fake_photon.add_masjid(602, "Kanata North Masjid", HOME[0] + 0.3, HOME[1], city="Ottawa")
+    fake_photon.add_masjid(603, "Kanata Far Masjid", HOME[0] + 105 / 111.2, HOME[1], city="Far")
+    fake_photon.add_masjid(604, "Kanata Masjid Toronto", 43.65, -79.38, city="Toronto")
+
+    found = suggest_masjids(session, http, "Kanata", HOME, NOW)
+
+    assert [s.label for s in found] == ["Kanata Muslim Association", "Kanata North Masjid"]
+    # Photon is asked for a box around home, so far away places aren't even sent.
+    assert fake_photon.requests[0].url.params["bbox"]
+
+
+def test_a_typo_with_nothing_nearby_finds_nothing_and_asks_for_no_addresses(session, http, fake_photon):
+    # Like "Kanta M": no masjid nearby matches, and there's no number, so no address search either.
+    fake_photon.add_masjid(701, "Kanta Mission Church", 30.0, -95.0, city="Houston", countrycode="US")
+    fake_photon.add_place(HOME[0] + 0.03, HOME[1], street="Kanta Mews", city="Ottawa")
+
+    assert suggest_masjids(session, http, "Kanta M", HOME, NOW) == []
+    assert len(fake_photon.requests) == 1
+
+
+def test_addresses_over_100_km_away_arent_suggested(session, http, fake_photon):
+    fake_photon.add_place(HOME[0] + 0.03, HOME[1], housenumber="10", street="Main Street", city="Ottawa")
+    fake_photon.add_place(HOME[0] + 105 / 111.2, HOME[1], housenumber="10", street="Main Street", city="Far")
+    found = suggest_masjids(session, http, "10 Main", HOME, NOW)
+    assert [s.label for s in found] == ["10 Main Street, Ottawa"]
 
 
 def test_masjid_search_failure_has_a_message_without_what_was_typed(session, http, fake_photon):

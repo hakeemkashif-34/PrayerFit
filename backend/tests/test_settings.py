@@ -160,13 +160,12 @@ def test_masjid_suggestions_show_name_and_distance_closest_first(signed_in, osm)
 
     assert response.status_code == 200
     suggestions = response.json()["suggestions"]
-    # The one in Kanata first, the Toronto one with a similar name last.
-    assert [s["label"] for s in suggestions] == ["Kanata Muslim Association", "Kanata Masjid Toronto"]
+    # The one in Kanata. The Toronto one with a similar name is over 100 km away, so it's left out.
+    assert [s["label"] for s in suggestions] == ["Kanata Muslim Association"]
     assert suggestions[0] == {
         "index": 0, "kind": "masjid", "label": "Kanata Muslim Association",
         "detail": "351 Sandhill Road, Ottawa", "distance_km": 1.1,
     }
-    assert suggestions[1]["distance_km"] > 300
     # Suggesting saves nothing.
     assert signed_in.get("/settings").json()["main_masjid_choice"] is None
 

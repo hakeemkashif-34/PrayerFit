@@ -390,10 +390,11 @@ class MasjidSuggestResponse(BaseModel):
 
 @router.post("/setup/masjid/suggest", response_model=MasjidSuggestResponse)
 def suggest_masjid(request: SuggestRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> MasjidSuggestResponse:
-    """Up to 5 masjids for what the user has typed, closest to home first. Saves nothing.
+    """Up to 5 masjids within 100 km for what the user has typed, closest to home first. Saves nothing.
 
-    If no masjid matches, or the text looks like an address, addresses
-    near home are included, so a masjid that isn't on the map can still be picked.
+    If the text looks like an address (it has a number), addresses near home
+    are included, so a masjid that isn't on the map can still be picked.
+    An empty list means nothing nearby matched.
     """
     home = _home(db, user.id)
     found = suggest_masjids(db, http, request.query, home, now)

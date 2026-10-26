@@ -82,6 +82,13 @@ class FakePhoton:
             ).casefold().replace(",", " ").split()
             if all(any(t.startswith(w) for t in text) for w in words):
                 found.append(place)
+        # Like Photon's bbox: only places inside the box.
+        if "bbox" in params:
+            min_lon, min_lat, max_lon, max_lat = (float(v) for v in params["bbox"].split(","))
+            found = [
+                p for p in found
+                if min_lon <= p["geometry"]["coordinates"][0] <= max_lon and min_lat <= p["geometry"]["coordinates"][1] <= max_lat
+            ]
         # Like Photon's location bias: closer places first.
         bias = (float(params["lat"]), float(params["lon"]))
         found.sort(key=lambda p: _km(*bias, p["geometry"]["coordinates"][1], p["geometry"]["coordinates"][0]))

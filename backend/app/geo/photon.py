@@ -25,6 +25,7 @@ exact one.
 """
 
 import json
+import math
 import time
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta
@@ -171,10 +172,25 @@ def suggest(db: Session, http: httpx2.Client, query: str, now: datetime) -> list
     return found[:MAX_SUGGESTIONS]
 
 
+# A masjid further than this from home isn't suggested. Without it, a typo
+# like "Kanta M" finds churches thousands of km away.
+NEARBY_KM = 100
+
+
+def nearby_box(near: tuple[float, float], km: float = NEARBY_KM) -> str:
+    """Photon's bbox (min lon, min lat, max lon, max lat) around a point, a little wider than km.
+
+    It only narrows what Photon sends. The exact distance check is done here.
+    """
+    lat_step = km / 111.0 * 1.1
+    lon_step = lat_step / max(math.cos(math.radians(near[0])), 0.1)
+    return f"{near[1] - lon_step:.3f},{near[0] - lat_step:.3f},{near[1] + lon_step:.3f},{near[0] + lat_step:.3f}"
+
+
 def suggest_masjids(
     db: Session, http: httpx2.Client, query: str, home: tuple[float, float], now: datetime
 ) -> list[Suggestion]:
-    """Masjid: up to 5 places of worship, closest to home first, then addresses if needed."""
+    """Masjid: up to 5 places of worship within 100 km of home, nearest first, then addresses if needed."""
     if len(normalize(query)) < MIN_QUERY_LENGTH:
         return []
     # Rounded to about 1 km, so Photon never gets the exact home. It's also
@@ -183,22 +199,24 @@ def suggest_masjids(
     near = (round(home[0], 2), round(home[1], 2))
     cell = f"{near[0]:.2f},{near[1]:.2f}"
     # A low location_bias_scale means distance matters more than how well known a place is.
-    bias = {"lat": near[0], "lon": near[1], "zoom": 12, "location_bias_scale": 0.1}
+    bias = {"lat": near[0], "lon": near[1], "zoom": 12, "location_bias_scale": 0.1, "bbox": nearby_box(near)}
 
     def by_distance(s: Suggestion) -> float:
         return distance_km(*home, s.latitude, s.longitude)
 
-    places = _ask_photon(db, http, query, now, f"masjid:{cell}", {**bias, "osm_tag": PLACE_OF_WORSHIP})
-    # A masjid has to have a name to be picked. The address search covers the rest.
-    found = sorted((replace(p, kind="masjid", label=p.name) for p in places if p.name), key=by_distance)
-    found = found[:MAX_SUGGESTIONS]
+    def nearby(found: list[Suggestion]) -> list[Suggestion]:
+        return sorted((s for s in found if by_distance(s) <= NEARBY_KM), key=by_distance)
 
-    # Only ask for addresses when no masjid matched, or the text looks like
-    # an address (house numbers have digits). That keeps it to one Photon
-    # call for most searches.
-    if len(found) < MAX_SUGGESTIONS and (not found or any(c.isdigit() for c in query)):
-        addresses = _ask_photon(db, http, query, now, f"near:{cell}", bias)
+    places = _ask_photon(db, http, query, now, f"masjid:{NEARBY_KM}km:{cell}", {**bias, "osm_tag": PLACE_OF_WORSHIP})
+    # A masjid has to have a name to be picked. The address search covers the rest.
+    found = nearby([replace(p, kind="masjid", label=p.name) for p in places if p.name])[:MAX_SUGGESTIONS]
+
+    # Only ask for addresses when the text looks like one (house numbers
+    # have digits). A misspelled name gets "No masjid found near you"
+    # instead of a list of streets.
+    if len(found) < MAX_SUGGESTIONS and any(c.isdigit() for c in query):
+        addresses = _ask_photon(db, http, query, now, f"near:{NEARBY_KM}km:{cell}", bias)
         taken = {(s.latitude, s.longitude) for s in found}
-        extra = sorted((a for a in addresses if (a.latitude, a.longitude) not in taken), key=by_distance)
+        extra = [a for a in nearby(addresses) if (a.latitude, a.longitude) not in taken]
         found += extra[: MAX_SUGGESTIONS - len(found)]
     return found
