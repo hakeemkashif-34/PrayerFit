@@ -882,6 +882,12 @@ input[aria-invalid="true"] {
   font-size: 1.125rem;
 }
 
+/* The "e.g." line under a question. */
+.hint.example {
+  margin: -4px 0 10px;
+  font-size: 0.875rem;
+}
+
 button.home-choice {
   margin-top: 12px;
 }

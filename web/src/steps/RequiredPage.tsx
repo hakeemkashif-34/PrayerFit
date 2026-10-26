@@ -1,5 +1,5 @@
 // Setup page 1, "Required": location, main masjid (or "I pray at home"),
-// and the weekly grid, all on one page.
+// and the weekly grid, all on one page and all shown at once.
 //
 // Picking a location saves it straight away, since the masjid search needs
 // it to sort masjids by distance. Next saves the masjid and the grid.
@@ -63,13 +63,13 @@ export function RequiredPage({ settings, onChange, onNext }: Props) {
     <div className="required-page">
       <h1>Required</h1>
 
-      <LocationStep current={settings.place_name} onSaved={(response) => onChange(response.settings)} />
+      <LocationStep current={settings.place_name} onSaved={(response) => onChange(response.settings)}
+        example="e.g. 24 Maple Drive, Ottawa" />
 
       <section aria-labelledby="masjid-title" className="page-section">
         <h2 id="masjid-title">Which masjid do you usually go to?</h2>
-        {!hasLocation ? (
-          <p className="hint">Pick your location first, so masjids near you come up first.</p>
-        ) : choice === "home" ? (
+        <p className="hint example">e.g. Kanata Muslim Association</p>
+        {choice === "home" ? (
           <div className="current picked-masjid">
             <p>
               <strong>I pray at home</strong>
@@ -90,7 +90,9 @@ export function RequiredPage({ settings, onChange, onNext }: Props) {
           </div>
         ) : (
           <>
-            <MasjidSearch onPicked={pickMasjid} />
+            {/* The search sorts masjids by distance from home, so it waits for the location. */}
+            <MasjidSearch onPicked={pickMasjid} disabled={!hasLocation} />
+            {!hasLocation && <p className="hint small-line">Pick your location first, so masjids near you come up first.</p>}
             <button type="button" className="link home-choice" onClick={() => setChoice("home")} disabled={busy}>
               I pray at home
             </button>
@@ -98,9 +100,10 @@ export function RequiredPage({ settings, onChange, onNext }: Props) {
         )}
       </section>
 
-      {choice === "masjid" && picked && (
+      {/* Hidden only for "I pray at home", which already answers it. */}
+      {choice !== "home" && (
         <section aria-labelledby="weekly-title" className="page-section">
-          <h2 id="weekly-title">Which prayers do you usually pray at {picked.name ?? "your masjid"}?</h2>
+          <h2 id="weekly-title">Which prayers do you usually pray at {(choice === "masjid" && picked?.name) || "your masjid"}?</h2>
           <p className="hint">Ticked means at the masjid. Unticked means at home.</p>
           <WeeklyGrid days={days} onToggle={toggle} />
         </section>

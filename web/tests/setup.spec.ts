@@ -49,7 +49,7 @@ async function pickHome(page: Page) {
   await addressBox(page).pressSequentially("200 Kanata", { delay: 30 });
   await page.getByRole("option", { name: HOME_PLACE }).click();
   // Wait for the masjid search, which needs the location saved first.
-  await expect(masjidBox(page)).toBeVisible();
+  await expect(masjidBox(page)).toBeEnabled();
 }
 
 // Page 1 answered with "I pray at home", then on to page 2.
@@ -73,13 +73,20 @@ test("the full setup: required page, optional page, then a filled calendar", asy
   await api.install(page);
   await page.goto("/");
 
-  // Page 1: location, masjid, and the weekly grid on one page.
+  // Page 1: every question at once, top to bottom: location, masjid, and the weekly grid.
   await expectPage(page, 1);
-  await expect(page.getByRole("heading", { level: 2, name: LOCATION })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: MASJID })).toBeVisible();
+  const questions = page.getByRole("main").getByRole("heading", { level: 2 });
+  await expect(questions).toHaveText([LOCATION, MASJID, "Which prayers do you usually pray at your masjid?"]);
+  const tops = await questions.evaluateAll((hs) => hs.map((h) => h.getBoundingClientRect().top));
+  expect(tops).toEqual([...tops].sort((a, b) => a - b));
+  await expect(page.getByRole("checkbox")).toHaveCount(35);
+  // An example under each of the first 2 questions.
+  await expect(page.getByText("e.g. 24 Maple Drive, Ottawa")).toBeVisible();
+  await expect(page.getByText("e.g. Kanata Muslim Association")).toBeVisible();
   await expect(page.getByRole("button", { name: "← Back" })).toHaveCount(0);
-  // The masjid search waits for the location, since it sorts by distance from home.
-  await expect(masjidBox(page)).toHaveCount(0);
+  // The masjid search is there, but waits for the location, since it sorts by distance from home.
+  await expect(masjidBox(page)).toBeVisible();
+  await expect(masjidBox(page)).toBeDisabled();
   await expect(page.getByText("Pick your location first")).toBeVisible();
   // Just the question: no extra lines, and the credit is in the footer.
   await expect(page.getByText("Your address is stored encrypted")).toHaveCount(0);
@@ -139,11 +146,11 @@ test("the full setup: required page, optional page, then a filled calendar", asy
   await page.getByLabel("Short name for Kanata Muslim Association").fill("KMA");
   await expect(page.getByText('Events will say "Dhuhr at KMA".')).toBeVisible();
   // Number boxes, pre-filled with the defaults: 5 minutes for each.
-  const early = page.getByLabel("How early do you want to arrive before iqamah?");
+  const early = page.getByLabel("How early do you want to arrive before iqamah (daily prayers)?");
   await expect(early).toHaveAttribute("type", "number");
   await expect(early).toHaveValue("5");
   await early.fill("10");
-  const jumuahEarly = page.getByLabel("How early do you want to arrive before Jumuah?");
+  const jumuahEarly = page.getByLabel("How early do you want to arrive before Jumuah (Friday prayer)?");
   await expect(jumuahEarly).toHaveValue("5");
   await jumuahEarly.fill("15");
   // Drive times always come from OpenRouteService, so there's no box for them.
@@ -189,7 +196,7 @@ test("Back goes to page 1 without losing anything on either page", async ({ page
   await page.getByLabel("Asr on Tuesday at the masjid").check();
   await page.getByRole("button", { name: "Next" }).click();
   await expectPage(page, 2);
-  await page.getByLabel("How early do you want to arrive before iqamah?").fill("20");
+  await page.getByLabel("How early do you want to arrive before iqamah (daily prayers)?").fill("20");
   await page.getByLabel("Short name for Stittsville Masjid").fill("SM");
   await pickColour(page, "Prayer colour", "Grape");
 
@@ -202,7 +209,7 @@ test("Back goes to page 1 without losing anything on either page", async ({ page
   // Next again: page 2 still has what was typed.
   await page.getByRole("button", { name: "Next" }).click();
   await expectPage(page, 2);
-  await expect(page.getByLabel("How early do you want to arrive before iqamah?")).toHaveValue("20");
+  await expect(page.getByLabel("How early do you want to arrive before iqamah (daily prayers)?")).toHaveValue("20");
   await expect(page.getByLabel("Short name for Stittsville Masjid")).toHaveValue("SM");
   await expect(page.getByRole("button", { name: /^Prayer colour/ })).toContainText("Grape");
   // The location was only saved once. Nothing reached Google.
@@ -460,7 +467,7 @@ test("Skip saves the defaults, and no Jumuah pick", async ({ page }) => {
   await toOptionalAtKma(page);
 
   // Something typed and picked, then skipped: the defaults win.
-  await page.getByLabel("How early do you want to arrive before iqamah?").fill("20");
+  await page.getByLabel("How early do you want to arrive before iqamah (daily prayers)?").fill("20");
   await page.getByRole("radio", { name: /2nd Jumuah/ }).check({ force: true });
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(0);
   await page.getByRole("button", { name: "Skip" }).click();
@@ -505,7 +512,7 @@ test("how early takes whole numbers from 0 to 60 only, for prayers and for Jumua
   await page.goto("/");
   await toOptionalAtKma(page);
 
-  for (const label of ["How early do you want to arrive before iqamah?", "How early do you want to arrive before Jumuah?"]) {
+  for (const label of ["How early do you want to arrive before iqamah (daily prayers)?", "How early do you want to arrive before Jumuah (Friday prayer)?"]) {
     const box = page.getByLabel(label);
     for (const bad of ["61", "-1", "2.5", "", "100"]) {
       await box.fill(bad);
@@ -533,8 +540,8 @@ test("0 minutes early is allowed", async ({ page }) => {
   await page.goto("/");
   await toOptionalAtKma(page);
 
-  await page.getByLabel("How early do you want to arrive before iqamah?").fill("0");
-  await page.getByLabel("How early do you want to arrive before Jumuah?").fill("0");
+  await page.getByLabel("How early do you want to arrive before iqamah (daily prayers)?").fill("0");
+  await page.getByLabel("How early do you want to arrive before Jumuah (Friday prayer)?").fill("0");
   await page.getByRole("button", { name: "Finish" }).click();
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toMatchObject({
     arrive_early_minutes: 0, jumuah_arrive_early_minutes: 0,
