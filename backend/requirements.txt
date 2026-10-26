@@ -8,3 +8,4 @@ tzdata==2026.5          # time zone rules, for computers that don't have them (l
 cryptography==50.0.2    # Fernet, to encrypt Google tokens before saving them
 httpx2==2.16.0          # HTTP client for calling Google. FastAPI's TestClient uses it too.
 timezonefinder==9.2.0   # finds a time zone from a location, offline (the map data is in the package)
+                        # No Arm64 wheel, so the Arm server builds it from source and uses its pure-Python version (same answers)
