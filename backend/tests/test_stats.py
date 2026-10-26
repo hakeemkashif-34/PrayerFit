@@ -9,11 +9,24 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app import admin
-from app.models import BusyCheckJob, MasjidSource, NightlyJob, UpdateJob, UsageStats, User, UserSettings
+from app.masjid_times.auto_link import auto_link
+from app.masjid_times.mawaqit_list import ListRow, save_rows
+from app.models import (
+    BusyCheckJob,
+    Masjid,
+    MasjidSource,
+    NightlyJob,
+    UpdateJob,
+    UsageStats,
+    User,
+    UserSettings,
+)
 from app.stats import counts, save_daily_stats
 from tests.conftest import new_client, sign_in
 from tests.masjid_helpers import add_masjid, link, user_id
 from tests.setup_helpers import save_setup
+
+NOW = datetime(2026, 10, 26, 12, 0, tzinfo=UTC)
 
 TORONTO = ZoneInfo("America/Toronto")
 EMAILS = ["admin@example.com", "b@example.com", "c@example.com"]
@@ -176,24 +189,79 @@ def test_masjid_times_lists_failing_and_old_reads(db, fake_google, fake_mawaqit,
     assert all(p["source"] == "mawaqit" and p["last_success_at"] for p in problems)
 
 
-def test_masjids_that_arent_linked_yet_are_listed_with_their_user_counts(db, fake_google, fake_mawaqit, admin_email):
-    make_users(db, fake_google, finished=0)
-    kma, omar, linked = add_masjid(db, "Kanata Muslim Association"), add_masjid(db, "Jamia Omar"), add_masjid(db, "Linked Masjid")
-    link(db, linked, "linked")
+def pick(db, masjids: list) -> None:
+    """user-0, user-1, ... pick these masjids as their main masjid, in order."""
     with Session(db) as session:
-        for n, masjid in enumerate([kma, kma, omar]):
+        for n, masjid in enumerate(masjids):
             row = session.scalars(select(UserSettings).where(UserSettings.user_id == user_id(db, f"user-{n}"))).first()
             if row is None:
                 row = UserSettings(user_id=user_id(db, f"user-{n}"), optional_saved=False, arrive_early_minutes=0)
                 session.add(row)
             row.main_masjid_choice, row.main_masjid_id = "masjid", masjid
         session.commit()
+
+
+def test_masjids_with_no_match_are_listed_with_their_user_counts_and_why(db, fake_google, fake_mawaqit, admin_email):
+    make_users(db, fake_google, finished=0)
+    kma, omar, linked = add_masjid(db, "Kanata Muslim Association"), add_masjid(db, "Jamia Omar", 45.31, -75.83), add_masjid(db, "Linked Masjid")
+    link(db, linked, "linked")
+    # 2 listed masjids within 100 m of Jamia Omar, so it wasn't linked.
+    with Session(db) as session:
+        save_rows(session, [ListRow("id/1", "Jami Omar", 45.3105, -75.83), ListRow("id/2", "Omar Centre", 45.3095, -75.83)], "file", NOW)
+        session.commit()
+    pick(db, [kma, kma, omar])
     # A home user and a masjid nobody picked don't count.
     add_masjid(db, "Nobody's Masjid")
 
     with browser_for(fake_google, 0) as browser:
-        unlinked = browser.get("/admin/stats").json()["unlinked_masjids"]
-    assert unlinked == [
-        {"id": str(kma), "name": "Kanata Muslim Association", "users": 2},
-        {"id": str(omar), "name": "Jamia Omar", "users": 1},
+        found = browser.get("/admin/stats").json()["no_match_masjids"]
+    assert found == [
+        {"id": str(kma), "name": "Kanata Muslim Association", "users": 2, "reason": "No listed masjid within 200 m"},
+        {"id": str(omar), "name": "Jamia Omar", "users": 1, "reason": "2 listed masjids are close, so it wasn't linked"},
+    ]
+
+
+def test_a_masjid_unlinked_by_hand_says_so_and_an_address_is_never_shown(db, fake_google, admin_email):
+    make_users(db, fake_google, finished=0)
+    kma = add_masjid(db, "Kanata Muslim Association")
+    link(db, kma, "kma-kanata")
+    with Session(db) as session:
+        typed = Masjid(source="user", address="12 Private Street, Ottawa", latitude=45.2, longitude=-75.9)
+        session.add(typed)
+        session.commit()
+        typed_id = typed.id
+        admin.unlink_mawaqit(session, str(kma), NOW)
+    pick(db, [kma, typed_id])
+
+    with browser_for(fake_google, 0) as browser:
+        found = browser.get("/admin/stats").json()["no_match_masjids"]
+    assert [(m["name"], m["reason"]) for m in found] == [
+        ("Kanata Muslim Association", "Unlinked by hand"),
+        ("(no name, picked by address)", "No listed masjid within 200 m"),
+    ]
+    assert "Private Street" not in json.dumps(found)
+
+
+def test_automatic_links_are_listed_for_spot_checks(db, fake_google, admin_email):
+    make_users(db, fake_google, finished=0)
+    kma, mine = add_masjid(db, "Kanata Masjid", 45.3561, -75.9283), add_masjid(db, "My Masjid", 45.4, -75.6)
+    nobody = add_masjid(db, "Picked In Setup Only", 45.32605, -75.71983)
+    link(db, mine, "my-masjid")
+    with Session(db) as session:
+        save_rows(session, [
+            ListRow("id/9793", "Kanata Muslim Association", 45.356128, -75.9283718),
+            ListRow("id/14718", "MAC QIC", 45.326052, -75.7198339),
+        ], "file", NOW)
+        session.commit()
+        for masjid in (kma, nobody):
+            auto_link(session, session.get(Masjid, masjid), NOW)
+        session.commit()
+    pick(db, [kma, kma, mine])
+
+    with browser_for(fake_google, 0) as browser:
+        found = browser.get("/admin/stats").json()["auto_links"]
+    assert sorted((m["name"], m["list_name"], m["mawaqit_url"], m["distance_m"], m["users"]) for m in found) == [
+        ("Kanata Masjid", "Kanata Muslim Association", "https://mawaqit.net/en/id/9793", 6, 2),
+        # Linked when someone picked it in setup, but nobody saved it yet.
+        ("Picked In Setup Only", "MAC QIC", "https://mawaqit.net/en/id/14718", 0, 0),
     ]
