@@ -408,7 +408,7 @@ I compared 3 ways to host it on my Azure for Students credit ($100 for 12 months
 
 | | Linux VM + Docker Compose | Azure Container Apps | App Service |
 |---|---|---|---|
-| Cost | VM (B2ats v2) and a 64 GB disk are in the free tier. Only the static public IP uses credit, about $3 to $4 a month | Free request grant, but the always-on worker uses vCPU time all day, and Postgres needs Azure Database for PostgreSQL (free for 12 months, then paid) | Free F1 has no always-on and no background worker. B1 is about $13 a month, which runs past $100 |
+| Cost | VM (B2pts v2, Arm64) and a 64 GB disk are in the free tier. Only the static public IP uses credit, about $3 to $4 a month | Free request grant, but the always-on worker uses vCPU time all day, and Postgres needs Azure Database for PostgreSQL (free for 12 months, then paid) | Free F1 has no always-on and no background worker. B1 is about $13 a month, which runs past $100 |
 | Effort | Lowest. Same compose file as my laptop | New config for every service, plus a managed database | Same Postgres problem, and the worker needs a second app |
 | Skills | Linux (SSH, firewall, cron, swap, updates) and Cloud (VM, network rules, public IP, DNS, budgets) | Cloud only | Cloud only |
 
@@ -427,25 +427,29 @@ The VM covers both skills from my job postings and costs about $45 of the $100 o
 
 Only Caddy is reachable from the internet, on ports 80 and 443. Postgres has no public port.
 
+The VM is Arm64, not x86 like my laptop. Every image in the compose files (Postgres, Python, Node, nginx, and Caddy) has an Arm64 version, and Docker picks it by itself, so nothing changes in the files. The one difference: `timezonefinder` has no ready-made Arm64 package, so on the server pip builds it from source. There's no C compiler in the `python:3.13-slim` image, so it uses its pure-Python version instead of its C part. It gives the same time zones, a little slower, and it's only used when someone saves an address.
+
 ### 1. Azure portal
 
 1. **Budget first.** Search for **Cost Management**, open **Budgets**, and click **Add**. Scope: the Azure for Students subscription. Amount: $10 a month. Alert: 50% of actual cost, to my email. This is free and warns me early if something starts costing more than expected.
-2. **Resource group.** Search for **Resource groups** and click **Create**. Name: `prayerfit-rg`. Region: **Canada Central**. If Carleton's policy blocks it ("disallowed by policy"), try **Canada East**, then one of the regions the error lists.
+2. **Resource group.** Search for **Resource groups** and click **Create**. Name: `prayerfit`. Region: **Canada Central**. My Azure for Students subscription only allows 5 regions: `belgiumcentral`, `denmarkeast`, `canadacentral`, `germanywestcentral`, and `norwayeast`. Canada Central is the only one in Canada.
 3. **The VM.** Search for **Free services**, find **Linux Virtual Machine**, and click **Create**, so the free sizes are offered. On the **Basics** tab:
-   a) Resource group: `prayerfit-rg`. Name: `prayerfit-vm`. Region: the same as the resource group.
-   b) Availability options: **No infrastructure redundancy required**. Security type: **Standard**.
-   c) Image: **Ubuntu Server 24.04 LTS - x64 Gen2**.
-   d) Size: **Standard_B2ats_v2** (2 vCPUs, 1 GiB, marked free services eligible). If it isn't offered, use **Standard_B1s**.
-   e) Authentication type: **SSH public key**. Username: `azureuser`. Key: **Generate new key pair**, named `prayerfit-key`.
-   f) Public inbound ports: **Allow selected ports**, and select only **SSH (22)**.
+   a) Resource group: `prayerfit`. Name: `prayerfit`. Region: **(Canada) Canada Central**.
+   b) Availability options: **No infrastructure redundancy required**.
+   c) Security type: **Standard**. B2pts v2 doesn't support **Trusted launch**, so the size can't be picked until this is Standard.
+   d) Image: **Ubuntu Server 24.04 LTS - Arm64 Gen2**.
+   e) Size: **Standard_B2pts_v2** (Arm64, 2 vCPUs, 1 GiB, free services eligible). In Canada Central, B2ats v2 and B1s both showed "NotAvailableForSubscription", so the Arm one is the free size left.
+   f) Authentication type: **SSH public key**. Username: `azureuser`. Key: **Generate new key pair**, named `prayerfit-key`.
+   g) Public inbound ports: **Allow selected ports**, and select **SSH (22)**, **HTTP (80)**, and **HTTPS (443)**.
 4. **Disks** tab: OS disk type **Premium SSD**, size **64 GiB (P6)**, which is the free one. Check **Delete with VM**.
-5. **Networking** tab: Public IP: **Create new**, name `prayerfit-ip`, SKU **Standard**, assignment **Static**. Check **Delete public IP and NIC when VM is deleted**.
+5. **Networking** tab: Public IP: **Create new** (the default name is `prayerfit-ip`), SKU **Standard**, assignment **Static**. Check **Delete public IP and NIC when VM is deleted**.
 6. **Management** tab: Auto-shutdown **off**, since the worker has to run all night.
 7. **Review + create**, then **Create**. Download the private key (`prayerfit-key.pem`) when asked. Azure only offers it once. Keep it out of the repo.
 8. **The free address.** Open the VM, click the public IP, then **Configuration**. DNS name label: `prayerfit`. Save. The site's address is now `prayerfit.<region>.cloudapp.azure.com`, like `prayerfit.canadacentral.cloudapp.azure.com`.
-9. **Open ports 80 and 443.** In the VM, open **Networking** (or **Network settings**), then **Create port rule > Inbound port rule**:
-   a) Destination port ranges `80,443`, protocol **Any** (443 over UDP is HTTP/3), action **Allow**, priority `310`, name `web`.
-   b) Edit the existing SSH rule: Source **My IP address**, so only my own internet connection can try to SSH in. If my IP changes (a new Wi-Fi network), update this rule.
+9. **Lock down SSH.** Ports 22, 80, and 443 were opened when the VM was made, all from any address. In the VM, open **Networking** (or **Network settings**):
+   a) Edit the SSH (22) rule: Source **My IP address**, so only my own internet connection can try to SSH in. If my IP changes (a new Wi-Fi network), update this rule.
+   b) Leave the HTTP (80) and HTTPS (443) rules open to everyone. Caddy needs port 80 for the Let's Encrypt check.
+   c) Optional: the HTTPS rule is TCP only. HTTP/3 uses UDP on 443, so for it, add a rule with destination port `443`, protocol **UDP**, action **Allow**. Without it, browsers just use HTTP/2.
 10. **The next day:** open **Cost Management > Cost analysis** and check that only the public IP shows a cost.
 
 ### 2. The server
