@@ -842,7 +842,7 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 9. **`test_jumuah_pick_and_chooser.py`**: the Jumuah pick endpoint, the slots the question shows (start to end with the Jumuah length, the 1st Jumuah pre-selected, a masjid setup hasn't saved yet, no Google or ORS calls), and that there's no commute time setting.
 10. **`test_ors.py`**, **`test_optional_settings.py`**, **`test_update_jobs.py`**, **`test_admin.py`**, and **`test_worker.py`** cover the rest.
 11. **`test_migrations.py`**: goes back to milestone 4's tables, adds a user with a masjid, a short name, and Jumuah masjids, upgrades, and checks it all survived. Another test does the same from 0005 to 0006 and checks the Jumuah "how early" was copied.
-12. **Playwright**: the 2 setup pages with Back, the Jumuah question (last on the Required page, the 1st Jumuah pre-selected, clicking a block, the keyboard, the Jumuah length, skipped at home or with no Jumuah times, a different masjid, a phone screen, and on Settings), Settings as one card with each item edited on its own, the sign-in-again banner and Not now, the optional page filled in and skipped, the colour dropdown with a mouse and with the keyboard (with the tick moving), the Settings page editing how early, the short name, colours, and Jumuah masjids in order, the "Adding your prayers..." message, the new tab that opens Google Calendar (faked), a blocked new tab, both tabs showing the error when the update or the finish fails, returning users landing on Settings with no redirect, the landing page's text and hadith (in light and dark mode), the bigger text size, and the "Adding" page (one line each from 320px to 1280px wide, the week animation in the picked colour, and the spinner when motion is off).
+12. **Playwright**: the 2 setup pages with Back, the Jumuah question (last on the Required page, the 1st Jumuah pre-selected, clicking a block, the keyboard, the Jumuah length, skipped at home or with no Jumuah times, a different masjid, a phone screen, and on Settings), Settings as 2 cards with each item edited on its own, the sign-in-again banner and Not now, the optional page filled in and skipped, the colour dropdown with a mouse and with the keyboard (with the tick moving), the Settings page editing how early, the short name, colours, and Jumuah masjids in order, the "Adding your prayers..." message, the new tab that opens Google Calendar (faked), a blocked new tab, both tabs showing the error when the update or the finish fails, returning users landing on Settings with no redirect, the landing page's text and hadith (in light and dark mode), the bigger text size, and the "Adding" page (one line each from 320px to 1280px wide, the week animation in the picked colour, and the spinner when motion is off).
 
 ### 15. How to check it works
 
@@ -911,7 +911,7 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 5. **Skipped** when the user prays at home or their masjid has no Jumuah times yet. Then Next saves the 1st Jumuah at their first Jumuah masjid. Someone at home has no Jumuah masjid, so there's nothing to save, and the rule uses the earliest Jumuah that fits if they add one later.
 6. **Asking before saving**: on page 1 the masjid isn't saved until Next, so the website sends the masjid IDs it's about to save (`GET /jumuah/slots?masjid_id=...`), following the same "main masjid is the first Jumuah masjid" rule as the backend. It's a GET because it only reads saved MAWAQIT times: no Google, no OpenRouteService.
 7. Each block is a real radio button (hidden, with the block as its label), so arrow keys and screen readers work.
-8. **Settings is one card** with **Required** (location, main masjid, weekly prayers, Jumuah pick, with the same view as setup) and **Optional** (Jumuah masjids, short name, both "how early" times, both colours). Each has its own Edit and saves on its own. `PUT /settings/optional` takes every optional answer, so the small editors send the saved answers with just their one change.
+8. **Settings has 2 cards** (section 27): **Required** (location, main masjid, weekly prayers, Jumuah pick, with the same view as setup) and **Optional** (Jumuah masjids, short name, both "how early" times, both colours). Each has its own Edit and saves on its own. `PUT /settings/optional` takes every optional answer, so the small editors send the saved answers with just their one change.
 
 ### 23. Prayer block lengths
 
@@ -933,7 +933,7 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 2. **Wider pages**: Settings and the "Adding your prayers" page went from 600px and 440px wide to 880px and 680px, setup's questions from 620px to 900px, and the landing and setup frames to 1240px. Phones still get a 16px gutter on each side.
 3. **Dark mode**: every colour is a token at the top of `styles.css` (`--text`, `--card`, `--field` for text boxes, `--on-green` for text on a green button, and so on). A `prefers-color-scheme: dark` block only changes the tokens, so it follows the phone or computer's setting. I replaced the hard-coded `#fff` backgrounds with `--field` so nothing stays white in dark mode.
 4. **The landing page**: "Welcome to Muslim Calendar", "Keep your prayer times up to date, every day.", then the hadith. The line about only having access to the Prayers calendar is gone.
-5. **The hadith stands out**: it's the biggest text on the page, in a serif, in a warm cream block with a gold bar on the left, and its source ("Sahih al-Bukhari 527") is on its own line in small capitals. Gold is only used here, so it doesn't look like the rest of the app's green. Dark mode has its own darker gold block with light text.
+5. **The hadith stands out**: it's the biggest text on the page, in a serif, in a warm cream block with a gold bar on the left, and its source ("Sahih al-Bukhari 527") is on its own line underneath, smaller and bold. Gold is only used here, so it doesn't look like the rest of the app's green. Dark mode has its own darker gold block with light text.
 6. **Why Amiri**: the hadith has the ﷺ sign (U+FDFA), and most fonts, including the one the site uses, don't have it, so it showed as an empty box. Amiri is a free serif with both English letters and ﷺ. It comes from npm (`@fontsource/amiri`) and is served by our own site, like Plus Jakarta Sans. Only the weight I use (400) is loaded, and the browser only downloads the parts of it the page needs.
 7. **A bug this caught**: once the location question stayed on screen (section 21), "Saving…" never went away after the location saved, and the address box stayed disabled. It used to disappear after saving, so it never had to reset. It resets now.
 
@@ -946,3 +946,20 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 5. The animation is hidden from screen readers (`aria-hidden`). The heading already says what's happening.
 6. Nothing else changed: once the update finishes, the tab still goes to Google Calendar (section 13).
 
+### 27. Frontend polish
+
+1. **The plan**: a calm tool people check every day, so the page stays quiet and the one bold thing is the hadith on the landing page. The colours are 5 tokens at the top of `styles.css`:
+   a) Masjid green `#1f5f4a` for buttons and links.
+   b) Ink `#17201c` for values and headings.
+   c) Muted `#5c6862` for labels and hints.
+   d) Paper `#f5f7f6` for the background.
+   e) Brass for the hadith block only.
+   Plus Jakarta Sans is the text font. Amiri is only for the hadith. Both are served from our own site.
+2. **Labels and values never look alike**: a label like "Location" is small, semibold, and muted. The value under it is bigger and darker. A test checks the size and colour.
+3. **No all-caps labels**: the setting labels and the hadith source used `text-transform: uppercase`. They're sentence case now. I also took out the middle dots (" · ") between a masjid's name and its distance, in the footer, and in "Setup · Step 1 of 2". The distance is its own smaller line now (`.hint.detail`).
+4. **Buttons look clickable**: green with white text, darker on hover, pressed down 1px on click. Secondary buttons have an outline. Every button and link gets a 3px focus ring when reached with the keyboard (`:focus-visible`), so mouse clicks don't show it.
+5. **Settings has 2 cards**: Required on the left and Optional on the right from 1000px wide, and Required first on a phone. They don't look the same on purpose: Required is a white card with a shadow, Optional is just an outline, since it's the less important one.
+6. **The Jumuah pick** on Settings reads "1st Jumuah at Kanata Muslim Association". "if it fits your calendar" is gone, because the weekly rule (section 22) already handles a clash.
+7. **Opening and closing an item**: `Row` in `SettingsPage.tsx` remembers the row's height, and when it switches between showing and editing, it animates from the old height to the new one with the Web Animations API (`el.animate`, 0.22 seconds). The new content fades in with CSS. Only rows the user opened or closed get the fade, so nothing moves on page load. With motion turned off, there's no animation at all, and button transitions are off too.
+8. **Colours as swatches**: the saved prayer and drive colours on Settings show their Google colour as a small circle next to the name.
+9. **Checked with screenshots** of every page on a computer and a phone, in light and dark mode.

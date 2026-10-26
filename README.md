@@ -118,7 +118,7 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 1. `docker compose up --build`
 2. Open http://localhost:8000 and click **Sign in with Google**.
 3. Pick your test account. Google warns that the app isn't verified. Click **Continue**. Leave the calendar box ticked and allow.
-4. You land back on the website, on page 1 of 2. The 2 pages are listed on the left (on a phone, "Setup · Step 1 of 2" is at the top).
+4. You land back on the website, on page 1 of 2. The 2 pages are listed on the left (on a phone, "Step 1 of 2" is at the top).
 5. **Required** (page 1) has 4 questions on one page, all shown at once:
    a) **What's your location?** Start typing your address. Suggestions show up in a dropdown once you stop typing. Pick yours. It's saved right away, and the time zone comes from it. Postal codes aren't shown or saved, since OpenStreetMap's are often wrong in Canada.
    b) **Which masjid do you usually go to?** Start typing its name. Suggestions show the masjid's name and its distance from home, closest first. If yours doesn't come up, type its address instead and pick that. Press **I pray at home** if you do: every prayer is at home and there's no weekly grid.
@@ -133,7 +133,7 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 
 ### 4. Change a setting
 
-Coming back to the website later opens the **Settings** page. It never sends you to Google Calendar on its own. Press **Open Google Calendar** to go there. Settings is one card with 2 sections. **Required** has your location, main masjid, weekly prayers, and your Jumuah pick (the same calendar view as setup). **Optional** has your Jumuah masjids, the short name, both "how early" times, and both colours. Press **Edit** next to any one of them, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
+Coming back to the website later opens the **Settings** page. It never sends you to Google Calendar on its own. Press **Open Google Calendar** to go there. Settings has 2 cards, side by side on a computer and one above the other on a phone. **Required** has your location, main masjid, weekly prayers, and your Jumuah pick (the same calendar view as setup). **Optional** has your Jumuah masjids, the short name, both "how early" times, and both colours. Press **Edit** next to any one of them, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
 
 If you move to another time zone, the Prayers calendar's time zone changes too.
 
@@ -280,4 +280,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `170 passed`: 85 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `180 passed`: 90 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
