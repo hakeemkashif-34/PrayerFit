@@ -93,3 +93,9 @@ def get_app_settings() -> AppSettings:
         cookie_secure=_optional("COOKIE_SECURE", "true").lower() != "false",
         session_days=int(_optional("SESSION_DAYS", "30")),
     )
+
+
+def admin_email() -> str | None:
+    """The one email allowed to open /stats. Empty means nobody can."""
+    value = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+    return value or None

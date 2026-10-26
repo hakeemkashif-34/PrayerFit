@@ -15,13 +15,14 @@ from app.config import get_app_settings
 from app.db import get_engine
 from app.geo.errors import OsmServiceError
 from app.google_errors import CalendarAccessMissing, ReauthRequired
-from app.routers import auth, prayer_times, prayers, settings
+from app.routers import auth, prayer_times, prayers, settings, stats
 
 app = FastAPI(title="Muslim Calendar API")
 app.include_router(prayer_times.router)
 app.include_router(auth.router)
 app.include_router(prayers.router)
 app.include_router(settings.router)
+app.include_router(stats.router)
 
 
 @app.exception_handler(ReauthRequired)

@@ -5,6 +5,7 @@ Every minute it runs, in order:
 2. MAWAQIT fetches that are due (each linked masjid, once every 6 hours).
 3. Busy time checks that are due (each user, once every 15 minutes).
 4. Queued calendar updates, like the ones a masjid time change adds.
+5. Today's usage counts, saved once a day after 4:00 am.
 Each step has its own try, so one failing doesn't stop the others.
 
     python -m app.worker                 checks every minute for due jobs (the service)
@@ -22,6 +23,7 @@ from app.db import get_engine
 from app.http_client import new_http_client
 from app.masjid_times.scheduler import run_due_fetches
 from app.nightly import run_due_jobs, run_now
+from app.stats import save_daily_stats
 from app.update_jobs import run_due_updates
 
 logger = logging.getLogger("app.worker")
@@ -34,6 +36,7 @@ STEPS = (
     ("masjid times", run_due_fetches),
     ("busy checks", run_due_checks),
     ("calendar updates", run_due_updates),
+    ("usage stats", save_daily_stats),
 )
 
 

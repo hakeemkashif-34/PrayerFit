@@ -6,6 +6,7 @@ these, so a user can't link the wrong page for everyone.
     python -m app.admin unlink-mawaqit --masjid <masjid id>
     python -m app.admin fetch-mawaqit --masjid <masjid id>
     python -m app.admin set-jumuah-length --masjid <masjid id> --minutes 40
+    python -m app.admin stats            usage counts only, never anyone's details
 
 With Docker: docker compose exec backend python -m app.admin list-masjids
 """
@@ -24,6 +25,7 @@ from app.jumuah import DEFAULT_JUMUAH_MINUTES
 from app.masjid_times.mawaqit import BadLink, slug_from_link
 from app.masjid_times.scheduler import run_fetch
 from app.models import Masjid, MasjidDayTimes, MasjidSource
+from app.stats import counts, stats_lines
 from app.update_jobs import queue_update, users_of_masjid
 
 
@@ -120,12 +122,15 @@ def main(argv: list[str] | None = None) -> None:
     length.add_argument("--masjid", required=True)
     # A string, so "40.5" gets this command's own message instead of argparse's.
     length.add_argument("--minutes", required=True)
+    commands.add_parser("stats", help="how many people signed up, finished setup, are active, and are new")
     args = parser.parse_args(argv)
 
     now = datetime.now(UTC)
     with Session(get_engine(), expire_on_commit=False) as db:
         if args.command == "list-masjids":
             print("\n".join(list_masjids(db)))
+        elif args.command == "stats":
+            print("\n".join(stats_lines(counts(db, now))))
         elif args.command == "link-mawaqit":
             print(link_mawaqit(db, args.masjid, args.url, now))
         elif args.command == "unlink-mawaqit":

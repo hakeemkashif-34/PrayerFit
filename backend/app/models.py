@@ -401,6 +401,20 @@ class BusyCheckJob(Base):
     error: Mapped[str | None] = mapped_column(Text)
 
 
+class UsageStats(Base):
+    """The app's usage counts for one day. Numbers only, never anything about a user."""
+
+    __tablename__ = "usage_stats"
+
+    # The date in the app's time zone. One row per day.
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    signed_up: Mapped[int] = mapped_column(Integer)
+    finished_setup: Mapped[int] = mapped_column(Integer)
+    active: Mapped[int] = mapped_column(Integer)
+    new_this_week: Mapped[int] = mapped_column(Integer)
+    saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class GeocodeCache(Base):
     """Photon answers, so the same search is never sent twice.
 
