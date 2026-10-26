@@ -84,3 +84,19 @@ jobs:
           name: playwright-report
           path: web/playwright-report
           retention-days: 7
+
+  # The server's setup. Catches a broken docker-compose.prod.yml or a typo
+  # in a deploy script before it reaches the server. Nothing is started.
+  deploy-files:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # The template has placeholders only, which is all "config" needs.
+      - name: Check the production Compose file
+        run: docker compose --env-file deploy/production.env.example -f docker-compose.yml -f docker-compose.prod.yml config -q
+
+      - name: Check the deploy scripts
+        run: |
+          for script in deploy/*.sh; do bash -n "$script"; done
+          shellcheck deploy/*.sh

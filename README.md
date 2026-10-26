@@ -14,7 +14,7 @@ See [PrayerFit_App.md](PrayerFit_App.md) for the full product description and [L
 6. Addresses and masjids: the free Photon search, built on OpenStreetMap data
 7. Masjid times: each masjid's public MAWAQIT page, with calculated times when it can't be read
 8. Drive times: OpenRouteService's free plan (no live traffic)
-9. Runs with Docker Compose
+9. Runs with Docker Compose, on an Azure VM in Canada with Caddy for HTTPS
 10. Tests: pytest for the backend, Playwright for the website, both run by GitHub Actions on every push and pull request
 
 ## Run it with Docker
@@ -398,6 +398,185 @@ Through nginx, every endpoint below is under `/api` (like `/api/me`), except the
 
 POST and PUT requests need an `Origin` header matching `APP_ORIGIN`. Browsers send it on their own. With curl, add `-H "Origin: http://localhost:8000"`.
 
+## Deploy
+
+PrayerFit runs on one small Linux VM on Azure, with the same Docker Compose setup as my laptop plus Caddy in front for HTTPS. It's at https://prayerfit.canadacentral.cloudapp.azure.com until I switch to prayerfit.me.
+
+### Why a VM
+
+I compared 3 ways to host it on my Azure for Students credit ($100 for 12 months, no credit card):
+
+| | Linux VM + Docker Compose | Azure Container Apps | App Service |
+|---|---|---|---|
+| Cost | VM (B2pts v2, Arm64) and a 64 GB disk are in the free tier. Only the static public IP uses credit, about $3 to $4 a month | Free request grant, but the always-on worker uses vCPU time all day, and Postgres needs Azure Database for PostgreSQL (free for 12 months, then paid) | Free F1 has no always-on and no background worker. B1 is about $13 a month, which runs past $100 |
+| Effort | Lowest. Same compose file as my laptop | New config for every service, plus a managed database | Same Postgres problem, and the worker needs a second app |
+| Skills | Linux (SSH, firewall, cron, swap, updates) and Cloud (VM, network rules, public IP, DNS, budgets) | Cloud only | Cloud only |
+
+The VM covers both skills from my job postings and costs about $45 of the $100 over 12 months.
+
+### What runs on the server
+
+| File | What it does |
+|---|---|
+| `docker-compose.prod.yml` | Added on top of `docker-compose.yml`. Adds Caddy, restarts every service after a crash or reboot, limits log size, and takes away the public ports of `db` and `web` |
+| `deploy/Caddyfile` | Caddy gets a free Let's Encrypt certificate for `SITE_ADDRESS`, renews it, sends http to https, and moves any other name to `APP_ORIGIN` |
+| `deploy/production.env.example` | The server's `.env`, with placeholders only. The real `.env` only ever lives on the server |
+| `deploy/server-setup.sh` | Run once: Docker, a 2 GB swap file, Toronto time, the ufw firewall, SSH keys only, automatic security updates, and the daily backup |
+| `deploy/backup.sh` | Saves the database to `~/prayerfit-backups/` every day at 3:30 am and keeps 14 days |
+| `deploy/update.sh` | After I merge a PR: pulls `main`, rebuilds, restarts, and checks `/api/health` |
+
+Only Caddy is reachable from the internet, on ports 80 and 443. Postgres has no public port.
+
+The VM is Arm64, not x86 like my laptop. Every image in the compose files (Postgres, Python, Node, nginx, and Caddy) has an Arm64 version, and Docker picks it by itself, so nothing changes in the files. The one difference: `timezonefinder` has no ready-made Arm64 package, so on the server pip builds it from source. There's no C compiler in the `python:3.13-slim` image, so it uses its pure-Python version instead of its C part. It gives the same time zones, a little slower, and it's only used when someone saves an address.
+
+### 1. Azure portal
+
+1. **Budget first.** Search for **Cost Management**, open **Budgets**, and click **Add**. Scope: the Azure for Students subscription. Amount: $10 a month. Alert: 50% of actual cost, to my email. This is free and warns me early if something starts costing more than expected.
+2. **Resource group.** Search for **Resource groups** and click **Create**. Name: `prayerfit`. Region: **Canada Central**. My Azure for Students subscription only allows 5 regions: `belgiumcentral`, `denmarkeast`, `canadacentral`, `germanywestcentral`, and `norwayeast`. Canada Central is the only one in Canada.
+3. **The VM.** Search for **Free services**, find **Linux Virtual Machine**, and click **Create**, so the free sizes are offered. On the **Basics** tab:
+   a) Resource group: `prayerfit`. Name: `prayerfit`. Region: **(Canada) Canada Central**.
+   b) Availability options: **No infrastructure redundancy required**.
+   c) Security type: **Standard**. B2pts v2 doesn't support **Trusted launch**, so the size can't be picked until this is Standard.
+   d) Image: **Ubuntu Server 24.04 LTS - Arm64 Gen2**.
+   e) Size: **Standard_B2pts_v2** (Arm64, 2 vCPUs, 1 GiB, free services eligible). In Canada Central, B2ats v2 and B1s both showed "NotAvailableForSubscription", so the Arm one is the free size left.
+   f) Authentication type: **SSH public key**. Username: `azureuser`. Key: **Generate new key pair**, named `prayerfit-key`.
+   g) Public inbound ports: **Allow selected ports**, and select **SSH (22)**, **HTTP (80)**, and **HTTPS (443)**.
+4. **Disks** tab: OS disk type **Premium SSD**, size **64 GiB (P6)**, which is the free one. Check **Delete with VM**.
+5. **Networking** tab: Public IP: **Create new** (the default name is `prayerfit-ip`), SKU **Standard**, assignment **Static**. Check **Delete public IP and NIC when VM is deleted**.
+6. **Management** tab: Auto-shutdown **off**, since the worker has to run all night.
+7. **Review + create**, then **Create**. Download the private key (`prayerfit-key.pem`) when asked. Azure only offers it once. Keep it out of the repo.
+8. **The free address.** Open the VM, click the public IP, then **Configuration**. DNS name label: `prayerfit`. Save. The site's address is now `prayerfit.<region>.cloudapp.azure.com`, like `prayerfit.canadacentral.cloudapp.azure.com`.
+9. **Lock down SSH.** Ports 22, 80, and 443 were opened when the VM was made, all from any address. In the VM, open **Networking** (or **Network settings**):
+   a) Edit the SSH (22) rule: Source **My IP address**, so only my own internet connection can try to SSH in. If my IP changes (a new Wi-Fi network), update this rule.
+   b) Leave the HTTP (80) and HTTPS (443) rules open to everyone. Caddy needs port 80 for the Let's Encrypt check.
+   c) Optional: the HTTPS rule is TCP only. HTTP/3 uses UDP on 443, so for it, add a rule with destination port `443`, protocol **UDP**, action **Allow**. Without it, browsers just use HTTP/2.
+10. **The next day:** open **Cost Management > Cost analysis** and check that only the public IP shows a cost.
+
+### 2. The server
+
+On my laptop, connect with the key:
+
+```bash
+chmod 600 ~/Downloads/prayerfit-key.pem
+ssh -i ~/Downloads/prayerfit-key.pem azureuser@prayerfit.canadacentral.cloudapp.azure.com
+```
+
+On the server:
+
+```bash
+git clone https://github.com/hakeemkashif-34/prayerfit.git ~/prayerfit
+cd ~/prayerfit
+sudo deploy/server-setup.sh
+exit                     # log out and back in, so docker works without sudo
+```
+
+If the repo is private, `git clone` asks for a login. Make a read-only key on the server instead: `ssh-keygen -t ed25519 -f ~/.ssh/github -N ""`, paste `~/.ssh/github.pub` into GitHub under the repo's **Settings > Deploy keys** (leave write access off), then clone with `GIT_SSH_COMMAND="ssh -i ~/.ssh/github" git clone git@github.com:hakeemkashif-34/prayerfit.git ~/prayerfit` and run `git config core.sshCommand "ssh -i ~/.ssh/github"` inside it.
+
+SSH in again and fill in `.env`:
+
+```bash
+cd ~/prayerfit
+cp deploy/production.env.example .env
+chmod 600 .env
+openssl rand -hex 32      # the Postgres password, used twice in .env
+docker run --rm python:3.13-slim sh -c "pip -q install cryptography && python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+nano .env
+```
+
+In `.env`:
+1. Paste the password into `POSTGRES_PASSWORD` and `DATABASE_URL`, and the key into `TOKEN_ENCRYPTION_KEY`. Save both somewhere safe, like a password manager, not the repo.
+2. If the address isn't `prayerfit.canadacentral.cloudapp.azure.com`, change `SITE_ADDRESS`, `APP_ORIGIN`, and `GOOGLE_REDIRECT_URI` to match.
+3. Copy `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `ORS_API_KEY` from my laptop's `.env`.
+4. Put my real email in `OSM_CONTACT_EMAIL` and `ADMIN_EMAIL`. `ADMIN_EMAIL` must be the Google account I sign in with, so I can open `/stats`.
+
+Then start it:
+
+```bash
+deploy/update.sh
+```
+
+The first build takes a few minutes. Caddy gets the certificate within a minute of starting, and the script ends by printing `{"status":"ok","database":"ok"}`.
+
+### 3. Google Cloud Console
+
+In the same project as my laptop:
+
+1. **Clients**, then my web client:
+   a) Authorized JavaScript origins: add `https://prayerfit.canadacentral.cloudapp.azure.com`.
+   b) Authorized redirect URIs: add `https://prayerfit.canadacentral.cloudapp.azure.com/auth/google/callback`. Keep the localhost one for my laptop. Save. It can take a few minutes to work.
+2. **Branding**:
+   a) Application home page: `https://prayerfit.canadacentral.cloudapp.azure.com`
+   b) Application privacy policy link: `https://prayerfit.canadacentral.cloudapp.azure.com/privacy`
+   c) Authorized domains: add `cloudapp.azure.com` if Google accepts it. If it refuses, leave a), b), and c) empty until prayerfit.me. Testing mode doesn't need them.
+3. **Audience**: leave the publishing status as **Testing**. Add each early user's Gmail under **Test users** (up to 100). Only test users can sign in, and their sign-in expires every 7 days, so they see **Sign in again** once a week. Publishing waits for prayerfit.me (below).
+
+### 4. Check it works
+
+1. Open https://prayerfit.canadacentral.cloudapp.azure.com. The browser shows a lock.
+2. Sign in with my test account, finish setup, and check that the Prayers calendar fills in Google Calendar.
+3. Open `/stats` with my account.
+4. On the server:
+
+```bash
+cd ~/prayerfit
+# dc is a shortcut from server-setup.sh for:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml
+dc ps                          # 5 services, all "Up"
+dc logs worker | head          # "Worker started. Checking for due jobs every 60 seconds."
+sudo ufw status                # only 22, 80, 443
+deploy/backup.sh               # a backup right now, in ~/prayerfit-backups/
+```
+
+From my laptop, `ssh -o PubkeyAuthentication=no azureuser@prayerfit.canadacentral.cloudapp.azure.com` should fail with `Permission denied (publickey)`.
+
+### After merging a PR
+
+```bash
+ssh -i ~/Downloads/prayerfit-key.pem azureuser@prayerfit.canadacentral.cloudapp.azure.com
+cd ~/prayerfit && deploy/update.sh
+```
+
+Migrations run by themselves when the backend starts. If I changed `.env`, run `deploy/update.sh` too, so the containers pick it up.
+
+### Logs, backups, and restoring
+
+```bash
+dc logs -f --tail 100 backend      # or worker, caddy, web, db
+ls -lh ~/prayerfit-backups/        # one file per day, 14 days kept
+cat ~/prayerfit-backups.log        # what the 3:30 am backup printed
+```
+
+The backups sit on the same disk as the database, so they cover mistakes (a bad migration, a deleted table), not a lost VM. Now and then I copy the newest one to my laptop: `scp -i ~/Downloads/prayerfit-key.pem azureuser@prayerfit.canadacentral.cloudapp.azure.com:prayerfit-backups/prayerfit-YYYY-MM-DD.sql.gz .`
+
+To restore one, stop the app so nothing writes during the restore, then load the file. Each backup drops and recreates every table first.
+
+```bash
+dc stop backend worker
+gunzip -c ~/prayerfit-backups/prayerfit-YYYY-MM-DD.sql.gz | dc exec -T db sh -c 'psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+dc start backend worker
+```
+
+### Switching to prayerfit.me
+
+Once I have the domain from the GitHub Student Pack:
+
+1. In the domain's DNS settings (Namecheap for .me): an **A record** for `@` pointing to the VM's static IP (shown on the VM's overview page), and a **CNAME record** for `www` pointing to `prayerfit.me.`. Wait until `nslookup prayerfit.me` shows the IP.
+2. On the server, in `.env`:
+
+```bash
+SITE_ADDRESS=prayerfit.me, www.prayerfit.me, prayerfit.canadacentral.cloudapp.azure.com
+APP_ORIGIN=https://prayerfit.me
+GOOGLE_REDIRECT_URI=https://prayerfit.me/auth/google/callback
+```
+
+3. In Google Cloud Console, **before** restarting: add `https://prayerfit.me` to Authorized JavaScript origins and `https://prayerfit.me/auth/google/callback` to Authorized redirect URIs.
+4. `deploy/update.sh`. Caddy gets certificates for the new names, and anyone using the old Azure address or `www` is sent to https://prayerfit.me. Everyone signs in once more, since cookies belong to one address.
+5. In Google Cloud Console:
+   a) **Branding**: home page `https://prayerfit.me`, privacy policy `https://prayerfit.me/privacy`, authorized domain `prayerfit.me`.
+   b) Verify that I own prayerfit.me in [Google Search Console](https://search.google.com/search-console) with a DNS TXT record, using the same Google account as the Cloud project.
+   c) **Audience**: click **Publish app**. If Google lists any of my scopes as sensitive, it asks for verification: a short video of the sign-in and how each scope is used, and the privacy page. Until it's approved, users see a "Google hasn't verified this app" warning and there's a 100-user cap. After publishing, sign-ins stop expiring every 7 days.
+6. Update the addresses in this section and in `deploy/production.env.example`.
+
 ## Run the tests
 
 ### Backend
@@ -435,4 +614,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `258 passed`: 129 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `264 passed`: 132 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.

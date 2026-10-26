@@ -29,8 +29,8 @@ test("signed-out users see the welcome, the hadith, and a Sign in with Google ca
   // The line about only having access to the Prayers calendar is gone.
   await expect(page.getByText("Never Gmail")).toHaveCount(0);
   await expect(page.getByText(/only asks for access/)).toHaveCount(0);
-  // No OpenStreetMap data on this page, so no credit footer.
-  await expect(page.getByRole("contentinfo")).toHaveCount(0);
+  // No OpenStreetMap data on this page, so no credit. The footer only links to the privacy policy.
+  await expect(page.getByRole("contentinfo").getByRole("link")).toHaveText(["Privacy"]);
 });
 
 for (const scheme of ["light", "dark"] as const) {

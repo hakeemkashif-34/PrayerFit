@@ -200,6 +200,21 @@ strong {
   flex: 1;
 }
 
+/* The landing page fills the screen by itself. With the footer, the frame does that. */
+.page-with-footer > .landing {
+  min-height: 0;
+}
+
+/* ---- The privacy policy ---- */
+
+.privacy-page h2 {
+  margin-top: 32px;
+}
+
+.privacy-page li {
+  margin-bottom: 8px;
+}
+
 .site-footer {
   display: flex;
   flex-wrap: wrap;

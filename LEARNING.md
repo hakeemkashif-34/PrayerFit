@@ -1507,3 +1507,121 @@ Section 34 simplified this: the /stats page is now total users, a graph of total
    b) It covers the whole height of the words. Amiri's line box is about 1.75 times the font size, with lots of empty room above and below the letters, so a plain background made a tall box with big gaps. As an `inline-block` with `line-height: 1`, the box is just the words, and padding of 0.07em on top and 0.09em at the bottom puts about the same space above and below the letters (I measured 5 to 7px each way in screenshots).
    c) Slightly rounded corners (0.22em), and a little more padding at the sides.
    d) It moves to the next line as a whole, so on a phone it's never split across 2 lines. At 320px wide it still fits.
+
+## Milestone 7: Deploy
+
+### 1. Where things are
+
+| File | What it does |
+|---|---|
+| `docker-compose.prod.yml` | The server's changes on top of `docker-compose.yml` |
+| `deploy/Caddyfile` | HTTPS and the redirect to the main address |
+| `deploy/production.env.example` | The server's `.env`, placeholders only |
+| `deploy/server-setup.sh` | Run once on a fresh Ubuntu VM |
+| `deploy/backup.sh` | The daily database backup |
+| `deploy/update.sh` | Puts the latest `main` on the server |
+| `web/src/PrivacyPage.tsx` | The privacy policy at `/privacy` |
+
+The README's "Deploy" section has every step in the Azure portal, on the server, and in Google Cloud Console, in order.
+
+### 2. Why one Linux VM
+
+1. **Cost**: Azure's free services include 750 hours a month of a B2pts v2 VM (Arm64, 2 vCPUs, 1 GB RAM) and a 64 GB P6 SSD. 750 hours covers a whole month of 1 VM. The only thing that uses credit is the static public IPv4 address, about $3 to $4 a month, so about $45 of the $100 over 12 months.
+2. **Same as my laptop**: it runs the exact same `docker-compose.yml`. Container Apps and App Service would each need the app split into separate pieces, a managed Postgres (free for 12 months, then paid), and a different way to run the worker.
+3. **Skills**: a VM means I do the Linux work myself (SSH keys, a firewall, cron, swap, security updates) on top of the Cloud parts (the VM, network rules, a static IP, a DNS name, a budget).
+4. **Why Arm64**: I planned on B2ats v2 (x86, like my laptop). My Azure for Students subscription only allows 5 regions (`belgiumcentral`, `denmarkeast`, `canadacentral`, `germanywestcentral`, `norwayeast`), and in Canada Central both B2ats v2 and B1s said "NotAvailableForSubscription". B2pts v2 is the Arm64 free size, and it was available. It needs security type **Standard**, since it doesn't support Trusted launch, and the Arm64 Ubuntu image.
+5. **The catch**: if the VM dies, the site is down until I fix it, and I'm the one who installs updates (automatically, below). For a student project with a few users that's fine.
+
+### 3. Running on Arm64
+
+The server's CPU is Arm64, my laptop's is x86. Programs built for one don't run on the other, so I checked every piece:
+
+1. **Images**: Postgres 17, `python:3.13-slim`, `node:22-alpine`, `nginx:1.29-alpine`, and `caddy:2.10-alpine` are all "multi-arch". Each tag holds a version per CPU, and Docker pulls the one that matches. I checked with `docker buildx imagetools inspect`, which listed `linux/arm64/v8` for all 5.
+2. **Python packages**: most packages with C code ship ready-made "wheels" per CPU. I asked pip to download every package for Arm64 Linux and Python 3.13 (`pip download --platform manylinux2014_aarch64 --only-binary=:all:`), and all of them had one except `timezonefinder` 9.2.0, which only has x86 wheels.
+3. **timezonefinder**: without a wheel, pip builds it from its source. Its C part needs a compiler, which `python:3.13-slim` doesn't have, but its `setup.py` catches that error and installs the pure-Python version. To test that path on my x86 machine, I built the backend image with `PIP_NO_BINARY=timezonefinder`, which forces the same source build. It installed with no C files, found the right zones for Ottawa, Vancouver, Halifax, and Regina, and all 437 backend tests that don't need Postgres passed in that image.
+4. **Website build**: Vite uses 2 native tools, Rolldown and Lightning CSS. `package-lock.json` has their `linux-arm64-musl` versions (musl is the C library Alpine uses), so `npm ci` installs the right ones.
+5. **server-setup.sh**: Docker's Ubuntu repo has Arm64 packages, and the script already asks `dpkg --print-architecture` which one to use. Everything else in it (swap, ufw, SSH, updates, cron) doesn't depend on the CPU.
+
+### 4. HTTPS with Caddy
+
+1. Google only allows `https://` redirect URIs (except localhost), and the session cookie is `Secure`, so the site needs HTTPS.
+2. Caddy is a web server that gets a free certificate from Let's Encrypt by itself. When it starts, Let's Encrypt checks that the name really points at this server (it asks for a file over port 80), then gives a certificate that lasts 90 days. Caddy renews it about 30 days before it runs out. No cron job, no certbot.
+3. It also sends every `http://` visit to `https://`.
+4. Caddy only passes requests to `web` (nginx), which is unchanged from my laptop. So the order is: browser, Caddy (HTTPS), nginx (website and `/api`), backend.
+5. The certificates are saved in the `caddy-data` volume. Without it, every restart would ask Let's Encrypt again, and it only gives 5 certificates for the same names a week.
+6. **The redirect to the main address**: `SITE_ADDRESS` can list several names. Any request whose `scheme://host` isn't `APP_ORIGIN` gets a 308 redirect there. That matters after the switch to prayerfit.me: the session cookie only belongs to one address, and the backend refuses POSTs whose `Origin` isn't `APP_ORIGIN`, so the old Azure address would half work without it. I tested both cases with curl: the main address went through, another name got `308` to the main one with the same path.
+
+### 5. The production Compose file
+
+`docker compose -f docker-compose.yml -f docker-compose.prod.yml` merges the 2 files. The second one only lists what's different:
+
+1. `restart: unless-stopped` on every service. After a crash or a reboot (for example, a kernel update at 4:30 am), Docker starts them again. `unless-stopped` means a service I stopped on purpose stays stopped.
+2. `ports: !reset []` on `db` and `web`. On my laptop, `db` publishes 5432 so tests can reach it, and `web` publishes 8000. A normal override can only add ports, not remove them, so `!reset` clears the list. This is important: Docker writes its own firewall rules for published ports, and they go around ufw. If 5432 were published, Postgres would be open to the internet even with ufw on. Only Caddy publishes ports now, and `docker compose ps` shows `5432/tcp` with no `0.0.0.0` in front.
+3. Log limits: 3 files of 10 MB per service. Docker keeps logs forever by default, which would fill the disk slowly.
+4. `SITE_ADDRESS` and `APP_ORIGIN` use `${...:?message}`, so Compose stops with a clear error if `.env` is missing them instead of starting Caddy with a blank address.
+
+### 6. Secrets
+
+1. The real `.env` is only on the server, with `chmod 600` so only my user can read it. The repo has `deploy/production.env.example` with placeholders.
+2. The server gets its own Postgres password (`openssl rand -hex 32`, 64 random hex characters) and its own `TOKEN_ENCRYPTION_KEY`, not the laptop's. Hex is used because characters like `@` or `/` would break `DATABASE_URL`.
+3. If the encryption key is lost, the Google tokens and addresses in the database can't be read, and everyone signs in and enters their address again. So I keep a copy in a password manager.
+4. `ADMIN_EMAIL` on the server is my own Google account, so only I can open `/stats`.
+
+### 7. The server setup script
+
+`deploy/server-setup.sh` runs once with `sudo`. Every step checks before it changes anything, so running it twice is safe.
+
+1. **Docker** from Docker's own apt repo, which is newer than Ubuntu's. `!reset` needs Compose 2.24 or newer.
+2. **Swap**: 1 GB of RAM isn't enough to build the website with Vite and run Postgres at the same time. A 2 GB swap file lets Linux move idle memory to disk instead of killing a process. It's in `/etc/fstab`, so it comes back after a reboot.
+3. **Toronto time** for the server clock, so the cron times (3:30 am backup, 4:30 am reboot) are local. The app itself doesn't depend on it: it always uses each user's own time zone.
+4. **ufw**: everything in is blocked except SSH (22), 80, and 443. Azure's network rules block everything else before it even reaches the VM, so this is a second layer. Note from section 5: Docker's published ports skip ufw, which is why only Caddy publishes any.
+5. **SSH keys only**: a file in `/etc/ssh/sshd_config.d/` turns off passwords and root login. sshd keeps the first value it reads, and files load in name order, so the file is called `10-prayerfit.conf` to come before Azure's `50-cloudimg-settings.conf`. `sshd -t` checks the config before reloading, so a mistake can't lock me out. The Azure rule for port 22 also only allows my own IP.
+6. **Automatic security updates**: `unattended-upgrades` installs security updates every day. If one needs a reboot (usually a new kernel), it reboots at 4:30 am. That's after the 3:00 am nightly job and the 3:30 am backup.
+7. **The backup cron job** in `/etc/cron.d/prayerfit-backup`.
+8. **The `dc` shortcut** for the long `docker compose -f ... -f ...` command.
+
+There are no default passwords anywhere: SSH has no password, Postgres gets a random one, and Postgres isn't reachable from outside the server anyway.
+
+### 8. Backups
+
+1. `pg_dump` writes the whole database as SQL. It runs inside the `db` container (`docker compose exec -T db`), so it uses the container's own `POSTGRES_USER` and `POSTGRES_DB` and needs no password.
+2. `--clean --if-exists` puts a `DROP TABLE IF EXISTS` before each table, so restoring over the live database replaces it instead of failing on tables that already exist.
+3. It writes to `.part` first and renames at the end. With `set -o pipefail`, a failed dump stops the script, so a half-written file never looks like a good backup.
+4. Files older than 14 days are deleted. The privacy page says the same.
+5. I tested it on my machine: ran a backup, restored it into the running database, and the row counts matched.
+6. The backups are on the same disk, so they protect against my mistakes, not against losing the VM. Copying one to my laptop now and then covers that.
+
+### 9. Updating after a PR
+
+`deploy/update.sh`:
+
+1. `git pull --ff-only origin main`. `--ff-only` stops if the server's copy has its own changes, instead of making a surprise merge.
+2. `up -d --build --remove-orphans` rebuilds the images and replaces only the containers that changed. The backend runs `alembic upgrade head` when it starts, so migrations happen by themselves.
+3. `docker image prune -f` deletes the old images, which would otherwise fill the 64 GB disk over time.
+4. It checks `APP_ORIGIN/api/health` through Caddy, the same way a visitor gets there, and tries for up to 2.5 minutes. It prints `{"status":"ok","database":"ok"}` or tells me to look at the logs.
+
+### 10. Google sign-in on the server
+
+1. The same OAuth client as my laptop gets a second redirect URI: `https://prayerfit.canadacentral.cloudapp.azure.com/auth/google/callback`. Google matches it exactly, including `https` and no trailing slash.
+2. **Testing mode for now**: only test users (up to 100) can sign in, and their sign-in expires every 7 days. The app already handles that with "Sign in again".
+3. **Why not publish now**: publishing needs a home page and privacy policy on a domain I own and have verified in Google Search Console. I can't verify `cloudapp.azure.com`, because Microsoft owns it. So publishing waits for prayerfit.me.
+4. **The privacy page** (`/privacy`): Google asks for one, and it has to be public. It lists what's stored, the 2 calendar scopes and what each one can see, who else gets data (Google, Photon, OpenRouteService, Azure), how to delete everything, and my contact email. It includes the sentence about Google's "Limited Use" rules, which Google's reviewers look for. The landing page links to it in a small footer, since Google checks that the home page links to the privacy policy.
+
+### 11. Switching to prayerfit.me
+
+1. DNS: an A record sends prayerfit.me to the VM's static IP. That's why the IP is static: a dynamic one could change when the VM restarts.
+2. `.env`: `SITE_ADDRESS` lists the new names and the old Azure address, and `APP_ORIGIN` and `GOOGLE_REDIRECT_URI` move to prayerfit.me. Caddy gets the new certificates and redirects the old address.
+3. Google: add the new redirect URI first, then verify the domain, set the home page and privacy links, and publish.
+
+### 12. Tests
+
+1. `web/tests/privacy.spec.ts`: the page opens with no sign-in and never calls `/api/me`, it shows both scopes, the Limited Use link, and my email, the landing page's Privacy link opens it, and it's no wider than a phone screen.
+2. `web/tests/sign-in.spec.ts`: the landing page's footer now has only the Privacy link, still no OpenStreetMap credit.
+3. GitHub Actions has a new `deploy-files` job: `docker compose config` on the production files, and `bash -n` plus `shellcheck` on the 3 scripts.
+4. Counts: `npx playwright test` in `web` gives `264 passed`.
+
+### 13. How I checked it
+
+1. On my machine, the whole production stack (with `SITE_ADDRESS=:80`, plain http) started: `/api/health` answered through Caddy, `/privacy` loaded, another host name got a 308 to `APP_ORIGIN`, `/auth/google/login` sent me to Google with the production redirect URI, a POST from another site still got 403, only Caddy had public ports, and the worker logged "Worker started".
+2. Backup and restore worked as in section 8.
+3. Not tested here: `server-setup.sh` on a real Azure VM, and the Let's Encrypt certificate, which needs the real address. The README's "Check it works" list covers those on the server.

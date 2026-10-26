@@ -20,51 +20,57 @@ type Props = {
 export function SignIn({ expired = false, errorCode = null, deleted }: Props) {
   const error = errorCode ? (SIGN_IN_ERRORS[errorCode] ?? SIGN_IN_ERRORS.google) : "";
   return (
-    <main className="landing">
-      <section className="welcome">
-        <h1>Welcome to PrayerFit</h1>
-        <p className="lead">An app that syncs your daily prayers and masjid times to your Google Calendar, based on your location and planned around your day.</p>
-        <figure className="hadith">
-          <blockquote>
-            <p>The Prophet ﷺ was asked which deed is most beloved to Allah, and he said <strong className="on-time">praying on time</strong>.</p>
-          </blockquote>
-          <figcaption>Sahih al-Bukhari 527</figcaption>
-        </figure>
-      </section>
-      <section className="card sign-in" aria-label={expired ? "Sign in again" : "Sign in"}>
-        {expired ? (
-          <>
-            <h2>Your Google sign-in has expired</h2>
-            <p>Your Prayers calendar can't update until you sign in again. Your settings are still saved.</p>
-            <a className="button google" href={SIGN_IN_URL}>
-              Sign in again
-            </a>
-          </>
-        ) : (
-          <>
-            {deleted && (
-              <div className="notice deleted" role="status">
-                <p>Your account has been deleted.</p>
-                {deleted === "manual" && (
-                  <p>
-                    We couldn't reach Google, so the "Prayers" calendar may still be in your Google Calendar.
-                    You can delete it there yourself.
-                  </p>
-                )}
-              </div>
-            )}
-            <h2>Get started</h2>
-            <a className="button google" href={SIGN_IN_URL}>
-              Sign in with Google
-            </a>
-          </>
-        )}
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
-      </section>
-    </main>
+    <div className="page-with-footer">
+      <main className="landing">
+        <section className="welcome">
+          <h1>Welcome to PrayerFit</h1>
+          <p className="lead">An app that syncs your daily prayers and masjid times to your Google Calendar, based on your location and planned around your day.</p>
+          <figure className="hadith">
+            <blockquote>
+              <p>The Prophet ﷺ was asked which deed is most beloved to Allah, and he said <strong className="on-time">praying on time</strong>.</p>
+            </blockquote>
+            <figcaption>Sahih al-Bukhari 527</figcaption>
+          </figure>
+        </section>
+        <section className="card sign-in" aria-label={expired ? "Sign in again" : "Sign in"}>
+          {expired ? (
+            <>
+              <h2>Your Google sign-in has expired</h2>
+              <p>Your Prayers calendar can't update until you sign in again. Your settings are still saved.</p>
+              <a className="button google" href={SIGN_IN_URL}>
+                Sign in again
+              </a>
+            </>
+          ) : (
+            <>
+              {deleted && (
+                <div className="notice deleted" role="status">
+                  <p>Your account has been deleted.</p>
+                  {deleted === "manual" && (
+                    <p>
+                      We couldn't reach Google, so the "Prayers" calendar may still be in your Google Calendar.
+                      You can delete it there yourself.
+                    </p>
+                  )}
+                </div>
+              )}
+              <h2>Get started</h2>
+              <a className="button google" href={SIGN_IN_URL}>
+                Sign in with Google
+              </a>
+            </>
+          )}
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+        </section>
+      </main>
+      {/* Google asks for the home page to link to the privacy policy. */}
+      <footer className="site-footer">
+        <a href="/privacy">Privacy</a>
+      </footer>
+    </div>
   );
 }
