@@ -224,7 +224,10 @@ What it changes in the calendar:
 3. **Jumuah**: Jumuah is always at your main masjid. On the coming Friday (today, if it's Friday), Dhuhr becomes `Jumuah at <masjid>`. This is where your busy times come in, not in the setup question. It uses your pick (its 1st, 2nd, or 3rd Jumuah) if that slot fits your calendar, with no description. If it clashes, or that slot isn't on this Friday, it uses the earliest Jumuah that fits, and the description says `Your pick (1st Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits.` (or `isn't on this Friday`). If every one clashes, it uses the 1st Jumuah, and the description says `Every Jumuah clashes with your calendar, so this is the 1st Jumuah.` If you pray at home, or your masjid has no Jumuah times, there's no Jumuah and Friday follows your weekly prayers.
 4. **Only the coming Friday** uses MAWAQIT's Jumuah times, since a MAWAQIT page only shows this week's. Later Fridays follow your weekly grid for Dhuhr, and say `This Friday's Jumuah times aren't published yet, so this follows your weekly prayers.` They change to Jumuah once a later read covers that Friday.
 5. **Jumuah length**: each masjid can have its own, set on the server (below). Without one, the block is 45 minutes. The other prayer blocks are Fajr 10 minutes, Dhuhr 15, Asr 10, Maghrib 10, and Isha 15.
-6. **Freshness**: times read in the last 24 hours are used. If a masjid's times couldn't be confirmed for 24 hours, your calendar uses calculated times until they're back, and Settings shows a notice at the top: `KMA's times couldn't be confirmed since Oct 24, 2026. Your calendar is using calculated times until they're back.` A calculated start is never later than the iqamah, so you're early, never late.
+6. **Freshness**: each read saves a full 30-day calendar from MAWAQIT, so if MAWAQIT can't be read, the last times read are kept for up to 7 days.
+   a) Under 24 hours since the last good read: the times are used.
+   b) 24 hours to 7 days: the times are still used, and Settings shows a notice at the top: `KMA's times couldn't be confirmed since Oct 24, 2026. Your calendar is still using the last times read from MAWAQIT, and switches to calculated times on Oct 31, 2026 if they still can't be read.`
+   c) Over 7 days: your calendar uses calculated times until a read works again, and the notice says `Your calendar is using calculated times until they're back.` A calculated start is never later than the iqamah, so you're early, never late.
 
 MAWAQIT can block this at any time. After a 403, a 429, or 3 failed reads in a row, the app waits 24 hours before trying that masjid again, and keeps the last good times in the meantime.
 
@@ -382,11 +385,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `830 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `832 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`435 passed, 395 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`436 passed, 396 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 

@@ -758,7 +758,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 ### 6. Freshness
 
 1. Measured from the last read that passed every check.
-2. Under 24 hours: fresh. 24 hours to 7 days: stale, still used, and the description adds "MAWAQIT times may be out of date (last updated Oct 22, 2026)". Over 7 days: not used, so calculated times come back. (Changed in milestone 6: times are only used for 24 hours now. See milestone 6, section 16.)
+2. Under 24 hours: fresh. 24 hours to 7 days: stale, still used, and the description adds "MAWAQIT times may be out of date (last updated Oct 22, 2026)". Over 7 days: not used, so calculated times come back. (Milestone 6 changed this to 24 hours in section 16, then back to 7 days in section 32, with a Settings notice instead of a description.)
 3. **"updated" in a description is when the times last changed**, not when they were last read. Otherwise the date would move every day and every masjid event would be sent to Google every day for nothing.
 
 ### 7. Which time each prayer uses
@@ -1158,6 +1158,8 @@ for each prayer, each day:
 
 ### 16. Masjid times that can't be confirmed
 
+Section 32 changed this again: the last MAWAQIT times are used for up to 7 days, and the notice comes after 24 hours.
+
 1. **24 hours, not 7 days.** `freshness.py` now has just FRESH (under 24 hours), STALE (24 hours or more), and NEVER. Only FRESH is used. A stale masjid's prayers use calculated times until a read works again.
 2. **Why that's the safe side**: a calculated start time is never later than the iqamah, so the user turns up early, never late. A week-old iqamah could be wrong after the masjid moved it earlier.
 3. **No event description for it.** Instead, Settings shows a notice at the top: "KMA's times couldn't be confirmed since Oct 24, 2026. Your calendar is using calculated times until they're back." (`masjid_notices` on `GET /settings`, from `masjid_notices` in `routers/settings.py`.)
@@ -1318,7 +1320,7 @@ for each prayer, each day:
 
 ### 29. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`830 passed`) and `npx playwright test` in `web` (`230 passed`).
+1. **Tests**: `pytest` in `backend` (`832 passed`) and `npx playwright test` in `web` (`230 passed`).
 2. **For real**, the steps in section 14 now take up to 5 minutes, not 15.
 
 ### 30. Small fixes after review
@@ -1381,4 +1383,25 @@ for each prayer, each day:
     c) `test_auto_link.py`: setup links KMA and reads `/en/id/9793` once, so the Jumuah question has its 1:15 Jumuah; MAWAQIT being down; a manual link never replaced (by setup, a list change, or `add-mawaqit`); an unlinked masjid not linked again; `add-mawaqit`; and `scan-area` with a fake Overpass.
     d) `test_mawaqit_download.py`: share links and page links, redirects within mawaqit.net, and redirects anywhere else refused.
     e) A migration test for 0011, and Playwright tests for both new /stats lists.
-12. **Counts**: `pytest` in `backend` gives `830 passed`, and `npx playwright test` in `web` gives `230 passed`.
+12. **Counts**: `pytest` in `backend` gave `830 passed`, and `npx playwright test` in `web` gives `230 passed`.
+
+### 32. Keeping MAWAQIT times for up to 7 days
+
+1. **What changed**: section 16 switched to calculated times 24 hours after the last good read. Now the last MAWAQIT times are kept for up to 7 days.
+2. **Why**: each read saves a full 30-day calendar (`FETCH_DAYS = 30` in `scheduler.py`), with every day's adhan and iqamah. If MAWAQIT blocks us for a few days, the times we already have are still the masjid's own published times, and much closer to right than calculated ones.
+3. **The steps** (`freshness.py`), measured from the last good read:
+   a) Under 24 hours (`FRESH`): used.
+   b) 24 hours to 7 days (`STALE`): still used. Settings shows a notice.
+   c) Over 7 days (`TOO_OLD`): not used, so calculated times are used until a read works again.
+   d) Never read (`NEVER`): calculated times.
+   `Freshness.usable` is True for the first 2, and everything that picks a time goes through it (`MasjidTimes.usable_day` in `store.py`), so this was a one-file logic change.
+4. **The Settings notice** (`masjid_notices` in `routers/settings.py`) still starts after 24 hours, with 2 versions:
+   a) Still used: "KMA's times couldn't be confirmed since Oct 22, 2026. Your calendar is still using the last times read from MAWAQIT, and switches to calculated times on Oct 29, 2026 if they still can't be read." The switch date is the last good read plus 7 days, in the user's time zone.
+   b) Over 7 days, or never read for a day: "KMA's times couldn't be confirmed since Oct 15, 2026. Your calendar is using calculated times until they're back."
+5. **The line under the masjid** says "so the last times read are used" or "so calculated times are used" to match.
+6. **When the switch shows up**: nothing runs at the 7-day mark itself. For users who allowed free/busy, the next 5-minute check updates today and tomorrow. Every other day, and every other user, gets it from the nightly job.
+7. **Tests**:
+   a) `test_freshness.py`: still used at exactly 24 hours and exactly 7 days, and not used at 7 days and 1 second.
+   b) `test_masjid_times_calendar.py`: a read 7 days ago still gives Isha at KMA's 8:15 pm iqamah, and a read 7 days and 1 minute ago gives the calculated start.
+   c) `test_optional_settings.py`: both notice texts, the switch date, and both masjid lines.
+8. **Counts**: `pytest` in `backend` gives `832 passed`, and `npx playwright test` in `web` gives `230 passed`.
