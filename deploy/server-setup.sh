@@ -14,6 +14,7 @@
 #   6. Installs security updates every day by itself, and reboots at
 #      4:30 am if an update needs it. The containers start again by themselves.
 #   7. Backs up the database every day at 3:30 am (deploy/backup.sh).
+#   8. Adds a "dc" shortcut for the long docker compose command.
 
 set -euo pipefail
 
@@ -98,6 +99,11 @@ cat > /etc/cron.d/prayerfit-backup <<CONF
 30 3 * * * $APP_USER $REPO_DIR/deploy/backup.sh >> /home/$APP_USER/prayerfit-backups.log 2>&1
 CONF
 chmod 644 /etc/cron.d/prayerfit-backup
+
+echo "==> 8. The dc shortcut"
+BASHRC="/home/$APP_USER/.bashrc"
+grep -q '^alias dc=' "$BASHRC" || \
+  echo "alias dc='docker compose -f $REPO_DIR/docker-compose.yml -f $REPO_DIR/docker-compose.prod.yml'" >> "$BASHRC"
 
 echo
 echo "Done. Log out and back in so docker works without sudo, then:"
