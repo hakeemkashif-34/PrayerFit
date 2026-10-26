@@ -136,6 +136,23 @@ class PrayerEvent(Base):
     fit: Mapped[str] = mapped_column(String(8), default="normal", server_default="normal")
 
 
+class UserCountChange(Base):
+    """How many people signed up and deleted their account in each hour.
+
+    The /stats graph adds these up, so it goes down when someone deletes
+    their account. Counts per hour only: no user ID, no email, nothing that
+    leads back to a person. Deleting an account adds 1 to "deleted" and
+    leaves "signed_up" alone, so the history stays right.
+    """
+
+    __tablename__ = "user_count_changes"
+
+    # The start of the hour, in UTC. Real hours, so daylight saving can't merge or skip any.
+    hour: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    signed_up: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    deleted: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
 class UserSettings(Base):
     """A user's setup answers. One row per user.
 

@@ -249,3 +249,43 @@ def test_migration_0011_marks_existing_links_as_mine(db):
         assert listed == 0
     finally:
         command.upgrade(config, "head")
+
+
+def test_migration_0013_counts_existing_users_by_sign_up_hour(db):
+    """Today's users fill the new table by the hour they signed up. No IDs or emails go in."""
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import text
+
+    config = Config("alembic.ini")
+    config.attributes["configure_logger"] = False
+    command.downgrade(config, "0012")
+    try:
+        with db.begin() as connection:
+            connection.execute(text("""
+                INSERT INTO users (id, google_sub, email, created_at) VALUES
+                    (gen_random_uuid(), 'a', 'a@example.com', '2026-10-25 14:10:00+00'),
+                    (gen_random_uuid(), 'b', 'b@example.com', '2026-10-25 14:50:00+00'),
+                    (gen_random_uuid(), 'c', 'c@example.com', '2026-10-25 15:05:00+00'),
+                    -- 1:30 am on Nov 1 in Toronto, the hour that happens twice. The second one, in EST.
+                    (gen_random_uuid(), 'd', 'd@example.com', '2026-11-01 01:30:00-05');
+            """))
+        command.upgrade(config, "0013")
+
+        with db.connect() as connection:
+            columns = connection.execute(text(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'user_count_changes' ORDER BY 1"
+            )).scalars().all()
+            rows = connection.execute(text(
+                "SELECT to_char(hour AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI'), signed_up, deleted "
+                "FROM user_count_changes ORDER BY hour"
+            )).all()
+        # Only the hour and the counts. Nothing leads back to a person.
+        assert columns == ["deleted", "hour", "signed_up"]
+        assert rows == [
+            ("2026-10-25 14:00", 2, 0),
+            ("2026-10-25 15:00", 1, 0),
+            ("2026-11-01 06:00", 1, 0),
+        ]
+    finally:
+        command.upgrade(config, "head")
