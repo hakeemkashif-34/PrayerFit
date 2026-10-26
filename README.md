@@ -181,7 +181,7 @@ What it changes in the calendar:
 2. **Home prayers** use the main masjid's adhan time, like `KMA adhan time (MAWAQIT)`.
 3. **Jumuah**: on the coming Friday (today, if it's Friday), if you have Jumuah masjids, Dhuhr becomes `Jumuah at <masjid>`. This is where your busy times come in, not in the setup question. It uses your pick (a masjid and its 1st, 2nd, or 3rd Jumuah) if that slot fits your calendar. If it clashes, or that slot isn't on this Friday, it uses the earliest Jumuah that fits across all your Jumuah masjids. If every one clashes, it keeps your pick and says so. With no pick, it's the earliest that fits. The description says which, like `Your pick (2nd Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits.`
 4. **Only the coming Friday** uses MAWAQIT's Jumuah times, since a MAWAQIT page only shows this week's. Later Fridays follow your weekly grid for Dhuhr, and say `This Friday's Jumuah times aren't published yet, so this follows your weekly prayers.` They change to Jumuah once a later read covers that Friday.
-5. **Jumuah length**: each masjid can have its own, set on the server (below). Without one, the block is 45 minutes and the description says the end time is estimated. Every other prayer block is 15 minutes.
+5. **Jumuah length**: each masjid can have its own, set on the server (below). Without one, the block is 45 minutes and the description says the end time is estimated. The other prayer blocks are Fajr 10 minutes, Dhuhr 15, Asr 10, Maghrib 10, and Isha 15.
 6. **Freshness**: times read in the last 24 hours are fresh. Up to 7 days old, they're still used, and the description says they may be out of date. Older than that, calculated times are used.
 
 MAWAQIT can block this at any time. After a 403, a 429, or 3 failed reads in a row, the app waits 24 hours before trying that masjid again, and keeps the last good times in the meantime.
@@ -263,11 +263,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `681 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `682 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`357 passed, 324 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`357 passed, 325 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 

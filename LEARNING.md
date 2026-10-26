@@ -454,7 +454,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 7. **Partway failures**: a timeout, 429, or 5xx stops the run. Rows sent so far stay `synced`, the rest stay `pending`, and the answer is 503 with `saved` and `waiting` lists. Running again finishes the job.
 8. **Event times**:
    a) Start is the rounded prayer time from the calculator.
-   b) End is start plus 15 minutes, added in UTC and converted back. Adding in local time could be off by an hour if a clock change fell inside.
+   b) End is start plus the block's length (15 minutes back then, see milestone 5 section 23 for now), added in UTC and converted back. Adding in local time could be off by an hour if a clock change fell inside.
    c) Sent to Google as `dateTime` with the offset plus `timeZone`, like `2026-11-01T17:01:00-05:00` and `America/Toronto`.
 9. **Description**: where the time came from, like `Calculated (ISNA, standard Asr)`. When a high latitude rule was used, it's added: `Calculated (ISNA, standard Asr, seventh of the night rule)`.
 
@@ -470,10 +470,10 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 3. **`test_auth.py`**: PKCE and S256, only the 3 scopes, wrong or missing state rejected, a flow can't be used twice, HttpOnly cookie with only its hash saved, sign-out, Origin check.
 4. **`test_tokens.py`**: tokens stored encrypted, no token ever in a response, expired token refreshed, dead refresh token gives `needs_reauth`.
 5. **`test_google_calendar.py`**: each Google error code turns into the right error, timeouts are temporary, 401 refreshes once.
-6. **`test_today_prayers.py`**: 5 events with the right times, 15 minutes, descriptions, and `appEventId`. Running twice gives 5. Failing on the 3rd event (timeout, 429, 500, 503, lost answer) leaves no duplicates and a rerun finishes. Only the Prayers calendar is ever written. A deleted event comes back once.
+6. **`test_today_prayers.py`**: 5 events with the right times, the right lengths, descriptions, and `appEventId`. Running twice gives 5. Failing on the 3rd event (timeout, 429, 500, 503, lost answer) leaves no duplicates and a rerun finishes. Only the Prayers calendar is ever written. A deleted event comes back once.
 7. **`test_prayers_calendar.py`**: created once and reused, recreated after deletion with all 5 prayers.
 8. **`test_user_isolation.py`**: two users with two cookies. Neither sees the other's events, and Bob's run only uses Bob's token and calendar.
-9. **`test_today_prayers_dst.py`**: Toronto on March 7 and 8 and October 31 and November 1, 2026. Every event has the right offset and lasts exactly 15 minutes.
+9. **`test_today_prayers_dst.py`**: Toronto on March 7 and 8 and October 31 and November 1, 2026. Every event has the right offset and lasts exactly its length.
 10. **`pytest -m "not database"`** runs only the tests that don't need Postgres. `conftest.py` marks the others automatically.
 
 ### 9. How to check it works
@@ -675,7 +675,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    f) Past events stay.
    g) Google failing partway finishes later without duplicates.
    h) The next day adds 5 events and deletes nothing.
-6. **`test_window_dst.py`**: the 14-day window across November 1 and March 8. Each day has its 5 prayers, with the right offset, and each event lasts exactly 15 minutes.
+6. **`test_window_dst.py`**: the 14-day window across November 1 and March 8. Each day has its 5 prayers, with the right offset, and each event lasts exactly its length.
 7. **`test_nightly.py`**:
    a) 3:00 am in each time zone, including both daylight saving days and Helsinki.
    b) Once per user per day, even when started twice or by 2 workers at once.
@@ -788,7 +788,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 ### 10. Jumuah
 
 1. **The picker** (`jumuah.py`) is a pure function. Input: every Jumuah slot from the user's Jumuah masjids for that Friday, the user's pick, the drive time to each masjid, the Jumuah "how early", each masjid's Jumuah length, and busy times. Output: the slot and the reason. Section 17 has the rule.
-2. **In the calendar**: on the coming Friday, the Dhuhr row becomes "Jumuah at <masjid>" with its drive block. The Jumuah block is as long as the masjid's Jumuah length, or 45 minutes when it isn't set (section 19). Every other prayer block stays 15 minutes. If the user has Jumuah masjids but none has usable Jumuah times, Dhuhr follows the weekly grid, and the description says Jumuah times aren't available. No Jumuah masjids means a normal Friday.
+2. **In the calendar**: on the coming Friday, the Dhuhr row becomes "Jumuah at <masjid>" with its drive block. The Jumuah block is as long as the masjid's Jumuah length, or 45 minutes when it isn't set (section 19). The other prayer blocks have their own lengths (section 23). If the user has Jumuah masjids but none has usable Jumuah times, Dhuhr follows the weekly grid, and the description says Jumuah times aren't available. No Jumuah masjids means a normal Friday.
 3. **The main masjid is the first Jumuah masjid** (`follow_main_masjid` in `user_settings.py`), so users don't pick it twice:
    a) Picking a main masjid with no Jumuah masjids yet adds it.
    b) If the Jumuah list is only the old main masjid, a new main masjid takes its place. Choosing "I pray at home" empties it. That way picking a masjid, going Back, and pressing Skip still means no Jumuah.
@@ -846,7 +846,7 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 
 ### 15. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`681 passed`) and `npx playwright test` in `web` (`142 passed`).
+1. **Tests**: `pytest` in `backend` (`682 passed`) and `npx playwright test` in `web` (`142 passed`).
 2. **Google Cloud Console**: in **Google Auth Platform > Data Access**, add `https://www.googleapis.com/auth/calendar.freebusy`. Then sign out and in again, and the banner on Settings goes away.
 3. **For real**: get a free ORS key and put it in `.env`. Then follow "Masjid times from MAWAQIT" in the README to link KMA, and run `run-now --force`. In Google Calendar: masjid prayers at KMA's iqamah, home prayers at KMA's adhan, each with its source, a drive block with a reminder before each masjid prayer, Jumuah on the coming Friday if KMA is a Jumuah masjid, every event private, and the colours I picked.
 4. **Jumuah and busy times**: pick KMA's 1st Jumuah, then put a test event in my main calendar over it on the coming Friday. Run `run-now --force` and check Jumuah moved to the 2nd in Google Calendar, with "Your pick (1st Jumuah) clashes with your calendar" in its description.
@@ -913,3 +913,10 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 7. Each block is a real radio button (hidden, with the block as its label), so arrow keys and screen readers work.
 8. **Settings is one card** with **Required** (location, main masjid, weekly prayers, Jumuah pick, with the same view as setup) and **Optional** (Jumuah masjids, short name, both "how early" times, both colours). Each has its own Edit and saves on its own. `PUT /settings/optional` takes every optional answer, so the small editors send the saved answers with just their one change.
 
+### 23. Prayer block lengths
+
+1. Fajr, Asr, and Maghrib blocks are 10 minutes. Dhuhr and Isha are 15, since they're longer prayers. They're in one place: `PRAYER_LENGTHS` in `prayer_sync.py`.
+2. Jumuah doesn't use that list. It uses the masjid's own length (section 19).
+3. Drive blocks are their own length: from leaving home to arriving.
+4. **Existing users**: a block's end time is part of its hash, so the next update sends only the future Fajr, Asr, and Maghrib blocks, now 5 minutes shorter. They keep their IDs, so they're updated in place. Past events and Dhuhr and Isha aren't sent. `test_old_15_minute_blocks_are_shortened_in_place` checks this.
+5. The tests write the lengths out themselves instead of importing `PRAYER_LENGTHS`, so a wrong change in the app makes them fail.
