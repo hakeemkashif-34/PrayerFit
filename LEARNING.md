@@ -1495,6 +1495,6 @@ Section 34 simplified this: the /stats page is now total users, a graph of total
    a) `docker-compose.yml` has `name: prayerfit`. Docker named the project after the folder before, so the containers and the volume are now `prayerfit-*` and `prayerfit_db-data` wherever it's cloned.
    b) The database user and name in `.env.example` are `prayerfit`.
    c) The README's commands use `prayerfit`, and the clone link is `https://github.com/hakeemkashif-34/prayerfit`.
-   d) Searching the repo for the old name, in any capitalization and with a space, `_`, or `-`, finds only the README's 2 commands for removing the old Docker volume, which need its old name. Masjid names like Kanata Muslim Association stay as they are, and the Google calendar is still called "Prayers".
+   d) Searching the repo for the old name, in any capitalization and with a space, `_`, or `-`, finds only the README's 3 lines about removing the old Docker volume, which need its old name. Masjid names like Kanata Muslim Association stay as they are, and the Google calendar is still called "Prayers".
 3. **Moving to the new names**: a fresh database starts in `prayerfit_db-data`. The README says which 3 `.env` lines to change and how to remove the old volume.
 4. **Counts**: `pytest` in `backend` gives `841 passed`, and `npx playwright test` in `web` gives `258 passed`.
