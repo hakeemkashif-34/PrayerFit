@@ -139,11 +139,17 @@ export type Preview = {
 
 // The private /stats page. Counts only.
 export type Stats = {
-  total_users: number;
-  // One point per day, oldest first: signed up that day, and the total so far.
-  history: { day: string; signed_up: number; total: number }[];
   // Masjids with at least 1 user, most users first. Not linked means no MAWAQIT times.
   masjids: { name: string; users: number; mawaqit_linked: boolean }[];
+};
+
+// The /stats graph's dropdown. 1 to 3 days: a point per hour. Longer: a point per day.
+export type GraphRange = "1d" | "2d" | "3d" | "5d" | "7d" | "30d" | "all";
+
+export type UsersGraph = {
+  step: "hour" | "day";
+  // Oldest first. start is the hour or day in Toronto time, total is the users at the end of it.
+  points: { start: string; total: number }[];
 };
 
 // DELETE /api/account. False: Google couldn't be reached, so the Prayers calendar may still be there.

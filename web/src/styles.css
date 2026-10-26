@@ -1388,24 +1388,32 @@ main.adding h1 {
   max-width: 980px;
 }
 
-/* "Total users: 42", one block at the top. */
-.total-users {
-  margin: 20px 0 24px;
-  padding: 18px 20px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  font-size: 1.25rem;
+.stats-section {
+  margin-bottom: 20px;
+}
+
+.page.stats-page h1 {
+  margin-bottom: 20px;
+}
+
+/* "Show [7 days]" above the graph. */
+.range-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: var(--muted);
   font-weight: 600;
 }
 
-.total-users strong {
-  font-size: 2rem;
-  font-weight: 800;
-}
-
-.stats-section {
-  margin-bottom: 20px;
+.range-picker select {
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--text);
+  font-weight: 500;
 }
 
 .stats-graph {
@@ -1452,23 +1460,23 @@ main.adding h1 {
   stroke-width: 1;
 }
 
-/* The invisible circle around each dot that catches the mouse or a tap. */
-.graph-box .dot-hit {
+/* The invisible box over the plot that catches the mouse or a tap. */
+.graph-box .plot-hit {
   fill: transparent;
-  cursor: pointer;
+  cursor: crosshair;
 }
 
 /* A white ring keeps each dot clear of the line and the dots next to it. */
 .graph-box .dot {
   stroke: var(--card);
   stroke-width: 2;
-  cursor: pointer;
+  pointer-events: none;
 }
 
-.graph-box .dot:focus-visible {
-  outline: none;
-  stroke: var(--focus);
-  stroke-width: 3;
+.graph-box svg:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 4px;
+  border-radius: 6px;
 }
 
 .graph-tip {
