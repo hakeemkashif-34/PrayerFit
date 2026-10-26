@@ -13,7 +13,7 @@ See [Muslim_Calendar_App.md](Muslim_Calendar_App.md) for the full product descri
 5. Sign-in: Google, done on the server with PKCE
 6. Addresses and masjids: the free Photon search, built on OpenStreetMap data
 7. Masjid times: each masjid's public MAWAQIT page, with calculated times when it can't be read
-8. Commute times: your own, or OpenRouteService's free plan (driving, no live traffic)
+8. Drive times: OpenRouteService's free plan (no live traffic)
 9. Runs with Docker Compose
 10. Tests: pytest for the backend, Playwright for the website, both run by GitHub Actions on every push and pull request
 
@@ -124,7 +124,7 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
    b) **Which masjid do you usually go to?** Start typing its name. Suggestions show the masjid's name and its distance from home, closest first. If yours doesn't come up, type its address instead and pick that. Press **I pray at home** if you do: every prayer is at home and there's no weekly grid.
    c) **Which prayers do you usually pray at the masjid?** Tick them in the grid: prayers down the side, Monday to Sunday across the top. Anything left unticked is at home.
    Press **Next** to save the masjid and the grid.
-6. **Optional** (page 2): a short name like `KMA`, how many minutes before iqamah and before Jumuah you want to arrive (whole numbers from 0 to 60, 5 by default), your commute time to the masjid (1 to 120 minutes, or blank for OpenRouteService's driving estimate), a colour for prayer blocks and for commute blocks (Basil by default), and the Jumuah chooser. **Back** goes to page 1 without losing anything typed here. **Skip** (top right) saves the defaults.
+6. **Optional** (page 2): a short name like `KMA`, how many minutes before iqamah and before Jumuah you want to arrive (whole numbers from 0 to 60, 5 by default), a colour for prayer blocks and for drive blocks (Basil by default), and the Jumuah chooser. **Back** goes to page 1 without losing anything typed here. **Skip** (top right) saves the defaults.
 7. The **Jumuah chooser** shows the coming Friday as a day view. Grey **Busy** blocks are when your Google Calendar is busy. Each Jumuah slot is a card that covers the whole trip, from leaving home to the end of Jumuah. Green fits your calendar. Grey clashes, but you can still pick it. The earliest one that fits is picked for you. If none of your Jumuah masjids have Jumuah times for that Friday, the chooser isn't shown.
 8. Press **Finish** (or **Skip**). Nothing is written to Google Calendar before this. A new tab opens and says "Adding your prayers to Google Calendar..." while the calendar fills, in about 10 to 20 seconds, then shows Google Calendar for the account you signed in with. The first tab goes to the Settings page. If the update fails, the new tab shows the error with a link back to Settings, and Settings shows it too, with **Try again**. If your browser blocks the new tab, Settings says so, and **Open Google Calendar** is right there.
 9. Calculated times always use ISNA with standard Asr. Your main masjid becomes your Jumuah masjid. On the Settings page you can remove it or add others. Praying at home means no Jumuah masjids.
@@ -133,7 +133,7 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 
 ### 4. Change a setting
 
-Coming back to the website later opens the **Settings** page. It never sends you to Google Calendar on its own. Press **Open Google Calendar** to go there. Settings is one card with 2 sections. **Required** has your location, main masjid, and weekly prayers. **Optional** has your Jumuah masjids, your Jumuah pick, the short name, both "how early" times, commute times, and both colours. Press **Edit** next to any one of them, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
+Coming back to the website later opens the **Settings** page. It never sends you to Google Calendar on its own. Press **Open Google Calendar** to go there. Settings is one card with 2 sections. **Required** has your location, main masjid, and weekly prayers. **Optional** has your Jumuah masjids, your Jumuah pick, the short name, both "how early" times, and both colours. Press **Edit** next to any one of them, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
 
 If you move to another time zone, the Prayers calendar's time zone changes too.
 
@@ -186,20 +186,18 @@ What it changes in the calendar:
 
 MAWAQIT can block this at any time. After a 403, a 429, or 3 failed reads in a row, the app waits 24 hours before trying that masjid again, and keeps the last good times in the meantime.
 
-## Commute times
+## Drive times
 
-Each masjid prayer gets a **Commute to <masjid>** block before it, from when to leave until you arrive, with a popup reminder when it starts. Old "Drive to" blocks are renamed in place, with the same event IDs.
-
-Your own commute time to each masjid (Optional page, or **Commute times** on Settings) always wins. The description then says `10 min commute (your time).` For a masjid without one, the time comes from [OpenRouteService](https://openrouteservice.org), which has a free plan, and says `14 min commute (driving estimate from OpenRouteService, no live traffic).` OpenRouteService isn't called for a masjid that has your own time. The app calls `https://api.heigit.org/openrouteservice/v2/directions/driving-car`. HeiGIT shut off the old address, `api.openrouteservice.org`, on September 28, 2026.
+Each masjid prayer gets a **Drive to <masjid>** block before it, from when to leave until you arrive, with a popup reminder when it starts. Drive times come from [OpenRouteService](https://openrouteservice.org), which has a free plan. They're typical drive times with no live traffic, and the description says so: `14 min drive (OpenRouteService, no live traffic).` The app calls `https://api.heigit.org/openrouteservice/v2/directions/driving-car`. HeiGIT shut off the old address, `api.openrouteservice.org`, on September 28, 2026.
 
 1. Sign up at https://account.heigit.org/signup and copy your API key.
 2. Put it in `.env` as `ORS_API_KEY=...` and restart: `docker compose up -d`.
 
-With no key and no commute times of your own, there are no commute blocks, and everything else works as before. Only the rounded coordinates of your home and your masjids are sent (about 100 m), never an address. Each estimate is saved for 30 days, or until your address or masjids change.
+With no key, there are no drive blocks, and everything else works as before. Only the rounded coordinates of your home and your masjids are sent (about 100 m), never an address. Each drive time is saved for 30 days, or until your address or masjids change.
 
 ## Nightly job
 
-The `worker` service updates every user's calendar at 3:00 am in their own time zone. It adds the newest day, fixes any times that changed, and never touches past events. The only events it ever deletes are future commute blocks that aren't needed any more, like when a prayer moves home. Not 2:00 am, because 2:00 am doesn't exist on the spring daylight saving day.
+The `worker` service updates every user's calendar at 3:00 am in their own time zone. It adds the newest day, fixes any times that changed, and never touches past events. The only events it ever deletes are future drive blocks that aren't needed any more, like when a prayer moves home. Not 2:00 am, because 2:00 am doesn't exist on the spring daylight saving day.
 
 Each job is saved with an ID like `nightly:<user id>:2026-10-24` before it runs, so a retry or a second worker can't run it twice. If the worker was off at 3:00 am, it catches up when it starts. If one user's Google sign-in expired, their job is marked `needs_sign_in` and everyone else still gets updated.
 
@@ -235,13 +233,12 @@ Through nginx, every endpoint below is under `/api` (like `/api/me`), except the
 | `PUT /settings/main-masjid` | Saves the main masjid, or "home". Picking a different masjid clears its short name |
 | `PUT /settings/weekly` | Saves the weekly grid (7 days) |
 | `PUT /settings/optional` | Saves both "how early" times, the short name, and the 2 colours. Skip sends the defaults |
-| `PUT /settings/commute-times` | Saves your own commute time to each of your masjids (1 to 120 minutes). `null` goes back to OpenRouteService |
 | `PUT /settings/jumuah-pick` | Saves your Jumuah pick as a masjid and a slot (1st, 2nd, or 3rd), or clears it |
 | `POST /jumuah/choices` | The coming Friday's Jumuah slots, your busy times, and which slot fits, for the chooser. Saves nothing |
 | `PUT /settings/jumuah` | Saves the Jumuah masjids, in order (settings page only) |
 | `POST /setup/finish` | Finishes setup and fills the next 14 days. The website calls it after the last question |
 | `POST /calendar/sync` | Sends anything still waiting. Safe to run again |
-| `POST /prayers/today` | Updates today's prayers and commute blocks from your saved settings. Safe to run again |
+| `POST /prayers/today` | Updates today's prayers and drive blocks from your saved settings. Safe to run again |
 | `GET /prayers/today/events` | Your saved events for today |
 
 POST and PUT requests need an `Origin` header matching `APP_ORIGIN`. Browsers send it on their own. With curl, add `-H "Origin: http://localhost:8000"`.
@@ -266,11 +263,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `696 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `684 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`357 passed, 339 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`357 passed, 327 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
@@ -283,4 +280,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `146 passed`: 73 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `140 passed`: 70 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
