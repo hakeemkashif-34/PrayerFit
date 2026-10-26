@@ -192,15 +192,10 @@ def masjid_label(masjid: Masjid, short_name: str | None) -> str:
     return short_name or masjid.name or "the masjid"
 
 
-def load_setup(db: Session, user_id: uuid.UUID, finished: bool = True) -> Setup | None:
-    """The user's setup, or None if setup isn't finished.
-
-    finished=False is for the Jumuah chooser during setup: it only needs a location.
-    """
+def load_setup(db: Session, user_id: uuid.UUID) -> Setup | None:
+    """The user's setup, or None if setup isn't finished."""
     row = db.scalars(select(UserSettings).where(UserSettings.user_id == user_id)).first()
-    if row is None or row.location_encrypted is None or row.time_zone is None:
-        return None
-    if finished and (row.setup_completed_at is None or missing_steps(db, row)):
+    if row is None or row.setup_completed_at is None or missing_steps(db, row):
         return None
     latitude, longitude = read_location(row)
     masjid = None

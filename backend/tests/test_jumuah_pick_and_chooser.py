@@ -6,11 +6,17 @@ The made-up MAWAQIT page has Jumuah at 13:30 (1st) and 14:30 (2nd).
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+import uuid
+
 import pytest
+from sqlalchemy.orm import Session
+
+from app.masjid_times.scheduler import run_fetch
+from app.models import Masjid
 from tests.calendar_helpers import clock, fetch, google_events, titled
 from tests.conftest import sign_in
-from tests.fake_google import OLD_SCOPES
 from tests.masjid_helpers import link, masjid_id
+from tests.mawaqit_pages import conf
 from tests.setup_helpers import pick_masjid, setup_through_api
 
 TORONTO = ZoneInfo("America/Toronto")
@@ -46,8 +52,8 @@ def with_times(set_up, db, http, fake_mawaqit, kma):
     return set_up
 
 
-def choices(client, **body) -> dict:
-    response = client.post("/jumuah/choices", json=body)
+def choices(client, masjid_ids: list[str] | None = None) -> dict:
+    response = client.get("/jumuah/slots", params={"masjid_id": masjid_ids or []})
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -108,63 +114,64 @@ def test_the_pick_must_be_a_jumuah_masjid(set_up):
 
 
 def test_no_jumuah_times_means_no_slots(set_up):
-    # KMA isn't linked to MAWAQIT, so the setup page skips the chooser.
+    # KMA isn't linked to MAWAQIT, so setup skips the question.
     data = choices(set_up)
-    assert (data["friday"], data["slots"], data["selected"]) == ("2026-10-30", [], None)
+    assert (data["slots"], data["selected"]) == ([], None)
 
 
-def test_the_chooser_shows_every_slot_and_its_window(with_times, kma, ors_key):
+def test_each_slot_runs_from_its_start_for_the_jumuah_length(with_times, db, kma):
     data = choices(with_times)
-    assert data["busy_checked"] is True and data["busy"] == []
     first, second = data["slots"]
-    assert (first["order_label"], local(first["starts_at"]), second["order_label"]) == ("1st Jumuah", "13:30", "2nd Jumuah")
-    # 5 minutes early, a 14 minute driving estimate, and 45 minutes (estimated).
-    assert (local(first["leave_at"]), local(first["arrive_at"]), local(first["ends_at"])) == ("13:11", "13:25", "14:15")
-    assert first["drive_minutes"] == 14
-    assert "commute_minutes" not in first and "commute_source" not in first
-    assert (first["jumuah_minutes"], first["length_estimated"], first["fits"]) == (45, True, True)
+    assert (first["masjid_label"], first["order_label"], second["order_label"]) == ("KMA", "1st Jumuah", "2nd Jumuah")
+    # This week's times as the example, and 45 minutes since KMA's length isn't set.
+    assert [(local(s["starts_at"]), local(s["ends_at"])) for s in data["slots"]] == [("13:30", "14:15"), ("14:30", "15:15")]
+    assert (first["jumuah_minutes"], first["length_estimated"]) == (45, True)
+    # Nothing about a Friday, the drive, or the user's calendar.
+    assert not {"friday", "busy", "busy_checked"} & set(data)
+    assert not {"leave_at", "drive_minutes", "fits"} & set(first)
+    # The 1st Jumuah is pre-selected.
     assert data["selected"] == {"masjid_id": kma, "order": 1}
 
+    with Session(db) as session:
+        session.get(Masjid, uuid.UUID(kma)).jumuah_minutes = 40
+        session.commit()
+    first = choices(with_times)["slots"][0]
+    assert (local(first["ends_at"]), first["length_estimated"]) == ("14:10", False)
 
-def test_busy_slots_are_grey_and_the_earliest_that_fits_is_selected(with_times, kma, fake_google):
+
+def test_busy_times_and_drive_times_are_never_asked(with_times, fake_google, fake_ors, ors_key):
     fake_google.busy["user-a"] = BUSY_1_TO_1_40
+    google_calls, ors_calls = len(fake_google.requests), len(fake_ors.requests)
     data = choices(with_times)
-    assert [s["fits"] for s in data["slots"]] == [False, True]
-    assert [(local(b["starts_at"]), local(b["ends_at"])) for b in data["busy"]] == [("13:00", "13:40")]
-    assert data["selected"] == {"masjid_id": kma, "order": 2}
+    assert len(data["slots"]) == 2
+    assert (len(fake_google.requests), len(fake_ors.requests)) == (google_calls, ors_calls)
 
 
-def test_a_saved_pick_is_selected_even_when_it_clashes(with_times, kma, fake_google):
-    with_times.put("/settings/jumuah-pick", json={"masjid_id": kma, "order": 1})
-    fake_google.busy["user-a"] = BUSY_1_TO_1_40
-    assert choices(with_times)["selected"] == {"masjid_id": kma, "order": 1}
+def test_a_saved_pick_is_selected(with_times, kma):
+    with_times.put("/settings/jumuah-pick", json={"masjid_id": kma, "order": 2})
+    assert choices(with_times)["selected"] == {"masjid_id": kma, "order": 2}
 
 
-def test_an_unsaved_how_early_changes_the_windows_but_saves_nothing(with_times, ors_key):
-    first = choices(with_times, jumuah_arrive_early_minutes=20)["slots"][0]
-    # 1:30, 20 minutes early, and the 14 minute drive: leave 12:56.
-    assert (local(first["leave_at"]), local(first["arrive_at"])) == ("12:56", "13:10")
-    assert with_times.get("/settings").json()["jumuah_arrive_early_minutes"] == 5
+def test_setup_can_ask_about_a_masjid_it_hasnt_saved_yet(with_times, db, http, fake_mawaqit, kma):
+    # Picked on the Required page, but not saved until Next. Its page has a 1st Jumuah at 1:15 only.
+    other = pick_masjid(with_times, "Stittsville", "Stittsville Masjid")
+    link(db, uuid.UUID(other["id"]), "stittsville", fake_mawaqit, conf(jumua="13:15", jumua2=None))
+    with Session(db) as session:
+        run_fetch(session, http, uuid.UUID(other["id"]), NOW, force=True)
+
+    data = choices(with_times, [other["id"]])
+    assert [(s["masjid_label"], s["order_label"], local(s["starts_at"])) for s in data["slots"]] == [
+        ("Stittsville Masjid", "1st Jumuah", "13:15"),
+    ]
+    assert data["selected"] == {"masjid_id": other["id"], "order": 1}
+    # Nothing was saved: KMA is still the main masjid and the only Jumuah masjid.
+    settings = with_times.get("/settings").json()
+    assert [m["id"] for m in settings["jumuah_masjids"]] == [kma]
 
 
-@pytest.mark.parametrize("minutes", [-1, 61, 2.5])
-def test_a_bad_unsaved_how_early_is_refused(with_times, minutes):
-    assert with_times.post("/jumuah/choices", json={"jumuah_arrive_early_minutes": minutes}).status_code == 422
-
-
-def test_without_free_busy_access_busy_isnt_checked(client, fake_google, fake_photon, set_today, db, http, fake_mawaqit):
-    sign_in(client, fake_google, scopes=OLD_SCOPES)
-    set_today(DAY)
-    setup_through_api(client, fake_photon)
-    link(db, masjid_id(db, "Kanata Muslim Association"), "kma-kanata", fake_mawaqit)
-    fetch(db, http, NOW)
-    fake_google.busy["user-a"] = BUSY_1_TO_1_40
-    data = choices(client)
-    assert (data["busy_checked"], data["busy"]) == (False, [])
-    assert all(s["fits"] for s in data["slots"])
-    assert fake_google.freebusy_requests() == []
-    assert client.get("/me").json()["busy_access"] is False
+def test_a_masjid_that_cant_be_picked_is_refused(set_up):
+    assert set_up.get("/jumuah/slots", params={"masjid_id": str(uuid.uuid4())}).status_code == 404
 
 
 def test_the_chooser_needs_sign_in(client):
-    assert client.post("/jumuah/choices", json={}).status_code == 401
+    assert client.get("/jumuah/slots").status_code == 401

@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 import httpx2
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -591,19 +591,24 @@ def save_jumuah_pick(request: JumuahPickRequest, user: UserDep, db: DbDep, http:
 # ---- The Jumuah chooser ----
 
 
-class ChoicesRequest(BaseModel):
-    """Answers the user is still filling in on the optional page, so the chooser can show them before they're saved."""
+@router.get("/jumuah/slots", response_model=JumuahChoices)
+def jumuah_slots_for_user(
+    user: UserDep, db: DbDep, now: NowDep, masjid_id: Annotated[list[uuid.UUID], Query(max_length=11)] = []
+) -> JumuahChoices:
+    """Each Jumuah slot at the user's Jumuah masjids, with this week's times as an example. Saves nothing.
 
-    jumuah_arrive_early_minutes: int | None = Field(default=None, ge=0, le=60, strict=True)
-
-
-@router.post("/jumuah/choices", response_model=JumuahChoices)
-def jumuah_choices_for_user(request: ChoicesRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> JumuahChoices:
-    """This Friday's Jumuah slots, the user's busy times, and which slot fits. Saves nothing.
-
-    It's a POST because the drive times it works out are cached, and a GET must never change data.
+    masjid_id lists the masjids setup is about to save, so the question can be
+    answered on the same page as the masjid. Without it, the saved Jumuah masjids are used.
     """
-    return jumuah_choices(db, http, user.id, now, request.jumuah_arrive_early_minutes)
+    masjids = None
+    if masjid_id:
+        masjids = []
+        for one in dict.fromkeys(masjid_id):
+            masjid = usable_masjid(db, user.id, one)
+            if masjid is None:
+                raise HTTPException(status_code=404, detail={"message": "Pick masjids from the suggestions."})
+            masjids.append(masjid)
+    return jumuah_choices(db, user.id, now, masjids)
 
 
 # ---- Finishing setup, and retrying Google ----
