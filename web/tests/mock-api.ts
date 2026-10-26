@@ -133,6 +133,7 @@ export class MockApi {
       { day: "2026-10-24", signed_up: 40, active: 24 }, { day: "2026-10-25", signed_up: 42, active: 25 },
     ],
     masjid_times: [],
+    unlinked_masjids: [],
   };
   // How many times POST /api/calendar/preview answers 409 before it works, like setup still saving.
   previewNotReady = 0;

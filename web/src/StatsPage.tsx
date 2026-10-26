@@ -150,6 +150,28 @@ export function StatsPage() {
         <Graph history={stats.history} />
       </section>
 
+      <section className="card stats-section" aria-labelledby="unlinked-title">
+        <h2 id="unlinked-title">Masjids not linked to MAWAQIT</h2>
+        {stats.unlinked_masjids.length === 0 ? (
+          <p>Every masjid someone picked is linked.</p>
+        ) : (
+          <>
+            <p className="hint">
+              Most users first. Link one with <code>python -m app.admin link-mawaqit --masjid &lt;ID&gt; --url &lt;page&gt;</code>.
+            </p>
+            <ul className="plain masjid-problems">
+              {stats.unlinked_masjids.map((m) => (
+                <li key={m.id}>
+                  <strong>{m.name}</strong>
+                  <span className="hint detail">{m.users === 1 ? "1 user" : `${m.users} users`}</span>
+                  <span className="hint detail">ID: <code>{m.id}</code></span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
+
       <section className="card stats-section" aria-labelledby="masjid-times-title">
         <h2 id="masjid-times-title">Masjid times</h2>
         {stats.masjid_times.length === 0 ? (

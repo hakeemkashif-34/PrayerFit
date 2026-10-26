@@ -145,4 +145,6 @@ export type Stats = {
   new_this_week: number;
   history: { day: string; signed_up: number; active: number }[];
   masjid_times: { name: string; source: string; last_success_at: string | null; error: string | null }[];
+  // Masjids someone picked that aren't linked to MAWAQIT yet, most users first.
+  unlinked_masjids: { id: string; name: string; users: number }[];
 };

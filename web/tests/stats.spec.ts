@@ -36,6 +36,34 @@ test("the admin sees the 4 counts, a graph, and masjid times that need a look", 
   await expect(page.getByText(/@/)).toHaveCount(0);
 });
 
+test("masjids users picked that aren't linked to MAWAQIT are listed, most users first", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  api.adminEmail = "hakeem@example.com";
+  api.stats.unlinked_masjids = [
+    { id: "osm-node-1", name: "Ottawa Main Mosque", users: 3 },
+    { id: "osm-node-2", name: "Barrhaven Masjid", users: 1 },
+  ];
+  await api.install(page);
+  await page.goto("/stats");
+  const unlinked = page.getByRole("region", { name: "Masjids not linked to MAWAQIT" });
+  await expect(unlinked.locator("li")).toHaveText([
+    "Ottawa Main Mosque3 usersID: osm-node-1",
+    "Barrhaven Masjid1 userID: osm-node-2",
+  ]);
+  // The command to link one is right there.
+  await expect(unlinked).toContainText("python -m app.admin link-mawaqit");
+});
+
+test("when every picked masjid is linked, the list says so", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  api.adminEmail = "hakeem@example.com";
+  await api.install(page);
+  await page.goto("/stats");
+  await expect(page.getByRole("region", { name: "Masjids not linked to MAWAQIT" })).toContainText(
+    "Every masjid someone picked is linked.",
+  );
+});
+
 for (const who of ["someone else", "nobody signed in"] as const) {
   test(`${who} gets "Page not found"`, async ({ page }) => {
     const api = new MockApi();
