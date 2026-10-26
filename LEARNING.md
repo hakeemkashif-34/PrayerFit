@@ -1318,7 +1318,7 @@ for each prayer, each day:
 
 ### 29. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`746 passed`) and `npx playwright test` in `web` (`228 passed`).
+1. **Tests**: `pytest` in `backend` (`830 passed`) and `npx playwright test` in `web` (`230 passed`).
 2. **For real**, the steps in section 14 now take up to 5 minutes, not 15.
 
 ### 30. Small fixes after review
@@ -1340,3 +1340,45 @@ for each prayer, each day:
    a) Backend: `test_masjids_that_arent_linked_yet_are_listed_with_their_user_counts`.
    b) Playwright: the ISNA line is gone and the time zone stays, both cards and the message are white, the unlinked list (and its empty message) on /stats, the "1 minute" text, the smaller font sizes at 6 widths, and a gap of at least 2px between every pair of blocks in a day, with no drive under 9.5px tall, on a laptop and a phone.
    c) The mock preview's drive now ends right when its prayer starts, like the real one, so the gap test checks the hard case.
+
+### 31. Linking masjids to MAWAQIT from my own list
+
+1. **Why a list**: MAWAQIT's search needs a login and it has no sitemap, so the app can't find a masjid's page by itself. I collected Ottawa's 23 MAWAQIT masjids by hand, each with its link and where it is. Users never see any of this.
+2. **The file**: `backend/app/data/mawaqit_masjids.csv`, with the columns `name,mawaqit_link,latitude,longitude`.
+   a) Most links are share links like `https://mawaqit.net/en/id/9793`. One is a page link, `https://mawaqit.net/en/cio-gatineau`.
+   b) `external_id_from_link()` in `mawaqit.py` turns them into what's saved: `id/9793` or `cio-gatineau`. `page_url()` builds the URL again from that, so a saved value can only ever point at mawaqit.net.
+   c) "id" is also a language code (Indonesian), so `https://mawaqit.net/id/9793` is a share link but `https://mawaqit.net/id/cio-gatineau` is a page link. There's a test for both.
+3. **The ID page is the same page**: I checked a saved copy of `https://mawaqit.net/en/id/9793`. It answers with KMA's page directly, no redirect, and its `confData` has the same times, iqamah, Jumuah, and time zone as KMA's page link. The parser gives the same 7 days from both. So I didn't commit the full page. The trimmed fixture already covers it.
+4. **Redirects**: `download()` still follows up to 3 redirects in case MAWAQIT changes this, but by hand, checking each one stays on `https://mawaqit.net`. A redirect anywhere else is refused before it's requested.
+5. **Loading the file** (`mawaqit_list.py`):
+   a) A new table, `mawaqit_list`, keyed by the saved ID, so loading the file again never adds a copy.
+   b) The backend loads it when it starts (FastAPI's `lifespan` in `main.py`), and the worker does too, before its first run.
+   c) A fixed name or location in the file replaces the saved one. A row removed from the file stays, since users may be linked to it.
+   d) It's a file loaded on start, not a migration, so adding a masjid is one new line, not a new migration.
+   e) One bad line stops the load, and the message names the line, like `mawaqit_masjids.csv line 5: the name is empty`. On start that's logged, not raised, so a typo can't take the site down. A test reads the real file on every push, so a typo fails CI first.
+6. **Matching** (`match.py`), plain functions with no database:
+   a) Within 100 m: a match, even with a different name. Map names are often spelled differently ("MAC QIC"), but 2 masjids are almost never within 100 m of each other.
+   b) From 100 m to 200 m: a match only if the names closely match. `name_words()` drops accents, punctuation, and common words (masjid, mosque, association, centre, center, Ottawa, the, of). Then the names match if one's words contain the other's, or if they're at least 85% alike (`difflib`). "Ottawa Main Mosque (OMA)" gives {main, oma}, which contains "Ottawa Main Mosque" ({main}). "Jami Omar" and "Jamia Omar" are 95% alike.
+   c) Exactly 1 match links. 0 is "no match", and 2 or more is "unclear", so the app never guesses between 2 masjids.
+7. **When it links** (`auto_link.py`):
+   a) In setup, when a user picks a masjid (`POST /masjids/from-suggestion`). `link_and_fetch` links it and reads its page straight away, so the Jumuah question already has the real Jumuah times. It uses the worker's job ID for this 6-hour block, so picking again never reads MAWAQIT twice. Any error is logged and dropped, so MAWAQIT being down never stops setup.
+   b) When the list changes (the file has new or changed rows on start, or `add-mawaqit`). `rematch_picked` matches every masjid users picked that isn't linked. The worker reads the new links within a minute, and that updates their calendars.
+8. **My links come first**:
+   a) `masjid_sources.origin` is "admin" (`link-mawaqit`) or "auto". Migration 0011 marks every link made before this as "admin".
+   b) Automatic matching only looks at masjids with no link, so it never replaces one of mine. `link-mawaqit` does replace an automatic one.
+   c) `unlink-mawaqit` sets `masjids.no_auto_link`, so a wrong automatic link I remove after a spot-check doesn't come back. `link-mawaqit` clears it.
+   d) Automatic links also save which list entry they matched and how far away it is, for /stats.
+9. **Admin commands**:
+   a) `add-mawaqit <link> --name --lat --lon` saves a list row straight away and links matching masjids. It says to add the same line to the CSV, since the CSV is what rebuilds the list.
+   b) `scan-area` asks OpenStreetMap's Overpass API for every masjid within 40 km of Ottawa and prints each as linked, no match, or unclear, then the totals. It only reports. Overpass is free, and only this command uses it. Setup still searches with Photon, since Overpass is meant for occasional big queries, not one per user. `--km` is limited to 100.
+10. **/stats**:
+    a) "Linked automatically": the masjid's map name, the list name it matched, the MAWAQIT link, the distance, and how many users. Newest first, including links nobody has saved yet (0 users), so I can spot-check every one.
+    b) "Masjids with no MAWAQIT match" replaced section 30's "not linked" list. It gives a reason, worked out again from the list each time: "No listed masjid within 200 m", "2 listed masjids are close, so it wasn't linked", or "Unlinked by hand".
+    c) A masjid picked by its address now shows "(no name, picked by address)". Section 30's list showed the address, which is where one user said their masjid is, so that was a privacy slip. `list-masjids` already hid it.
+11. **Tests**:
+    a) `test_masjid_match.py`: a match within 100 m with a different name, a name match at 150 m, a different name at 150 m, 2 close masjids (no link), too far (no link), the 100 m and 200 m edges, and name matching.
+    b) `test_mawaqit_list.py`: the real file (23 rows, valid links), each masjid loading once, the app loading it on start, a fixed row, bad lines, and a list change linking a masjid a user already picked.
+    c) `test_auto_link.py`: setup links KMA and reads `/en/id/9793` once, so the Jumuah question has its 1:15 Jumuah; MAWAQIT being down; a manual link never replaced (by setup, a list change, or `add-mawaqit`); an unlinked masjid not linked again; `add-mawaqit`; and `scan-area` with a fake Overpass.
+    d) `test_mawaqit_download.py`: share links and page links, redirects within mawaqit.net, and redirects anywhere else refused.
+    e) A migration test for 0011, and Playwright tests for both new /stats lists.
+12. **Counts**: `pytest` in `backend` gives `830 passed`, and `npx playwright test` in `web` gives `230 passed`.

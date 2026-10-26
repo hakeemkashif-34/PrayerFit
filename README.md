@@ -139,7 +139,49 @@ If you move to another time zone, the Prayers calendar's time zone changes too.
 
 ## Masjid times from MAWAQIT
 
-Masjid times come from each masjid's public page on [MAWAQIT](https://mawaqit.net). Linking a masjid to its page is a command on the server, not a website button, so a user can't link the wrong page for everyone.
+Masjid times come from each masjid's public page on [MAWAQIT](https://mawaqit.net). Users never see or do any of the linking. Linking a masjid by hand is a command on the server, not a website button, so a user can't link the wrong page for everyone.
+
+### My list of MAWAQIT masjids
+
+MAWAQIT's search needs a login and it has no sitemap, so the app can't find a masjid's page by itself. I keep my own list in `backend/app/data/mawaqit_masjids.csv`, one masjid per line:
+
+```
+name,mawaqit_link,latitude,longitude
+Kanata Muslim Association,https://mawaqit.net/en/id/9793,45.356128,-75.9283718
+Mosquee de Gatineau - CIO,https://mawaqit.net/en/cio-gatineau,45.4290189,-75.732133
+```
+
+It has 23 masjids around Ottawa. The link is either a share link (`https://mawaqit.net/en/id/9793`, from MAWAQIT's Share button) or a page link (`https://mawaqit.net/en/cio-gatineau`). The app saves `id/9793` or `cio-gatineau` and reads the times from that link. A share link answers with the masjid's page straight away.
+
+The backend and the worker load the file every time they start. Loading it again never adds a copy. If I fix a name or a location in the file, the saved one changes too.
+
+When a user picks a masjid in setup, the app matches it against the list straight away:
+
+1. Within 100 m: a match, even if the names are different. Map names are often spelled differently, like "MAC QIC".
+2. From 100 m to 200 m: a match only if the names closely match, ignoring words like masjid, mosque, association, centre, and Ottawa.
+3. It links only if exactly 1 listed masjid matches. Otherwise it doesn't link, and the masjid shows on /stats.
+
+Then it reads the masjid's page right away, so the Jumuah question in setup already has the masjid's real Jumuah times. If MAWAQIT is down, picking the masjid still works, and calculated times are used until the worker reads it.
+
+When the list changes, the masjids users already picked are matched again. An automatic link never replaces one I made with `link-mawaqit`, and a masjid I unlinked with `unlink-mawaqit` is never linked again automatically.
+
+**To add a masjid to the list**, add a line to the CSV and deploy. Or add it straight away on the server, then add the same line to the CSV so it's kept:
+
+```bash
+docker compose exec backend python -m app.admin add-mawaqit https://mawaqit.net/en/id/9793 --name "Kanata Muslim Association" --lat 45.356128 --lon -75.9283718
+```
+
+It prints any users' masjids it linked.
+
+**To check how well the list covers an area**, `scan-area` asks OpenStreetMap's free Overpass API for every masjid within 40 km of Ottawa (or `--lat`, `--lon`, `--km`), and prints each one as `linked`, `no match`, or `unclear`. It only reports. Nothing is saved.
+
+```bash
+docker compose exec backend python -m app.admin scan-area
+```
+
+Masjids that aren't on MAWAQIT get calculated prayer start times only, with no iqamah, for now.
+
+### Linking a masjid by hand
 
 1. Find the masjid's ID:
 
@@ -147,7 +189,7 @@ Masjid times come from each masjid's public page on [MAWAQIT](https://mawaqit.ne
    docker compose exec backend python -m app.admin list-masjids
    ```
 
-   Each line has the ID, the name, its MAWAQIT link (or "not linked"), and how many users picked it. A masjid only shows up once someone has picked it in setup. The /stats page (below) also lists every masjid users picked that isn't linked yet, most users first, so I know which to link next.
+   Each line has the ID, the name, its MAWAQIT link (with "(automatic)" for one from the list, or "not linked"), and how many users picked it. A masjid only shows up once someone has picked it in setup. The /stats page (below) also lists every masjid users picked with no MAWAQIT match, most users first.
 
 2. Link it to its MAWAQIT page:
 
@@ -155,7 +197,7 @@ Masjid times come from each masjid's public page on [MAWAQIT](https://mawaqit.ne
    docker compose exec backend python -m app.admin link-mawaqit --masjid <masjid id> --url https://mawaqit.net/en/<masjid page>
    ```
 
-   Only `https://mawaqit.net` links are accepted, and only the page name from the link is saved. The widget link (`https://mawaqit.net/en/w/<masjid page>`) works too. KMA's page is `https://mawaqit.net/en/kma-masjid-ottawa`.
+   Only `https://mawaqit.net` links are accepted, and only the page name (or `id/<number>` for a share link) is saved. The widget link (`https://mawaqit.net/en/w/<masjid page>`) and share links (`https://mawaqit.net/en/id/9793`) work too. KMA's page is `https://mawaqit.net/en/kma-masjid-ottawa`. This replaces an automatic link.
 
 3. The worker reads the page within a minute, then at most once every 6 hours. To read it now:
 
@@ -165,7 +207,7 @@ Masjid times come from each masjid's public page on [MAWAQIT](https://mawaqit.ne
 
    Then `docker compose exec worker python -m app.worker run-now --force` to update calendars straight away.
 
-4. To stop using a page: `python -m app.admin unlink-mawaqit --masjid <masjid id>`. Calendars go back to calculated times.
+4. To stop using a page: `python -m app.admin unlink-mawaqit --masjid <masjid id>`. Calendars go back to calculated times, and the masjid won't be linked automatically again. Linking it by hand undoes that.
 
 5. To set how long a masjid's Jumuah is, from the khutbah to the end of the prayer (whole minutes from 15 to 90):
 
@@ -285,7 +327,7 @@ New this week: 6
 
 The worker saves these 4 numbers once a day, after 4:00 am, so there's a history.
 
-**The private page**: put your own Google email in `.env` as `ADMIN_EMAIL=you@gmail.com` and restart. Sign in, then open http://localhost:8000/stats. It shows the 4 numbers, a graph of sign-ups and active users over time (hover for a day's numbers, or open the table), a "Masjids not linked to MAWAQIT" list of every main masjid users picked that has no MAWAQIT page yet, with how many users each has and its ID for `link-mawaqit`, and a "Masjid times" list of any linked masjid whose MAWAQIT read is failing or over 24 hours old, with its last good read and the error. Anyone else, signed in or not, gets "Page not found". Nothing links to it. With `ADMIN_EMAIL` empty, nobody can open it.
+**The private page**: put your own Google email in `.env` as `ADMIN_EMAIL=you@gmail.com` and restart. Sign in, then open http://localhost:8000/stats. It shows the 4 numbers, a graph of sign-ups and active users over time (hover for a day's numbers, or open the table), a "Linked automatically" list of every link made from my MAWAQIT list (the masjid's map name, the list name it matched, its MAWAQIT link, the distance, and how many users), so I can spot-check them, a "Masjids with no MAWAQIT match" list of every main masjid users picked with no link, most users first, with why ("No listed masjid within 200 m", "2 listed masjids are close, so it wasn't linked", or "Unlinked by hand"), so I know which to add, and a "Masjid times" list of any linked masjid whose MAWAQIT read is failing or over 24 hours old, with its last good read and the error. Anyone else, signed in or not, gets "Page not found". Nothing links to it. With `ADMIN_EMAIL` empty, nobody can open it.
 
 ## Look
 
@@ -312,7 +354,7 @@ Through nginx, every endpoint below is under `/api` (like `/api/me`), except the
 | `PUT /settings/jumuah-pick` | Saves your Jumuah pick as your main masjid and a slot (1st, 2nd, or 3rd), or clears it |
 | `POST /jumuah/slots` | Each Jumuah slot at your main masjid (or the `masjid_id` given, for setup), with this week's times as an example, its leave time, which one is picked, and the masjid's name if it has no Jumuah times yet. No busy times. A POST because it may ask OpenRouteService for a drive time |
 | `POST /calendar/preview` | This week's prayers and drive blocks at their real times, for the "Adding your prayers" page. Nothing goes to Google |
-| `GET /admin/stats` | The usage counts, their history, masjids that aren't linked to MAWAQIT, and masjid times that need a look. 404 for everyone but `ADMIN_EMAIL` |
+| `GET /admin/stats` | The usage counts, their history, automatic MAWAQIT links, masjids with no MAWAQIT match, and masjid times that need a look. 404 for everyone but `ADMIN_EMAIL` |
 | `POST /setup/finish` | Finishes setup and fills the next 14 days. The website calls it after the last question |
 | `POST /calendar/sync` | Sends anything still waiting. Safe to run again |
 | `POST /prayers/today` | Updates today's prayers and drive blocks from your saved settings. Safe to run again |
@@ -340,11 +382,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `746 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `830 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`379 passed, 367 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`435 passed, 395 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
@@ -357,4 +399,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `228 passed`: 114 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `230 passed`: 115 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
