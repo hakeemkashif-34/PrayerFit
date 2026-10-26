@@ -59,6 +59,28 @@ for (const scheme of ["light", "dark"] as const) {
   });
 }
 
+test('"praying on time" stands out: bold, on a soft gold highlight', async ({ page }) => {
+  await new MockApi().install(page);
+  await page.goto("/");
+  const words = page.locator(".hadith .on-time");
+  await expect(words).toHaveText("praying on time");
+  const [weight, background, colour, wrap] = await words.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return [Number(s.fontWeight), s.backgroundImage, s.color, s.whiteSpace];
+  });
+  expect(weight).toBeGreaterThanOrEqual(700);
+  // A highlighter band in soft gold (#f6e2a6) behind the words.
+  expect(background).toContain("rgb(246, 226, 166)");
+  // Kept together on 1 line, even on a phone.
+  expect(wrap).toBe("nowrap");
+  const box = (await words.boundingBox())!;
+  expect(box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  // The same near-black as the rest of the hadith, so it's easy to read on the gold.
+  expect(colour).toBe(await page.locator(".hadith blockquote p").evaluate((el) => getComputedStyle(el).color));
+  // Only those words. The rest of the hadith has no highlight.
+  expect(await page.locator(".hadith blockquote p").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+});
+
 test("light only: the same white, black, and green on light green, even with dark mode turned on", async ({ page }) => {
   const colours = async () => {
     const body = await page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor);

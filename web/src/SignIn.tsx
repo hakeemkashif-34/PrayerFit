@@ -24,7 +24,7 @@ export function SignIn({ expired = false, errorCode = null }: Props) {
         <p className="lead">Keep your prayer times up to date, every day.</p>
         <figure className="hadith">
           <blockquote>
-            <p>The Prophet ﷺ was asked which deed is most beloved to Allah, and he said praying on time.</p>
+            <p>The Prophet ﷺ was asked which deed is most beloved to Allah, and he said <strong className="on-time">praying on time</strong>.</p>
           </blockquote>
           <figcaption>Sahih al-Bukhari 527</figcaption>
         </figure>
