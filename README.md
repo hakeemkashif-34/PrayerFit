@@ -280,4 +280,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `142 passed`: 71 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `150 passed`: 75 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
