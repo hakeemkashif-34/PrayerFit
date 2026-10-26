@@ -3,9 +3,9 @@
 //
 // The mock API's week preview (POST /api/calendar/preview) starts on Monday
 // Oct 26, 2026: Fajr 6:10, Dhuhr 1:00, Asr 3:30, Maghrib 6:00, Isha 7:30. With
-// finishedSettings(), Dhuhr and Isha are at KMA on weekdays, each with a drive
-// block from 19 to 5 minutes before. The clock is faked, so "a block every
-// second" is checked exactly.
+// finishedSettings(), Dhuhr and Isha are at KMA on weekdays, each with a
+// 14 minute drive block that ends right when the prayer starts. The clock is
+// faked, so "a block every second" is checked exactly.
 
 import { expect, test, type Page } from "@playwright/test";
 import { finishedSettings, MockApi } from "./mock-api";
@@ -26,11 +26,12 @@ const blocks = (page: Page) => page.locator(".week-block");
 
 test("the heading and the line under it", async ({ page }) => {
   await openAdding(page);
-  await expect(page.locator(".adding-wait")).toHaveText("This can take up to a minute.");
+  // Numbers are written as digits.
+  await expect(page.locator(".adding-wait")).toHaveText("This can take up to 1 minute.");
 });
 
 for (const width of [320, 390, 412, 768, 1280, 1680]) {
-  test(`it fills the screen, with "This can take up to a minute." on one line, at ${width}px wide`, async ({ page }) => {
+  test(`it fills the screen, with "This can take up to 1 minute." on one line, at ${width}px wide`, async ({ page }) => {
     const height = width < 760 ? 844 : 800;
     await page.setViewportSize({ width, height });
     await openAdding(page);
@@ -45,11 +46,13 @@ for (const width of [320, 390, 412, 768, 1280, 1680]) {
     const week = (await page.locator(".week").boundingBox())!;
     expect(week.height).toBeGreaterThan(height * 0.45);
     expect(week.y + week.height).toBeLessThanOrEqual(height + 1);
-    // Big text: the heading is at least 2rem, and bigger than the line under it.
-    const [heading, wait] = await Promise.all(
-      ["main h1", ".adding-wait"].map((s) => page.locator(s).evaluate((el) => parseFloat(getComputedStyle(el).fontSize))),
+    // The heading is between 1.5rem and 2.75rem, and bigger than the line under it, which is at most 1.25rem.
+    const [heading, wait, rem] = await Promise.all(
+      ["main h1", ".adding-wait", "html"].map((s) => page.locator(s).evaluate((el) => parseFloat(getComputedStyle(el).fontSize))),
     );
-    expect(heading).toBeGreaterThanOrEqual(32);
+    expect(heading).toBeGreaterThanOrEqual(1.5 * rem);
+    expect(heading).toBeLessThanOrEqual(2.75 * rem);
+    expect(wait).toBeLessThanOrEqual(1.25 * rem);
     expect(heading).toBeGreaterThan(wait);
   });
 }
@@ -98,6 +101,32 @@ test("each block sits at its real time of day", async ({ page }) => {
   const expected = six!.y + (seven!.y - six!.y) / 6;
   expect(Math.abs(fajr!.y - expected)).toBeLessThan(2);
 });
+
+for (const [width, height] of [[1280, 800], [390, 844]]) {
+  test(`blocks that are back to back, like a drive and its prayer, leave a gap at ${width}px wide`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await openAdding(page);
+    // The whole week, so every drive and its prayer are on screen.
+    await page.clock.runFor(45_000);
+    await expect(blocks(page)).toHaveCount(45);
+    // Wait for the last block's animation to finish, since it starts squashed.
+    await page.clock.runFor(1000);
+    const gaps = await page.locator(".week-column").evaluateAll((columns) =>
+      columns.flatMap((column) => {
+        const boxes = [...column.querySelectorAll(".week-block")]
+          .map((b) => b.getBoundingClientRect())
+          .sort((a, b) => a.top - b.top);
+        return boxes.slice(1).map((box, i) => box.top - boxes[i].bottom);
+      }),
+    );
+    expect(gaps.length).toBeGreaterThan(0);
+    // Every block ends at least 2px before the next one in its day.
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(2);
+    // And the gap never squeezes a drive into a thin line.
+    const drives = await page.locator(".week-block.drive").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height));
+    expect(Math.min(...drives)).toBeGreaterThanOrEqual(9.5);
+  });
+}
 
 test("prayer blocks use the prayer colour, and drive blocks the drive colour and their own animation", async ({ page }) => {
   await openAdding(page);

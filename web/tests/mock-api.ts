@@ -215,6 +215,7 @@ export class MockApi {
   }
 
   // Like POST /calendar/preview: this week at round times, with a drive block before masjid prayers.
+  // The drive ends right when the prayer starts, back to back, like the real ones.
   preview(): Preview {
     const s = this.settings;
     const times: [PreviewEvent["prayer"], string, number][] = [
@@ -234,7 +235,7 @@ export class MockApi {
       for (const [prayer, title, start] of times) {
         const atMasjid = s.main_masjid_choice === "masjid" && s.weekly.find((d) => d.weekday === weekday)?.[prayer];
         if (atMasjid) {
-          events.push({ local_date: date, prayer, kind: "drive", title: `Drive to ${label}`, starts_at: at(start - 19), ends_at: at(start - 5) });
+          events.push({ local_date: date, prayer, kind: "drive", title: `Drive to ${label}`, starts_at: at(start - 14), ends_at: at(start) });
         }
         events.push({ local_date: date, prayer, kind: "prayer", title: atMasjid ? `${title} at ${label}` : title, starts_at: at(start), ends_at: at(start + 10) });
       }

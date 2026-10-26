@@ -25,6 +25,8 @@ const BLOCK_MS = 1000;
 const HOLD_BLOCKS = 3;
 const ASK_TIMES = 6;
 const ASK_EVERY_MS = 1200;
+// The space left between blocks that are back to back, like a drive and its prayer.
+const BLOCK_GAP_PX = 3;
 
 // The app's green, used when no Google colour was picked.
 const GREEN = "#17663f";
@@ -133,21 +135,36 @@ function WeekFilling({ preview }: { preview: Preview }) {
               <span>{hourText(m)}</span>
             </div>
           ))}
-          {days.map((day, column) => (
-            <div key={day} className="week-column" style={{ gridColumn: column + 2 }}>
-              {order.slice(0, shown).filter((e) => e.local_date === day).map((e) => {
-                const start = minutesIntoDay(e.starts_at, zone);
-                const end = endOf(e, zone);
-                return (
-                  <span
-                    key={`${e.prayer}-${e.kind}`}
-                    className={`week-block ${e.kind}`}
-                    style={{ top: pct(start), height: `max(${e.kind === "drive" ? 10 : 16}px, ${((end - start) / span) * 100}%)` }}
-                  />
-                );
-              })}
-            </div>
-          ))}
+          {days.map((day, column) => {
+            const today = order.filter((e) => e.local_date === day);
+            return (
+              <div key={day} className="week-column" style={{ gridColumn: column + 2 }}>
+                {order.slice(0, shown).filter((e) => e.local_date === day).map((e) => {
+                  const start = minutesIntoDay(e.starts_at, zone);
+                  const end = endOf(e, zone);
+                  const least = `${e.kind === "drive" ? 10 : 16}px`;
+                  const real = `${((end - start) / span) * 100}%`;
+                  const next = today.find((n) => minutesIntoDay(n.starts_at, zone) > start);
+                  if (!next) {
+                    return <span key={`${e.prayer}-${e.kind}`} className={`week-block ${e.kind}`} style={{ top: pct(start), height: `max(${least}, ${real})` }} />;
+                  }
+                  // A drive and its prayer are back to back. So each block stops a small gap
+                  // before the next one that day. If that leaves it too short to see, it keeps
+                  // its smallest height and moves up a little instead, so it never overlaps.
+                  const nextTop = pct(minutesIntoDay(next.starts_at, zone));
+                  const fits = `calc(${nextTop} - ${pct(start)} - ${BLOCK_GAP_PX}px)`;
+                  const height = `max(${least}, min(${real}, ${fits}))`;
+                  return (
+                    <span
+                      key={`${e.prayer}-${e.kind}`}
+                      className={`week-block ${e.kind}`}
+                      style={{ top: `min(${pct(start)}, calc(${nextTop} - ${BLOCK_GAP_PX}px - ${height}))`, height }}
+                    />
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -243,7 +260,7 @@ export function AddingPage() {
   return (
     <main className="adding">
       <h1>Adding your prayers to Google Calendar...</h1>
-      <p className="adding-wait one-line">This can take up to a minute.</p>
+      <p className="adding-wait one-line">This can take up to 1 minute.</p>
       <Waiting />
     </main>
   );
