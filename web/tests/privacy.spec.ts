@@ -14,6 +14,9 @@ test("the privacy page opens without signing in", async ({ page }) => {
   await expect(page.getByText("calendar.freebusy")).toBeVisible();
   await expect(page.getByRole("link", { name: "Google API Services User Data Policy" })).toBeVisible();
   await expect(page.getByRole("link", { name: "hakeemkashif34@gmail.com" })).toHaveAttribute("href", "mailto:hakeemkashif34@gmail.com");
+  // The anonymous sign-up and deletion counts behind /stats are listed too.
+  await expect(page.getByText(/how many deleted their account in each hour/)).toBeVisible();
+  await expect(page.getByText(/no email or anything else that leads back to you/)).toBeVisible();
   // It never asks who you are.
   expect(api.calls("GET", "/api/me")).toHaveLength(0);
 });
