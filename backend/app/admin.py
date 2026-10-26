@@ -8,7 +8,7 @@ these, so a user can't link the wrong page for everyone.
     python -m app.admin add-mawaqit <MAWAQIT link> --name "<name>" --lat <latitude> --lon <longitude>
     python -m app.admin scan-area [--lat 45.4215 --lon -75.6972 --km 40]
     python -m app.admin set-jumuah-length --masjid <masjid id> --minutes 40
-    python -m app.admin stats            usage counts only, never anyone's details
+    python -m app.admin stats            total users and each masjid's users, never anyone's details
 
 With Docker: docker compose exec backend python -m app.admin list-masjids
 """
@@ -36,7 +36,7 @@ from app.masjid_times.scan import (
 )
 from app.masjid_times.scheduler import run_fetch
 from app.models import Masjid, MasjidDayTimes, MasjidSource
-from app.stats import counts, stats_lines
+from app.stats import masjid_counts, stats_lines, total_users
 from app.update_jobs import queue_update, users_of_masjid
 
 
@@ -193,7 +193,7 @@ def main(argv: list[str] | None = None) -> None:
     scan.add_argument("--lat", type=float, default=OTTAWA[0])
     scan.add_argument("--lon", type=float, default=OTTAWA[1])
     scan.add_argument("--km", type=float, default=DEFAULT_KM)
-    commands.add_parser("stats", help="how many people signed up, finished setup, are active, and are new")
+    commands.add_parser("stats", help="total users, and how many users picked each masjid")
     args = parser.parse_args(argv)
 
     now = datetime.now(UTC)
@@ -201,7 +201,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.command == "list-masjids":
             print("\n".join(list_masjids(db)))
         elif args.command == "stats":
-            print("\n".join(stats_lines(counts(db, now))))
+            print("\n".join(stats_lines(total_users(db), masjid_counts(db))))
         elif args.command == "link-mawaqit":
             print(link_mawaqit(db, args.masjid, args.url, now))
         elif args.command == "add-mawaqit":
