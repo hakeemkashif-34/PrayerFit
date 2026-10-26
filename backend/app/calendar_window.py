@@ -24,7 +24,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.auth.tokens import get_access_token
-from app.busy_times import busy_on
+from app.busy_times import busy_between
 from app.drive_times import drive_seconds
 from app.geo.timezones import masjid_time_zone
 from app.event_plan import MasjidContext, PlannedEvent, drive_event_id, plan_day
@@ -208,15 +208,9 @@ def refresh_calendar(
             first_day = now.astimezone(ZoneInfo(setup.time_zone)).date()
         dates = window_dates(first_day, days)
         inputs = masjid_inputs(db, http, setup, dates, now)
-        # Busy times are only needed for Jumuah, and only the coming Friday
-        # has Jumuah times. One free/busy call, nothing saved.
-        friday = next_friday(dates[0])
-        busy = (
-            busy_on(db, http, user_id, friday, setup.time_zone).busy
-            if setup.jumuah_masjids and friday in dates
-            else []
-        )
-        save_window(db, user_id, plan_window(setup, dates, inputs, busy), dates, now)
+        # One free/busy call for the whole window. Nothing is saved.
+        busy = busy_between(db, http, user_id, dates[0], dates[-1], setup.time_zone)
+        save_window(db, user_id, plan_window(setup, dates, inputs, busy.busy), dates, now)
 
         # Get (or refresh) the token first, so a dead sign-in is reported
         # before any Google call. The rows above stay saved either way.
