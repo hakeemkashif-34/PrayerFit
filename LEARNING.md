@@ -1625,3 +1625,30 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
 1. On my machine, the whole production stack (with `SITE_ADDRESS=:80`, plain http) started: `/api/health` answered through Caddy, `/privacy` loaded, another host name got a 308 to `APP_ORIGIN`, `/auth/google/login` sent me to Google with the production redirect URI, a POST from another site still got 403, only Caddy had public ports, and the worker logged "Worker started".
 2. Backup and restore worked as in section 8.
 3. Not tested here: `server-setup.sh` on a real Azure VM, and the Let's Encrypt certificate, which needs the real address. The README's "Check it works" list covers those on the server.
+
+### 14. The /stats page: a range dropdown and a line that goes down
+
+1. **Where**: `backend/app/stats.py` (`record_sign_up`, `record_deletion`, `user_totals`), `backend/app/models.py` (`UserCountChange`), `backend/alembic/versions/0013_user_count_changes.py`, `GET /admin/stats/users` in `backend/app/routers/stats.py`, and `web/src/StatsPage.tsx`.
+2. **The problem**: the graph used to add up `users.created_at`. "Delete my account" deletes the user's row, so they disappeared from the past too. The line could only go up, and a deleted user made every earlier day look smaller than it really was.
+3. **The fix: anonymous counts per hour**. `user_count_changes` has 3 columns: `hour` (the start of the hour in UTC), `signed_up`, and `deleted`.
+   a) A new user adds 1 to `signed_up` for this hour. Signing in again adds nothing.
+   b) Deleting an account adds 1 to `deleted` and leaves the old `signed_up` alone. So the line goes up on the day they joined and down on the day they left.
+   c) No user ID, no email, and no foreign key. Several people in the same hour share one row, so a row can't be matched to a person. A test checks the columns are exactly these 3.
+   d) Both writes are in the same commit as the sign-in or the delete, so a failed sign-in or delete never counts.
+   e) It's an "upsert" (`INSERT ... ON CONFLICT DO UPDATE`): if the hour's row is already there, the counts are added to it, even if 2 people sign up at the same moment.
+   f) The hour comes from the database's clock (`now()`), the same clock as `users.created_at`.
+4. **The migration** fills the table from today's users, grouped by the hour they signed up. People who deleted their account before it ran can't be counted, since their rows are already gone.
+5. **Points**: each point is the total users at the end of that hour or day, or right now for the current one. It's every sign-up minus every deletion up to then.
+   a) 1, 2, and 3 days: one point per hour, 24, 48, or 72 points. Hours are real hours counted in UTC, so the night the clocks fall back has two "1:00 AM" points (EDT, then EST). A test checks this.
+   b) 5, 7, and 30 days: one point per Toronto calendar day, ending today. Days move by calendar date, never by adding 24 hours. A test checks the week of Nov 1.
+   c) All time: one point per day from the first sign-up.
+   d) Changes before the first point are already in its total, so the line starts at the right height.
+6. **The page**:
+   a) The "Total users" card is gone. The graph has the same number at its right end.
+   b) The dropdown asks the backend for the new range (`?range=1d`). If an older answer arrives late, it's ignored, so it never replaces a newer choice.
+   c) 72 points are too many to tab through or point at one by one. An invisible box over the plot finds the point closest to the mouse or the finger. The keyboard uses the arrow keys, Home, and End.
+   d) Dots only show when they'd be at least 16px apart. On a phone, 1 day has no dots, just the line and the picked point.
+   e) Times use `America/Toronto` whatever the computer's own time zone is. The hour text comes from `timeText` in `labels.ts`, the same as the rest of the site.
+   f) The masjid card is called "Masajid" (the plural), and that's the only place the word shows. The names column has a hidden "Name" header for screen readers, and the right column just says "Users".
+7. **Privacy page**: it now says the app counts sign-ups and deletions per hour, with nothing that leads back to a person.
+8. **Tests**: `test_stats.py` (the counts, each range, daylight saving, the endpoints), `test_migrations.py` (the migration groups users by hour and adds no ID or email column), and `stats.spec.ts` and `privacy.spec.ts` for the page. Counts: `pytest` gives `857 passed`, and `npx playwright test` gives `276 passed`.
