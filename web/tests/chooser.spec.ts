@@ -170,7 +170,8 @@ test("on Settings, the pick is in the Required section and changed with the same
   await page.getByRole("button", { name: "Save" }).click();
 
   expect((await api.sent("PUT", "/api/settings/jumuah-pick", 1))[0].body).toEqual({ masjid_id: KMA.id, order: 2 });
-  await expect(row).toContainText("2nd Jumuah at Kanata Muslim Association, if it fits your calendar");
+  // Just the pick, nothing more.
+  await expect(row.locator(".row-value")).toHaveText("2nd Jumuah at Kanata Muslim Association");
   await expect(page.getByRole("status")).toHaveText("Calendar updated. 2 events sent to Google.");
 
   // Editing again starts from the saved pick.

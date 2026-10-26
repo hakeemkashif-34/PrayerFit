@@ -1,13 +1,12 @@
 import { expect, test } from "@playwright/test";
 import { finishedSettings, GOOGLE_CALENDAR, KMA, MockApi } from "./mock-api";
 
-test("Settings is one card: a Required section and an Optional section, each item with its own Edit", async ({ page }) => {
+test("Settings has 2 cards, Required and Optional, each item with its own Edit", async ({ page }) => {
   await new MockApi().signedIn(finishedSettings()).install(page);
   await page.goto("/");
 
   await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
   await expect(page.getByText("Signed in as hakeem@example.com")).toBeVisible();
-  await expect(page.locator(".card")).toHaveCount(1);
   const required = page.getByRole("region", { name: "Required" });
   const optional = page.getByRole("region", { name: "Optional" });
   for (const name of ["Location", "Main masjid", "Prayers at the masjid", "Jumuah pick"]) {
@@ -340,8 +339,8 @@ test("Jumuah masjids keep the order they were added in, each with where its time
     masjid_ids: ["22222222-2222-2222-2222-222222222222", "11111111-1111-1111-1111-111111111111"],
   });
   await expect(page.getByRole("region", { name: "Jumuah masjids" }).getByRole("listitem")).toHaveText([
-    "Stittsville Masjid · Not linked to MAWAQIT, so calculated times are used",
-    "Kanata Muslim Association · Times from MAWAQIT, updated Oct 25, 2026",
+    "Stittsville MasjidNot linked to MAWAQIT, so calculated times are used",
+    "Kanata Muslim AssociationTimes from MAWAQIT, updated Oct 25, 2026",
   ]);
 });
 
@@ -402,7 +401,7 @@ test("users without free/busy access get a banner to sign in again", async ({ pa
   await expect(banner).toContainText("We only see when you're busy, never what your events are.");
   await expect(banner.getByRole("link", { name: "Sign in again" })).toHaveAttribute("href", "/auth/google/login");
   // The banner sits above the settings.
-  const [bannerBox, card] = await Promise.all([banner.boundingBox(), page.locator(".settings-card").boundingBox()]);
+  const [bannerBox, card] = await Promise.all([banner.boundingBox(), page.locator(".settings-card.required").boundingBox()]);
   expect(bannerBox!.y).toBeLessThan(card!.y);
 });
 
@@ -424,3 +423,88 @@ test("users with free/busy access see no banner", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
   await expect(page.getByText("We only see when you're busy")).toHaveCount(0);
 });
+
+test("Required is on the left and Optional on the right on a computer, and stacked on a phone", async ({ page }, info) => {
+  await new MockApi().signedIn(finishedSettings()).install(page);
+  await page.goto("/");
+  const [required, optional] = await Promise.all([
+    page.getByRole("region", { name: "Required" }).boundingBox(),
+    page.getByRole("region", { name: "Optional" }).boundingBox(),
+  ]);
+  if (info.project.name === "phone") {
+    expect(optional!.y).toBeGreaterThan(required!.y + required!.height - 1);
+  } else {
+    expect(optional!.x).toBeGreaterThan(required!.x + required!.width - 1);
+    expect(Math.abs(optional!.y - required!.y)).toBeLessThan(2);
+  }
+  // Not 2 identical cards: Required sits forward on paper, Optional is only outlined.
+  const look = (name: string) =>
+    page.getByRole("region", { name }).evaluate((el) => {
+      const s = getComputedStyle(el);
+      return `${s.backgroundColor} ${s.boxShadow}`;
+    });
+  expect(await look("Required")).not.toBe(await look("Optional"));
+});
+
+test("labels are small and muted, values larger and darker, and nothing is in all caps", async ({ page }) => {
+  await new MockApi().signedIn(finishedSettings()).install(page);
+  await page.goto("/");
+  const row = page.getByRole("region", { name: "Location" });
+  const [label, value] = await Promise.all(
+    [row.locator("h3"), row.locator(".row-value p").first()].map((l) =>
+      l.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return { size: parseFloat(s.fontSize), colour: s.color, transform: s.textTransform };
+      }),
+    ),
+  );
+  expect(label.size).toBeLessThan(value.size);
+  expect(label.colour).not.toBe(value.colour);
+  expect(label.transform).toBe("none");
+  await expect(row.locator("h3")).toHaveText("Location");
+});
+
+test("the chosen colours show as swatches", async ({ page }) => {
+  await new MockApi().signedIn(finishedSettings()).install(page);
+  await page.goto("/");
+  // Peacock is #039be5. Drive colour is the calendar's own, an empty ring.
+  const swatch = page.getByRole("region", { name: "Prayer colour" }).locator(".swatch");
+  await expect(swatch).toHaveCSS("background-color", "rgb(3, 155, 229)");
+  await expect(page.getByRole("region", { name: "Drive colour" }).locator(".swatch.none")).toBeVisible();
+});
+
+test("buttons show hover and keyboard focus", async ({ page }, info) => {
+  await new MockApi().signedIn(finishedSettings()).install(page);
+  await page.goto("/");
+  const edit = page.getByRole("button", { name: "Edit location" });
+  const before = await edit.evaluate((el) => getComputedStyle(el).backgroundColor);
+  if (info.project.name !== "phone") {
+    await edit.hover();
+    await expect.poll(() => edit.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(before);
+  }
+  await edit.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await expect(edit).toBeFocused();
+  await expect(edit).toHaveCSS("outline-style", "solid");
+});
+
+test("an item opens and closes smoothly, and not at all with motion turned off", async ({ page }) => {
+  await new MockApi().signedIn(finishedSettings()).install(page);
+  await page.goto("/");
+  const row = page.getByRole("region", { name: "Location", exact: true });
+  const easing = () => row.evaluate((el) => el.getAnimations().length);
+  // Nothing moves on page load.
+  expect(await easing()).toBe(0);
+  await page.getByRole("button", { name: "Edit location" }).click();
+  expect(await easing()).toBeGreaterThan(0);
+  await page.waitForTimeout(400);
+  await row.getByRole("button", { name: "Cancel" }).click();
+  expect(await easing()).toBeGreaterThan(0);
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.waitForTimeout(400);
+  await page.getByRole("button", { name: "Edit location" }).click();
+  expect(await easing()).toBe(0);
+});
+

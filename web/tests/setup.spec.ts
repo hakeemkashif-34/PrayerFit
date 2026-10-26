@@ -10,7 +10,7 @@ const PAGE_NAMES = ["Required", "Optional"];
 async function expectPage(page: Page, number: number) {
   await expect(page.getByRole("heading", { level: 1, name: PAGE_NAMES[number - 1] })).toBeVisible();
   await expect(page.locator('[aria-current="step"]')).toContainText(PAGE_NAMES[number - 1]);
-  const phoneLine = page.getByText(`Setup · Step ${number} of 2`);
+  const phoneLine = page.getByText(`Step ${number} of 2`);
   if (test.info().project.name === "phone") await expect(phoneLine).toBeVisible();
   else await expect(page.getByRole("complementary", { name: "Setup steps" })).toBeVisible();
 }
@@ -119,7 +119,7 @@ test("the full setup: required page, optional page, then a filled calendar", asy
     /^Kanata Masjid Toronto352\.1 km away/,
   ]);
   await page.getByRole("option", { name: /^Kanata Muslim Association/ }).click();
-  await expect(page.locator(".picked-masjid")).toContainText("Kanata Muslim Association · 1.1 km away");
+  await expect(page.locator(".picked-masjid")).toContainText("Kanata Muslim Association1.1 km away");
 
   // The weekly grid shows up once there's a masjid: prayers are rows, days are columns.
   await expect(page.getByRole("heading", { level: 2, name: "Which prayers do you usually pray at Kanata Muslim Association?" })).toBeVisible();
@@ -352,7 +352,7 @@ test("Change goes back to the masjid search box", async ({ page }) => {
   await page.getByRole("button", { name: "Change" }).click();
   await pickMasjid(page, "Stittsville", "Stittsville Masjid");
 
-  await expect(page.locator(".picked-masjid")).toContainText("Stittsville Masjid · 5.8 km away");
+  await expect(page.locator(".picked-masjid")).toContainText("Stittsville Masjid5.8 km away");
 });
 
 test("a failed masjid search shows its message and I pray at home still works", async ({ page }) => {
@@ -430,12 +430,12 @@ test("setup looks like the landing page: pages on the left on a computer, one li
   await expect(question).toBeVisible();
   if (info.project.name === "phone") {
     await expect(steps).toBeHidden();
-    await expect(page.getByText("Setup · Step 1 of 2")).toBeVisible();
+    await expect(page.getByText("Step 1 of 2")).toBeVisible();
   } else {
     await expect(steps.getByRole("heading", { name: "Setup" })).toBeVisible();
     await expect(steps.getByRole("listitem")).toHaveText([/Required/, /Optional/]);
     await expect(steps.locator('[aria-current="step"]')).toHaveText(/Required/);
-    await expect(page.getByText("Setup · Step 1 of 2")).toBeHidden();
+    await expect(page.getByText("Step 1 of 2")).toBeHidden();
     const left = await steps.boundingBox();
     const right = await question.boundingBox();
     expect(right!.x).toBeGreaterThan(left!.x + left!.width - 1);

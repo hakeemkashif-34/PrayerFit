@@ -90,6 +90,8 @@ test("with motion turned off, a spinner shows instead", async ({ page }) => {
 
 test("the prayer colour picked in setup reaches the new tab", async ({ page }) => {
   const api = new MockApi().signedIn();
+  // Slow enough that the tab is still on the Adding page when it's checked.
+  api.finishDelayMs = 1500;
   await api.install(page);
   await page.goto("/");
   await page.getByRole("combobox", { name: "Address" }).pressSequentially("200 Kanata", { delay: 20 });
