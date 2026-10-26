@@ -105,7 +105,8 @@ def test_a_busy_first_jumuah_moves_to_the_earliest_that_fits(db, http, user, fak
     refresh(db, http, user, NOW)
     jumuah = titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")
     assert clock(jumuah) == "14:30"
-    assert "The earliest Jumuah that fits your calendar." in jumuah["description"]
+    # 1 hour after the 1st Jumuah, which is Jumuah's start time.
+    assert jumuah["description"] == "Moved because of an event in your calendar (1 hour after Jumuah's start time)."
     # One free/busy call per update.
     assert len(fake_google.freebusy_requests()) == 1
 
@@ -168,4 +169,4 @@ def test_every_jumuah_clashing_gives_the_1st_jumuah_and_says_so(db, http, user, 
     refresh(db, http, user, NOW)
     jumuah = titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")
     assert clock(jumuah) == "13:30"
-    assert "Every Jumuah clashes with your calendar, so this is the 1st Jumuah." in jumuah["description"]
+    assert jumuah["description"] == "Your event covers all of Jumuah's time today, so figure out a way to fit it in."

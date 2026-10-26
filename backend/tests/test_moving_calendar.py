@@ -6,21 +6,24 @@ with iqamah 4:15 pm, Maghrib 6:01 pm, and Isha adhan 7:23 pm with iqamah
 user arrives 5 minutes early. Asr and Isha are at KMA on Tuesdays.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy.orm import Session
 
 from app.models import UserSettings, WeeklyMasjidPrayers
-from tests.calendar_helpers import clock, fetch, google_events, on, refresh, rows, titled
+from tests.calendar_helpers import clock, fetch, google_events, on, refresh, rows, source, titled
 from tests.masjid_helpers import add_user, link, masjid_id
 from tests.mawaqit_pages import conf, set_day
 
 TORONTO = ZoneInfo("America/Toronto")
 NOW = datetime(2026, 10, 26, 8, 0, tzinfo=TORONTO)  # Monday
 TUESDAY = date(2026, 10, 27)
-MOVED = "Moved because of an event in your calendar."
+
+
+def moved(after: str) -> str:
+    return f"Moved because of an event in your calendar ({after})."
 
 
 def busy(fake_google, *spans: tuple[str, str], day: str = "2026-10-27", offset: str = "-04:00") -> None:
@@ -65,11 +68,9 @@ def test_isha_with_class_until_7_35_is_prayed_at_iqamah_without_the_drive(db, ht
     assert (clock(isha), clock(isha, end=True)) == ("19:40", "19:55")
     # Asr still has its drive block. Isha doesn't.
     assert titles(fake_google) == ["Fajr", "Dhuhr", "Drive to KMA", "Asr at KMA", "Maghrib", "Isha"]
-    lines = isha["description"].split("\n")
-    assert lines[0] == MOVED
-    assert lines[1].startswith("KMA iqamah (MAWAQIT, updated ")
-    # Midnight: halfway between Maghrib (6:01 pm) and Wednesday's Fajr (5:30 am).
-    assert lines[2] == "Isha's time is 7:23 pm to 11:45 pm."
+    # 7:40 is 17 minutes after the adhan (7:23).
+    assert isha["description"] == moved("17 minutes after Isha's start time")
+    assert source(db, isha).startswith("KMA iqamah (MAWAQIT, updated ")
 
 
 def test_isha_with_class_from_7_to_8_30_is_prayed_at_8_30(db, http, user, fake_google):
@@ -77,14 +78,16 @@ def test_isha_with_class_from_7_to_8_30_is_prayed_at_8_30(db, http, user, fake_g
     run(db, http, user)
     isha = titled(google_events(fake_google), TUESDAY, "Isha")
     assert (clock(isha), clock(isha, end=True)) == ("20:30", "20:45")
-    assert isha["description"].startswith(MOVED)
+    assert isha["description"] == moved("1 hour 7 minutes after Isha's start time")
 
 
 def test_isha_goes_before_a_meeting_when_that_is_earliest(db, http, user, fake_google):
     # The meeting runs 7:45 to 9:00. 7:23 to 7:38 is free, so Isha goes first.
     busy(fake_google, ("19:45", "21:00"))
     run(db, http, user)
-    assert clock(titled(google_events(fake_google), TUESDAY, "Isha")) == "19:23"
+    isha = titled(google_events(fake_google), TUESDAY, "Isha")
+    assert clock(isha) == "19:23"
+    assert isha["description"] == moved("at Isha's start time")
 
 
 # ---- Scenario 2: Asr at KMA ----
@@ -95,10 +98,7 @@ def test_asr_with_class_from_3_to_6_30_is_a_clash_at_iqamah(db, http, user, fake
     run(db, http, user)
     asr = titled(google_events(fake_google), TUESDAY, "Asr (clash)")
     assert (clock(asr), clock(asr, end=True)) == ("16:15", "16:25")
-    lines = asr["description"].split("\n")
-    assert lines[0] == "Your event covers all of Asr's time today, so there's no earlier or later time to pray it."
-    assert lines[1].startswith("KMA iqamah (MAWAQIT, updated ")
-    assert lines[2] == "Asr's time is 3:36 pm to 6:01 pm."
+    assert asr["description"] == "Your event covers all of Asr's time today, so figure out a way to fit it in."
 
 
 def test_asr_with_class_from_3_to_4_21_is_prayed_at_4_21(db, http, user, fake_google):
@@ -106,7 +106,7 @@ def test_asr_with_class_from_3_to_4_21_is_prayed_at_4_21(db, http, user, fake_go
     run(db, http, user)
     asr = titled(google_events(fake_google), TUESDAY, "Asr")
     assert (clock(asr), clock(asr, end=True)) == ("16:21", "16:31")
-    assert asr["description"].startswith(MOVED)
+    assert asr["description"] == moved("45 minutes after Asr's start time")
 
 
 # ---- Drive blocks and the app's own events ----
@@ -150,7 +150,7 @@ def test_a_moved_prayer_never_lands_on_the_apps_own_drive_block(db, http, user, 
 def test_without_busy_times_nothing_moves(db, http, user, fake_google):
     run(db, http, user)
     events = on(google_events(fake_google), TUESDAY)
-    assert not any("Moved" in e["description"] or "clash" in e["summary"] for e in events)
+    assert not any("description" in e or "clash" in e["summary"] for e in events)
     assert {r.fit for r in rows(db, user)} == {"normal"}
 
 
@@ -173,7 +173,6 @@ def test_isha_midnight_counts_real_hours_on_the_night_the_clocks_go_back(db, htt
     run(db, http, user)
     isha = titled(google_events(fake_google), date(2026, 10, 31), "Isha")
     assert (clock(isha), clock(isha, end=True)) == ("23:55", "00:10")
-    assert "Isha's time is 7:30 pm to 12:15 am." in isha["description"]
 
 
 # ---- When busy times are unknown ----
@@ -219,4 +218,15 @@ def test_without_free_busy_access_nothing_moves(db, http, user, fake_google):
     assert fake_google.freebusy_requests() == []
     assert titles(fake_google) == [
         "Fajr", "Dhuhr", "Drive to KMA", "Asr at KMA", "Maghrib", "Drive to KMA", "Isha at KMA",
+    ]
+
+
+def test_moved_descriptions_count_minutes_and_hours():
+    from app.event_plan import duration_text, moved_text
+
+    start = datetime(2026, 10, 27, 12, 48, tzinfo=TORONTO)
+    assert moved_text("Dhuhr", start, start + timedelta(minutes=42)) == moved("42 minutes after Dhuhr's start time")
+    assert moved_text("Dhuhr", start, start) == moved("at Dhuhr's start time")
+    assert [duration_text(m) for m in (1, 59, 60, 61, 72, 120, 125)] == [
+        "1 minute", "59 minutes", "1 hour", "1 hour 1 minute", "1 hour 12 minutes", "2 hours", "2 hours 5 minutes",
     ]

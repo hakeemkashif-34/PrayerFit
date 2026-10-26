@@ -38,7 +38,7 @@ Hosting: Azure on student credit
 
 Accuracy rules
 A wrong prayer time means a missed prayer, so every prayer time calculation needs tests.
-Show where each time came from.
+Show where each time came from on the Settings page, not in each event. Events only get a description when a prayer was moved or clashes.
 Never apply a masjid time change unless it came from the masjid's own published source or a masjid admin confirmed it.
 
 Lessons from a similar app

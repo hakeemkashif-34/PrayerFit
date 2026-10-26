@@ -67,13 +67,13 @@ def test_event_times_match_the_calculator_and_each_prayer_has_its_length(signed_
         assert event["start"]["timeZone"] == "America/Toronto"
 
 
-def test_description_says_where_the_time_came_from(signed_in, fake_google, db):
-    signed_in.post("/prayers/today")
+def test_events_have_no_description_but_the_source_is_saved(signed_in, fake_google, db):
+    response = signed_in.post("/prayers/today")
 
     events = fake_google.live_events(_only_calendar(fake_google).id)
-    first_lines = [e["description"].splitlines()[0] for e in events]
+    assert not any("description" in e for e in events)
     # Always ISNA with standard Asr. There's no setting for the method.
-    assert first_lines == ["Calculated (ISNA, standard Asr)"] * 5
+    assert [e["source"] for e in response.json()["events"]] == ["Calculated (ISNA, standard Asr)"] * 5
 
 
 def test_first_run_says_isna_standard(signed_in, fake_google):
@@ -82,7 +82,7 @@ def test_first_run_says_isna_standard(signed_in, fake_google):
     assert response.json()["events"][0]["source"] == "Calculated (ISNA, standard Asr)"
 
 
-def test_high_latitude_rule_is_named_in_the_description(client, fake_google, set_today, db):
+def test_high_latitude_rule_is_named_in_the_source(client, fake_google, set_today, db):
     # Edmonton is above 48 degrees, so Isha in June uses the seventh of the night rule.
     sign_in(client, fake_google)
     save_setup(db, location=(53.5461, -113.4938), time_zone="America/Edmonton")

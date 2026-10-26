@@ -349,7 +349,7 @@ def test_setup_is_4_questions(signed_in, osm, fake_google):
     assert [m["name"] for m in settings["jumuah_masjids"]] == ["Kanata Muslim Association"]
     assert osm.requests  # the location came from Photon
     events = fake_google.live_events(fake_google.calendars_of("user-a")[0].id)
-    assert events[0]["description"].startswith("Calculated (ISNA, standard Asr)")
+    assert not any("description" in e for e in events)
 
 
 def test_full_setup_fills_the_calendar(signed_in, osm, fake_google):

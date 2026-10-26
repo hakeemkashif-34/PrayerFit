@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Masjid, UpdateJob, UserSettings
-from tests.calendar_helpers import clock, fetch, google_events, on, refresh, titled
+from tests.calendar_helpers import clock, fetch, google_events, on, refresh, source, titled
 from tests.masjid_helpers import add_masjid, add_user, link, masjid_id, set_jumuah
 from tests.mawaqit_pages import conf, page
 
@@ -52,7 +52,7 @@ def test_no_jumuah_masjids_means_a_normal_friday(db, http, user, fake_google):
     refresh(db, http, user, NOW)
     assert "Dhuhr at KMA" in friday(fake_google)
     assert not [s for s in friday(fake_google) if "Jumuah" in s]
-    assert "Jumuah" not in titled(google_events(fake_google), FRIDAY, "Dhuhr at KMA")["description"]
+    assert "description" not in titled(google_events(fake_google), FRIDAY, "Dhuhr at KMA")
 
 
 def test_jumuah_replaces_friday_dhuhr_at_the_earliest_slot(db, http, user, fake_google, ors_key):
@@ -63,17 +63,14 @@ def test_jumuah_replaces_friday_dhuhr_at_the_earliest_slot(db, http, user, fake_
         "Fajr", "Drive to KMA", "Jumuah at KMA", "Asr", "Maghrib", "Drive to KMA", "Isha at KMA",
     ]
     jumuah = titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")
-    # No length set for KMA, so 45 minutes, and the description says it's estimated.
+    # No length set for KMA, so 45 minutes.
     assert (clock(jumuah), clock(jumuah, end=True)) == ("13:30", "14:15")
-    assert jumuah["description"] == (
-        "KMA Jumuah (MAWAQIT, updated Oct 25, 2026)\n"
-        "The earliest Jumuah that fits your calendar.\n"
-        "End time is estimated (45 minutes)."
-    )
+    assert source(db, jumuah) == "KMA Jumuah (MAWAQIT, updated Oct 25, 2026)"
+    assert "description" not in jumuah
     # The Jumuah "how early" (5 by default) and the 14 minute drive: leave 1:11.
     drive = on(google_events(fake_google), FRIDAY)[1]
     assert (clock(drive), clock(drive, end=True)) == ("13:11", "13:25")
-    assert drive["description"].endswith("Arriving 5 min before Jumuah.")
+    assert "description" not in drive
 
 
 def test_a_set_jumuah_length_is_used(db, http, user, fake_google):
@@ -83,7 +80,6 @@ def test_a_set_jumuah_length_is_used(db, http, user, fake_google):
     refresh(db, http, user, NOW)
     jumuah = titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")
     assert clock(jumuah, end=True) == "14:10"
-    assert "estimated" not in jumuah["description"]
 
 
 def test_the_jumuah_how_early_is_separate_from_prayers(db, http, user, fake_google, ors_key):
@@ -103,7 +99,7 @@ def test_the_users_pick_is_used(db, http, user, fake_google):
     refresh(db, http, user, NOW)
     jumuah = titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")
     assert clock(jumuah) == "14:30"
-    assert "Your pick (2nd Jumuah)." in jumuah["description"]
+    assert "description" not in jumuah
 
 
 def test_only_the_coming_friday_uses_mawaqits_jumuah_times(db, http, user, fake_google):
@@ -111,11 +107,8 @@ def test_only_the_coming_friday_uses_mawaqits_jumuah_times(db, http, user, fake_
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
     assert "Jumuah at KMA" in friday(fake_google, FRIDAY)
-    # The next Friday follows the weekly grid, and says why.
-    later = titled(google_events(fake_google), NEXT_FRIDAY, "Dhuhr at KMA")
-    assert later["description"].endswith(
-        "This Friday's Jumuah times aren't published yet, so this follows your weekly prayers."
-    )
+    # The next Friday follows the weekly grid.
+    titled(google_events(fake_google), NEXT_FRIDAY, "Dhuhr at KMA")
     assert not [s for s in friday(fake_google, NEXT_FRIDAY) if "Jumuah" in s]
 
 
@@ -145,10 +138,7 @@ def test_no_usable_jumuah_times_follows_the_weekly_grid(db, http, fake_google):
     set_jumuah(db, "user-a", ["Jamia Omar"])
     refresh(db, http, uid, NOW)
     dhuhr = titled(google_events(fake_google), FRIDAY, "Dhuhr at KMA")
-    assert dhuhr["description"].endswith(
-        "Jumuah times aren't available for your Jumuah masjids, so this follows your weekly prayers."
-    )
-    assert "Jumuah" not in titled(google_events(fake_google), date(2026, 10, 29), "Dhuhr at KMA")["description"]
+    assert "description" not in dhuhr
 
 
 def test_a_masjid_with_no_jumuah_on_its_page(db, http, fake_google, fake_mawaqit):
@@ -159,7 +149,6 @@ def test_a_masjid_with_no_jumuah_on_its_page(db, http, fake_google, fake_mawaqit
     refresh(db, http, uid, NOW)
     dhuhr = titled(google_events(fake_google), FRIDAY, "Dhuhr at KMA")
     assert clock(dhuhr) == "13:00"  # KMA's Dhuhr iqamah
-    assert "Jumuah times aren't available" in dhuhr["description"]
 
 
 def test_someone_who_prays_at_home_still_gets_jumuah(db, http, fake_google, fake_mawaqit):
@@ -171,7 +160,7 @@ def test_someone_who_prays_at_home_still_gets_jumuah(db, http, fake_google, fake
     refresh(db, http, uid, NOW)
     assert "Jumuah at Kanata Muslim Association" in friday(fake_google)
     fajr = titled(google_events(fake_google), FRIDAY, "Fajr")
-    assert fajr["description"].startswith("Calculated (ISNA, standard Asr)")
+    assert source(db, fajr).startswith("Calculated (ISNA, standard Asr)")
 
 
 def test_jumuah_stays_put_when_nothing_changes(db, http, user, fake_google, ors_key):

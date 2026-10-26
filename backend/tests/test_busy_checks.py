@@ -15,7 +15,7 @@ from app.models import BusyCheckJob, GoogleToken, WeeklyMasjidPrayers
 from tests.calendar_helpers import clock, fetch, google_events, refresh, titled
 from tests.conftest import fake_http_client
 from tests.fake_google import OLD_SCOPES
-from tests.test_moving_calendar import MOVED, NOW, TORONTO, TUESDAY, busy, run, titles, user  # noqa: F401
+from tests.test_moving_calendar import NOW, TORONTO, TUESDAY, busy, moved, run, titles, user  # noqa: F401
 
 ALL_AT_KMA = ["Fajr", "Dhuhr", "Drive to KMA", "Asr at KMA", "Maghrib", "Drive to KMA", "Isha at KMA"]
 
@@ -48,7 +48,7 @@ def test_a_new_event_moves_the_prayer_and_removing_it_puts_it_back(db, http, use
     assert len(fake_google.writes()) == writes + 2
     isha = titled(google_events(fake_google), TUESDAY, "Isha")
     assert clock(isha) == "20:30"
-    assert isha["description"].startswith(MOVED)
+    assert isha["description"] == moved("1 hour 7 minutes after Isha's start time")
 
     # The event is removed. The next check, 15 minutes later, puts Isha back at KMA.
     fake_google.busy["user-a"] = []

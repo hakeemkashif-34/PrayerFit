@@ -45,3 +45,10 @@ def rows(engine, user: uuid.UUID) -> list[PrayerEvent]:
 def clock(event: dict, end: bool = False) -> str:
     """"20:15" from an event's start (or end)."""
     return event["end" if end else "start"]["dateTime"][11:16]
+
+
+def source(engine, event: dict) -> str:
+    """Where a Google event's time came from. Events don't say it any more, so it's read from the row."""
+    row_id = uuid.UUID(event["extendedProperties"]["private"]["appEventId"])
+    with Session(engine) as db:
+        return db.get(PrayerEvent, row_id).source_description

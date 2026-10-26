@@ -9,7 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from app.masjid_times.mawaqit import conf_data, days_from, slug_from_link
-from tests.calendar_helpers import clock, fetch, google_events, refresh, titled
+from tests.calendar_helpers import clock, fetch, google_events, refresh, source, titled
 from tests.masjid_helpers import add_user, link, masjid_id
 
 PAGE = (Path(__file__).parent / "fixtures" / "mawaqit" / "kma_page.html").read_text(encoding="utf-8")
@@ -97,11 +97,11 @@ def test_kma_in_the_calendar(db, http, fake_google, fake_mawaqit):
     monday = date(2026, 10, 26)
     isha = titled(events, monday, "Isha at KMA")
     assert clock(isha) == day(monday).iqamah["isha"].strftime("%H:%M")
-    assert isha["description"] == "KMA iqamah (MAWAQIT, updated Oct 25, 2026)"
+    assert source(db, isha) == "KMA iqamah (MAWAQIT, updated Oct 25, 2026)"
     fajr = titled(events, monday, "Fajr")
     assert fajr["start"]["dateTime"].startswith("2026-10-26T06:13")
     assert clock(fajr) == day(monday).adhan["fajr"].strftime("%H:%M")
-    assert fajr["description"] == "KMA adhan time (MAWAQIT)"
+    assert source(db, fajr) == "KMA adhan time (MAWAQIT)"
 
 
 def test_a_plus_zero_day_is_labelled_as_kmas_iqamah(db, http, fake_google, fake_mawaqit):
@@ -116,4 +116,4 @@ def test_a_plus_zero_day_is_labelled_as_kmas_iqamah(db, http, fake_google, fake_
     tuesday = date(2026, 10, 13)
     isha = titled(google_events(fake_google), tuesday, "Isha at KMA")
     assert clock(isha) == day(tuesday).adhan["isha"].strftime("%H:%M")
-    assert isha["description"] == "KMA iqamah (MAWAQIT, updated Oct 13, 2026)"
+    assert source(db, isha) == "KMA iqamah (MAWAQIT, updated Oct 13, 2026)"

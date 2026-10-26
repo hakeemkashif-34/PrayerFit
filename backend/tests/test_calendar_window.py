@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from app.models import PrayerEvent
+from tests.calendar_helpers import source
 from tests.conftest import sign_in
 from tests.setup_helpers import save_setup, setup_through_api
 
@@ -77,19 +78,19 @@ def test_without_a_short_name_the_title_uses_the_full_name(signed_in, fake_photo
     assert "Dhuhr at Kanata Muslim Association" in titles
 
 
-def test_masjid_events_say_the_time_is_calculated(signed_in, fake_photon, fake_google):
+def test_masjid_events_save_that_the_time_is_calculated(signed_in, fake_photon, fake_google, db):
     setup_through_api(signed_in, fake_photon)
 
     for event in _events(fake_google):
-        # Every event says where its time came from.
+        # Every event saves where its time came from, but Google only gets the time.
+        assert "description" not in event
         if event["summary"].endswith("at KMA"):
-            assert event["description"].startswith(f"Calculated start time (ISNA, standard Asr). {IQAMAH_NOTE}")
+            assert source(db, event).startswith(f"Calculated start time (ISNA, standard Asr). {IQAMAH_NOTE}")
         else:
-            assert IQAMAH_NOTE not in event["description"]
-            assert event["description"].startswith("Calculated (ISNA, standard Asr)")
+            assert source(db, event).startswith("Calculated (ISNA, standard Asr)")
 
 
-def test_dhuhr_description_explains_the_extra_minute(signed_in, fake_google, db):
+def test_dhuhr_is_a_minute_after_solar_noon(signed_in, fake_google, db):
     # Ottawa on October 24, 2026: solar noon is 12:46:57, so Dhuhr is 12:48.
     save_setup(db)
 
@@ -100,11 +101,7 @@ def test_dhuhr_description_explains_the_extra_minute(signed_in, fake_google, db)
         if e["summary"] == "Dhuhr" and _local_start(e).date() == DAY
     )
     assert _local_start(dhuhr).strftime("%H:%M") == "12:48"
-    assert dhuhr["description"].splitlines() == [
-        "Calculated (ISNA, standard Asr)",
-        "Starts 1 minute after solar noon (12:46:57 pm), once the whole sun has passed "
-        "overhead, then rounded up to the minute.",
-    ]
+    assert source(db, dhuhr) == "Calculated (ISNA, standard Asr)"
 
 
 # ---- Changes after setup ----
@@ -260,7 +257,7 @@ def test_a_user_on_another_method_moves_to_isna_with_only_future_events_sent(sig
     monkeypatch.setattr(user_settings, "DEFAULT_METHOD", CalculationMethod.MWL)
     signed_in.post("/calendar/sync")
     fajr_before = next(e for e in _events(fake_google) if _local_start(e).date() == DAY and e["summary"].startswith("Fajr"))
-    assert fajr_before["description"].startswith("Calculated (MWL, standard Asr)")
+    assert source(db, fajr_before).startswith("Calculated (MWL, standard Asr)")
     before = len(fake_google.writes())
 
     # Now every user is on ISNA. It's noon, so today's Fajr has passed and stays as it was.
@@ -268,8 +265,8 @@ def test_a_user_on_another_method_moves_to_isna_with_only_future_events_sent(sig
     response = signed_in.post("/calendar/sync")
 
     changed = fake_google.writes()[before:]
-    # Every description names the method, so every future event changes:
-    # 70 minus today's Fajr, which is in the past.
-    assert response.json()["sent"] == len(changed) == 69
-    assert all(w.body["description"].startswith("Calculated (ISNA, standard Asr)") for w in changed)
+    # MWL and ISNA only differ for Fajr and Isha, so only those move:
+    # 28 events minus today's Fajr, which is in the past.
+    assert response.json()["sent"] == len(changed) == 27
+    assert {w.body["summary"] for w in changed} == {"Fajr", "Isha"}
     assert fajr_before["id"] not in {w.path.rsplit("/", 1)[-1] for w in changed}
