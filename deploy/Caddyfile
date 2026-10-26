@@ -1,0 +1,17 @@
+# Caddy sits in front of the app on the server. For every name in
+# SITE_ADDRESS it gets a free HTTPS certificate from Let's Encrypt, renews
+# it, and sends http:// visitors to https://. Both values come from .env.
+#
+#   SITE_ADDRESS  every name the site answers to, comma separated
+#   APP_ORIGIN    the main one, like https://prayerfit.me
+
+{$SITE_ADDRESS} {
+	# Any other name, like the old Azure address after the switch to
+	# prayerfit.me, moves to the main address. Sign-in cookies and the
+	# backend's Origin check only work on APP_ORIGIN.
+	@elsewhere expression `{scheme} + "://" + {hostport} != "{$APP_ORIGIN}"`
+	redir @elsewhere {$APP_ORIGIN}{uri} 308
+
+	encode zstd gzip
+	reverse_proxy web:80
+}

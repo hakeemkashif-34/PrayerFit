@@ -1,0 +1,59 @@
+# The server's extra settings, on top of docker-compose.yml.
+# Run both together (deploy/update.sh does this for you):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# What changes on the server:
+#   caddy   new: the only service the internet reaches. It gets a free
+#           Let's Encrypt certificate and passes everything to web.
+#   db, web no ports on the server. Docker opens published ports past the
+#           ufw firewall, so anything published here would be public.
+#   all     restart by themselves after a crash or a reboot, and keep
+#           their logs small so they never fill the disk.
+
+x-server: &server
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  db:
+    <<: *server
+    ports: !reset []
+
+  backend:
+    <<: *server
+
+  worker:
+    <<: *server
+
+  web:
+    <<: *server
+    ports: !reset []
+
+  caddy:
+    <<: *server
+    image: caddy:2.10-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      # HTTP/3 runs over UDP.
+      - "443:443/udp"
+    environment:
+      # Stop with a clear error if .env is missing these, instead of a blank site.
+      SITE_ADDRESS: ${SITE_ADDRESS:?Set SITE_ADDRESS in .env}
+      APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN in .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Keeps the certificate, so a restart doesn't ask Let's Encrypt again
+      # (it limits how many certificates one name can get each week).
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+
+volumes:
+  caddy-data:
+  caddy-config:
