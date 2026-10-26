@@ -139,15 +139,9 @@ export type Preview = {
 
 // The private /stats page. Counts only.
 export type Stats = {
-  signed_up: number;
-  finished_setup: number;
-  active: number;
-  new_this_week: number;
-  history: { day: string; signed_up: number; active: number }[];
-  masjid_times: { name: string; source: string; last_success_at: string | null; error: string | null }[];
-  // Masjids someone picked that aren't linked to MAWAQIT yet, most users first.
-  // Linked automatically from my MAWAQIT list, so I can spot-check them.
-  auto_links: { id: string; name: string; list_name: string; mawaqit_url: string; distance_m: number | null; users: number }[];
-  // Picked by users with no MAWAQIT match, most users first, so I know which to add.
-  no_match_masjids: { id: string; name: string; users: number; reason: string }[];
+  total_users: number;
+  // One point per day, oldest first: signed up that day, and the total so far.
+  history: { day: string; signed_up: number; total: number }[];
+  // Masjids with at least 1 user, most users first. Not linked means no MAWAQIT times.
+  masjids: { name: string; users: number; mawaqit_linked: boolean }[];
 };

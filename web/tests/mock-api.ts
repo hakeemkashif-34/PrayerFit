@@ -126,15 +126,17 @@ export class MockApi {
   // The one email that can open /stats, like ADMIN_EMAIL. null: nobody.
   adminEmail: string | null = null;
   stats: Stats = {
-    signed_up: 42, finished_setup: 30, active: 25, new_this_week: 6,
+    total_users: 42,
     history: [
-      { day: "2026-10-20", signed_up: 30, active: 18 }, { day: "2026-10-21", signed_up: 33, active: 20 },
-      { day: "2026-10-22", signed_up: 35, active: 21 }, { day: "2026-10-23", signed_up: 38, active: 23 },
-      { day: "2026-10-24", signed_up: 40, active: 24 }, { day: "2026-10-25", signed_up: 42, active: 25 },
+      { day: "2026-10-20", signed_up: 30, total: 30 }, { day: "2026-10-21", signed_up: 3, total: 33 },
+      { day: "2026-10-22", signed_up: 2, total: 35 }, { day: "2026-10-23", signed_up: 3, total: 38 },
+      { day: "2026-10-24", signed_up: 2, total: 40 }, { day: "2026-10-25", signed_up: 2, total: 42 },
     ],
-    masjid_times: [],
-    auto_links: [],
-    no_match_masjids: [],
+    masjids: [
+      { name: "Kanata Muslim Association", users: 30, mawaqit_linked: true },
+      { name: "Jamia Omar", users: 8, mawaqit_linked: false },
+      { name: "(picked by address)", users: 1, mawaqit_linked: false },
+    ],
   };
   // How many times POST /api/calendar/preview answers 409 before it works, like setup still saving.
   previewNotReady = 0;

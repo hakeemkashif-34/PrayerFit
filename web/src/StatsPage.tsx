@@ -1,105 +1,130 @@
-// The private /stats page: the app's usage counts and a graph of sign-ups and
-// active users over time. Only the ADMIN_EMAIL account can open it. The API
-// answers 404 for everyone else, so this page just says "Page not found",
-// the same as any page that doesn't exist. Nothing links here.
+// The private /stats page: total users, a graph of total users over time,
+// and how many users picked each masjid. Only the ADMIN_EMAIL account can
+// open it. The API answers 404 for everyone else, so this page just says
+// "Page not found", the same as any page that doesn't exist. Nothing links here.
 //
-// Counts only. No emails, names, or anything about a user is ever sent.
+// Counts only. No emails, names, or addresses are ever sent.
 
-import { useEffect, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { api, ApiError } from "./api";
 import type { Stats } from "./types";
 
-// Checked with the dataviz palette validator: both pass the colour-blindness checks on white.
-const SIGNED_UP = "#1f8a52";
-const ACTIVE = "#6b4fbb";
+// Checked with the dataviz palette validator on white.
+const LINE = "#1f8a52";
 
-const W = 640;
 const H = 260;
-const PAD = { top: 16, right: 92, bottom: 32, left: 40 };
-
-const usersText = (n: number) => (n === 1 ? "1 user" : `${n} users`);
+const PAD = { top: 20, right: 24, bottom: 40, left: 44 };
+// Under this many pixels apart, the first and last date labels would run into each other.
+const LABEL_ROOM = 96;
 
 function dayText(day: string): string {
   const [y, m, d] = day.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
+// The graph is drawn at its real width, so its text stays 12px on a phone instead of shrinking.
+function useWidth() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(640);
+  useEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    const observer = new ResizeObserver(([entry]) => setWidth(Math.max(260, Math.round(entry.contentRect.width))));
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, width] as const;
+}
+
 function Graph({ history }: { history: Stats["history"] }) {
-  const [hover, setHover] = useState<number | null>(null);
-  if (history.length === 0) return <p className="hint">The first day's numbers are saved after 4:00 am.</p>;
+  const [picked, setPicked] = useState<number | null>(null);
+  const [ref, W] = useWidth();
+  if (history.length === 0) return <p className="hint">Nobody has signed up yet.</p>;
 
-  const max = Math.max(1, ...history.map((d) => Math.max(d.signed_up, d.active)));
-  const x = (i: number) => PAD.left + (history.length === 1 ? 0 : (i / (history.length - 1)) * (W - PAD.left - PAD.right));
-  const y = (v: number) => PAD.top + (1 - v / max) * (H - PAD.top - PAD.bottom);
-  const line = (key: "signed_up" | "active") => history.map((d, i) => `${i ? "L" : "M"}${x(i)},${y(d[key])}`).join(" ");
-  const ticks = [0, Math.round(max / 2), max];
+  const max = Math.max(1, ...history.map((d) => d.total));
   const last = history.length - 1;
+  const x = (i: number) => PAD.left + (last === 0 ? 0 : (i / last) * (W - PAD.left - PAD.right));
+  const y = (v: number) => PAD.top + (1 - v / max) * (H - PAD.top - PAD.bottom);
+  const line = history.map((d, i) => `${i ? "L" : "M"}${x(i)},${y(d.total)}`).join(" ");
+  const ticks = [...new Set([0, Math.round(max / 2), max])];
 
-  // The crosshair snaps to the nearest day.
-  function move(event: PointerEvent<SVGSVGElement>) {
+  // Hovering or tapping anywhere picks the nearest day.
+  function nearest(event: PointerEvent<SVGSVGElement>) {
     const box = event.currentTarget.getBoundingClientRect();
-    const px = ((event.clientX - box.left) / box.width) * W;
-    let nearest = 0;
+    const px = event.clientX - box.left;
+    let best = 0;
     history.forEach((_, i) => {
-      if (Math.abs(x(i) - px) < Math.abs(x(nearest) - px)) nearest = i;
+      if (Math.abs(x(i) - px) < Math.abs(x(best) - px)) best = i;
     });
-    setHover(nearest);
+    setPicked(best);
   }
 
-  const point = hover === null ? null : history[hover];
+  const point = picked === null ? null : history[picked];
+  // Near an edge, the box opens inward so it never runs off the graph. It sits
+  // just below a dot in the top half, and just above one in the bottom half,
+  // so it never covers the dot it's about.
+  const tipShift = picked === null ? 0 : x(picked) < 90 ? 0 : x(picked) > W - 90 ? -100 : -50;
+  const dotY = point ? y(point.total) : 0;
+  const below = dotY < H / 2;
   return (
     <figure className="stats-graph">
-      <figcaption>Sign-ups and active users, one point a day</figcaption>
-      <ul className="legend" aria-hidden="true">
-        <li><span className="key" style={{ background: SIGNED_UP }} />Signed up</li>
-        <li><span className="key" style={{ background: ACTIVE }} />Active</li>
-      </ul>
-      <div className="graph-box">
-        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Sign-ups and active users over time. The table below has every value."
-          onPointerMove={move} onPointerLeave={() => setHover(null)}>
+      <figcaption>Total users, one dot per day. Hover or tap a dot for that day.</figcaption>
+      <div className="graph-box" ref={ref}>
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          width={W}
+          height={H}
+          role="group"
+          aria-label={`Total users over time, from ${dayText(history[0].day)} to ${dayText(history[last].day)}`}
+          onPointerMove={nearest}
+          onPointerDown={nearest}
+          // A tap also fires "leave" when the finger lifts, so only a mouse hides the box.
+          onPointerLeave={(e) => e.pointerType === "mouse" && setPicked(null)}
+        >
           {ticks.map((t) => (
             <g key={t}>
               <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} className="grid" />
-              <text x={PAD.left - 8} y={y(t)} dy="0.35em" textAnchor="end" className="tick">{t}</text>
+              <text x={PAD.left - 10} y={y(t)} dy="0.35em" textAnchor="end" className="tick">{t}</text>
             </g>
           ))}
-          <text x={x(0)} y={H - 8} className="tick">{dayText(history[0].day)}</text>
-          {last > 0 && <text x={x(last)} y={H - 8} textAnchor="end" className="tick">{dayText(history[last].day)}</text>}
-          {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={H - PAD.bottom} className="crosshair" />}
-          <path d={line("signed_up")} stroke={SIGNED_UP} className="series" />
-          <path d={line("active")} stroke={ACTIVE} className="series" />
-          {/* Labels at the end of each line, so colour is never the only way to tell them apart. */}
-          <text x={x(last) + 8} y={y(history[last].signed_up)} dy="0.35em" className="end-label">Signed up</text>
-          <text x={x(last) + 8} y={y(history[last].active)} dy={history[last].active === history[last].signed_up ? "1.4em" : "0.35em"}
-            className="end-label">Active</text>
-          {point && hover !== null && (
-            <>
-              <circle cx={x(hover)} cy={y(point.signed_up)} r={4.5} fill={SIGNED_UP} className="dot" />
-              <circle cx={x(hover)} cy={y(point.active)} r={4.5} fill={ACTIVE} className="dot" />
-            </>
+          {/* Dates go below the axis, well clear of the 0 on the side. */}
+          <text x={x(0)} y={H - 10} textAnchor={last === 0 ? "middle" : "start"} className="tick date">{dayText(history[0].day)}</text>
+          {last > 0 && x(last) - x(0) >= LABEL_ROOM && (
+            <text x={x(last)} y={H - 10} textAnchor="end" className="tick date">{dayText(history[last].day)}</text>
           )}
+          {picked !== null && <line x1={x(picked)} x2={x(picked)} y1={PAD.top} y2={H - PAD.bottom} className="crosshair" />}
+          <path d={line} stroke={LINE} className="series" />
+          {history.map((d, i) => (
+            <circle
+              key={d.day}
+              cx={x(i)}
+              cy={y(d.total)}
+              r={picked === i ? 6 : 4}
+              fill={LINE}
+              className={picked === i ? "dot picked" : "dot"}
+              tabIndex={0}
+              aria-label={`${dayText(d.day)}: ${d.signed_up} signed up, ${d.total} in total`}
+              onFocus={() => setPicked(i)}
+              onBlur={() => setPicked(null)}
+            />
+          ))}
         </svg>
-        {point && hover !== null && (
-          <div className="graph-tip" style={{ left: `${(x(hover) / W) * 100}%` }} role="status">
+        {point && picked !== null && (
+          <div
+            className="graph-tip"
+            style={{
+              left: x(picked),
+              top: below ? dotY + 14 : dotY - 14,
+              transform: `translate(${tipShift}%, ${below ? 0 : -100}%)`,
+            }}
+            role="status"
+          >
             <span className="tip-day">{dayText(point.day)}</span>
-            <span><span className="tip-key" style={{ background: SIGNED_UP }} /><strong>{point.signed_up}</strong> signed up</span>
-            <span><span className="tip-key" style={{ background: ACTIVE }} /><strong>{point.active}</strong> active</span>
+            <span><strong>{point.signed_up}</strong> signed up that day</span>
+            <span><strong>{point.total}</strong> in total</span>
           </div>
         )}
       </div>
-      <details className="graph-table">
-        <summary>Show as a table</summary>
-        <table>
-          <thead>
-            <tr><th scope="col">Day</th><th scope="col">Signed up</th><th scope="col">Active</th></tr>
-          </thead>
-          <tbody>
-            {history.map((d) => (
-              <tr key={d.day}><td>{dayText(d.day)}</td><td>{d.signed_up}</td><td>{d.active}</td></tr>
-            ))}
-          </tbody>
-        </table>
-      </details>
     </figure>
   );
 }
@@ -128,98 +153,37 @@ export function StatsPage() {
   if (error) return <main className="page narrow"><p className="error" role="alert">{error}</p></main>;
   if (!stats) return <main className="page narrow"><p className="hint">Loading…</p></main>;
 
-  const tiles: [string, number][] = [
-    ["Signed up", stats.signed_up],
-    ["Finished setup", stats.finished_setup],
-    ["Active", stats.active],
-    ["New this week", stats.new_this_week],
-  ];
   return (
     <main className="page stats-page">
       <h1>Stats</h1>
-      <p className="hint">Counts only. Active means the calendar was updated in the last 2 days.</p>
-      <div className="stat-tiles">
-        {tiles.map(([name, value]) => (
-          <div key={name} className="stat-tile">
-            <span className="stat-value">{value}</span>
-            <span className="stat-name">{name}</span>
-          </div>
-        ))}
-      </div>
+      <p className="total-users">Total users: <strong>{stats.total_users}</strong></p>
 
       <section className="card stats-section" aria-labelledby="graph-title">
-        <h2 id="graph-title">Over time</h2>
+        <h2 id="graph-title">Total users over time</h2>
         <Graph history={stats.history} />
       </section>
 
-      <section className="card stats-section" aria-labelledby="auto-links-title">
-        <h2 id="auto-links-title">Linked automatically</h2>
-        {stats.auto_links.length === 0 ? (
-          <p>No masjids were linked from the MAWAQIT list yet.</p>
+      <section className="card stats-section" aria-labelledby="masjids-title">
+        <h2 id="masjids-title">Masjids</h2>
+        {stats.masjids.length === 0 ? (
+          <p>Nobody has picked a masjid yet.</p>
         ) : (
-          <>
-            <p className="hint">
-              Newest first. Check that each pair is the same masjid. If one isn't, run{" "}
-              <code>python -m app.admin unlink-mawaqit --masjid &lt;ID&gt;</code>.
-            </p>
-            <ul className="plain masjid-problems">
-              {stats.auto_links.map((m) => (
-                <li key={m.id}>
-                  <strong>{m.name}</strong>
-                  <span className="hint detail">
-                    Matched to {m.list_name}
-                    {m.distance_m === null ? "" : `, ${m.distance_m} m away`}
-                  </span>
-                  <span className="hint detail">
-                    <a href={m.mawaqit_url} target="_blank" rel="noreferrer">{m.mawaqit_url}</a>
-                  </span>
-                  <span className="hint detail">{usersText(m.users)} · ID: <code>{m.id}</code></span>
-                </li>
+          <table className="masjid-table">
+            <thead>
+              <tr><th scope="col">Masjid</th><th scope="col">Users</th></tr>
+            </thead>
+            <tbody>
+              {stats.masjids.map((m, i) => (
+                <tr key={`${m.name}-${i}`}>
+                  <td>
+                    {m.name}
+                    {!m.mawaqit_linked && <span className="tag">No MAWAQIT times</span>}
+                  </td>
+                  <td>{m.users}</td>
+                </tr>
               ))}
-            </ul>
-          </>
-        )}
-      </section>
-
-      <section className="card stats-section" aria-labelledby="no-match-title">
-        <h2 id="no-match-title">Masjids with no MAWAQIT match</h2>
-        {stats.no_match_masjids.length === 0 ? (
-          <p>Every masjid someone picked is linked.</p>
-        ) : (
-          <>
-            <p className="hint">
-              Most users first. If one is on MAWAQIT, add it to the list with{" "}
-              <code>python -m app.admin add-mawaqit &lt;link&gt; --name "&lt;name&gt;" --lat &lt;latitude&gt; --lon &lt;longitude&gt;</code>.
-            </p>
-            <ul className="plain masjid-problems">
-              {stats.no_match_masjids.map((m) => (
-                <li key={m.id}>
-                  <strong>{m.name}</strong>
-                  <span className="hint detail">{m.reason}</span>
-                  <span className="hint detail">{usersText(m.users)} · ID: <code>{m.id}</code></span>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </section>
-
-      <section className="card stats-section" aria-labelledby="masjid-times-title">
-        <h2 id="masjid-times-title">Masjid times</h2>
-        {stats.masjid_times.length === 0 ? (
-          <p>Every linked masjid was read in the last 24 hours.</p>
-        ) : (
-          <ul className="plain masjid-problems">
-            {stats.masjid_times.map((m) => (
-              <li key={m.name}>
-                <strong>{m.name}</strong>
-                <span className="hint detail">
-                  Last good read: {m.last_success_at ? new Date(m.last_success_at).toLocaleString("en-CA") : "never"}
-                </span>
-                <span className="hint detail">Error: {m.error ?? "none, but the last good read is over 24 hours old"}</span>
-              </li>
-            ))}
-          </ul>
+            </tbody>
+          </table>
         )}
       </section>
     </main>
