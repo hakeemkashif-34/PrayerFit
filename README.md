@@ -460,13 +460,13 @@ ssh -i ~/Downloads/prayerfit-key.pem azureuser@prayerfit.canadacentral.cloudapp.
 On the server:
 
 ```bash
-git clone https://github.com/hakeemkashif-34/muslim-calendar.git ~/prayerfit
+git clone https://github.com/hakeemkashif-34/prayerfit.git ~/prayerfit
 cd ~/prayerfit
 sudo deploy/server-setup.sh
 exit                     # log out and back in, so docker works without sudo
 ```
 
-If the repo is private, `git clone` asks for a login. Make a read-only key on the server instead: `ssh-keygen -t ed25519 -f ~/.ssh/github -N ""`, paste `~/.ssh/github.pub` into GitHub under the repo's **Settings > Deploy keys** (leave write access off), then clone with `GIT_SSH_COMMAND="ssh -i ~/.ssh/github" git clone git@github.com:hakeemkashif-34/muslim-calendar.git ~/prayerfit` and run `git config core.sshCommand "ssh -i ~/.ssh/github"` inside it.
+If the repo is private, `git clone` asks for a login. Make a read-only key on the server instead: `ssh-keygen -t ed25519 -f ~/.ssh/github -N ""`, paste `~/.ssh/github.pub` into GitHub under the repo's **Settings > Deploy keys** (leave write access off), then clone with `GIT_SSH_COMMAND="ssh -i ~/.ssh/github" git clone git@github.com:hakeemkashif-34/prayerfit.git ~/prayerfit` and run `git config core.sshCommand "ssh -i ~/.ssh/github"` inside it.
 
 SSH in again and fill in `.env`:
 
