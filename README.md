@@ -20,11 +20,28 @@ See [PrayerFit_App.md](PrayerFit_App.md) for the full product description and [L
 ## Run it with Docker
 
 ```bash
+git clone https://github.com/hakeemkashif-34/prayerfit.git
+cd prayerfit
 cp .env.example .env        # then edit the values
 docker compose up --build
 ```
 
 Open http://localhost:8000. That's the website.
+
+**If you ran it before the rename to PrayerFit**, the old database lived in a volume named after the old project. Docker Compose now calls the project `prayerfit`, so it starts with a fresh, empty database in `prayerfit_db-data`. Change these 3 lines in your `.env` (keep your own password):
+
+```
+POSTGRES_USER=prayerfit
+POSTGRES_DB=prayerfit
+DATABASE_URL=postgresql://prayerfit:<your password>@db:5432/prayerfit
+```
+
+Then remove the old containers and volume. `docker volume ls` shows its exact name, which comes from the folder you cloned into, like `muslim-calendar_db-data`:
+
+```bash
+docker compose -p muslim-calendar down
+docker volume rm muslim-calendar_db-data
+```
 
 Docker Compose starts 4 services:
 
@@ -69,7 +86,7 @@ The app only checks my primary calendar for busy times. Checking my other calend
 1. Go to https://console.cloud.google.com and create a project, for example "PrayerFit".
 2. In **APIs & Services > Library**, search for **Google Calendar API** and click **Enable**.
 3. Open **Google Auth Platform** (or **APIs & Services > OAuth consent screen**) and click **Get started**.
-   a) App name: PrayerFit. User support email: your email. (If you set this up as "Muslim Calendar" before, change the app name here, since it's what people see on Google's sign-in screen.)
+   a) App name: PrayerFit. User support email: your email. (If your project already has an older app name, change it here, since it's what people see on Google's sign-in screen.)
    b) Audience: **External**.
    c) Contact email: your email. Agree and create.
 4. In **Audience**, leave the publishing status as **Testing**. Under **Test users**, add the Google account you'll sign in with.
@@ -136,6 +153,17 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 Coming back to the website later opens the **Settings** page. It never sends you to Google Calendar on its own. Press **Open Google Calendar** to go there. Settings has 2 white cards, side by side on a computer and one above the other on a phone. **Required** has your location, main masjid, weekly prayers, and your Jumuah pick (the same calendar view as setup). **Optional** has the short name, both "how early" times, and both colours. Each item shows its setup question as the label and just your answer under it, like "How early do you want to arrive before iqamah (daily prayers)?" and "5 minutes". At the top, Settings says "Updates and changes are reflected on your calendar every 5 minutes." Press **Edit** next to any one of them, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
 
 If you move to another time zone, the Prayers calendar's time zone changes too.
+
+### 5. Delete my account
+
+At the very bottom of Settings, **Delete my account** (outlined in red) asks first: "This deletes your PrayerFit account, your settings, and the Prayers calendar from your Google Calendar. This can't be undone." Cancel is focused, so a stray Enter does nothing. **Delete my account** then:
+
+1. Deletes the app's "Prayers" calendar from your Google account, so every prayer event goes with it. Nothing else in your Google account is touched.
+2. Takes back the app's access to your Google account.
+3. Deletes everything stored about you: your account, sessions, Google tokens, settings, prayer events, jobs, drive times, and any masjid you typed in by its address.
+4. Signs you out and shows the landing page with "Your account has been deleted."
+
+If Google can't be reached (or your Google sign-in had expired), everything stored is still deleted, and the landing page says you can delete the "Prayers" calendar in Google Calendar yourself.
 
 ## Masjid times from MAWAQIT
 
@@ -277,7 +305,7 @@ Things that never happen:
 See the checks with:
 
 ```bash
-docker compose exec db psql -U muslim_calendar -c "SELECT id, status, events_sent, error FROM busy_check_jobs ORDER BY block_start DESC LIMIT 10"
+docker compose exec db psql -U prayerfit -c "SELECT id, status, events_sent, error FROM busy_check_jobs ORDER BY block_start DESC LIMIT 10"
 ```
 
 To try it with the test account:
@@ -303,7 +331,7 @@ It prints something like `nightly:...:2026-10-24: done, 0 events sent to Google`
 See the jobs with:
 
 ```bash
-docker compose exec db psql -U muslim_calendar -c "SELECT id, status, attempts, events_sent FROM nightly_jobs ORDER BY created_at"
+docker compose exec db psql -U prayerfit -c "SELECT id, status, attempts, events_sent FROM nightly_jobs ORDER BY created_at"
 ```
 
 ## Usage stats
@@ -331,7 +359,7 @@ Masjids:
 **The private page**: put your own Google email in `.env` as `ADMIN_EMAIL=you@gmail.com` and restart. Sign in, then open http://localhost:8000/stats. It has 3 parts:
 
 1. "Total users: 42" at the top.
-2. A graph of total users over time, one dot per day, from the first sign-up to today. Hover over a dot (or tap it on a phone, or tab to it) to see that day's date, how many signed up that day, and the total so far. It's worked out from each user's sign-up date, so nothing is saved each day.
+2. A graph of total users over time, one dot per day, from the first sign-up to today. Point at a dot to see that day's date, how many signed up that day, and the total so far. Moving off the dot hides it. On a phone, tap a dot to show it and tap anywhere else to hide it. Tabbing to a dot shows it too. It's worked out from each user's sign-up date, so nothing is saved each day.
 3. A table of each masjid and how many users picked it, with a small "No MAWAQIT times" tag on masjids that aren't linked.
 
 Anyone else, signed in or not, gets "Page not found". Nothing links to it. With `ADMIN_EMAIL` empty, nobody can open it.
@@ -349,6 +377,7 @@ Through nginx, every endpoint below is under `/api` (like `/api/me`), except the
 | `GET /auth/google/login` | Starts sign-in (open it in the browser) |
 | `GET /auth/google/callback` | Google sends you back here, then to the website |
 | `POST /auth/logout` | Signs out |
+| `DELETE /account` | Deletes the account: the Prayers calendar, the app's Google access, and everything stored. Answers `{"google_cleaned": false}` when Google couldn't be reached |
 | `GET /me` | Who's signed in, whether Google needs a new sign-in, whether the app can see busy times, and whether setup is done |
 | `GET /settings` | Your saved setup answers |
 | `POST /setup/location/suggest` | Up to 5 address suggestions from Photon for what's typed so far. Saves nothing |
@@ -385,15 +414,15 @@ source .venv/bin/activate
 pip install -r requirements-dev.txt
 
 # Inside Docker the database is called "db", but from your laptop it's "localhost".
-export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim_calendar
+export DATABASE_URL=postgresql://prayerfit:change-me@localhost:5432/prayerfit
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `831 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `841 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`437 passed, 394 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`437 passed, 404 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
@@ -406,4 +435,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `246 passed`: 123 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `258 passed`: 129 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.

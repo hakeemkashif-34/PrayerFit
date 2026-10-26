@@ -1,7 +1,5 @@
 # Learning Notes
 
-PrayerFit was called Muslim Calendar until milestone 6 (section 34), so older sections may use the old name.
-
 What each part of the app does and why it was built that way. Updated after each milestone.
 
 ---
@@ -112,7 +110,7 @@ What each part of the app does and why it was built that way. Updated after each
 1. **Tests on your laptop**
    a) Start only the database: `docker compose up -d db`.
    b) In `backend`, activate the virtual environment and install `requirements-dev.txt`.
-   c) Point the tests at the database: `export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim_calendar` (use your `.env` values).
+   c) Point the tests at the database: `export DATABASE_URL=postgresql://prayerfit:change-me@localhost:5432/prayerfit` (use your `.env` values).
    d) Run `pytest`. You should see `2 passed`.
 
 2. **The whole app in Docker**
@@ -548,7 +546,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    c) **At most 5 suggestions**: the backend asks Photon for 10 and keeps 5.
    d) **Favour Canada**: Photon is asked to prefer results near the middle of Canada, with a wide radius. Then the backend moves Canadian results to the top, keeping Photon's order otherwise. That's why it asks for 10: a Canadian match in 7th place still makes the top 5.
    e) **Cache**: each answer is kept for 7 days. The same text, with different spacing or capitals, is only sent once.
-   f) **Through our backend**: the browser never calls Photon. Every request comes from the backend with the User-Agent `PrayerFit/0.4 (+mailto:<OSM_CONTACT_EMAIL>)` (it was `MuslimCalendar/0.4` before the rename in milestone 6).
+   f) **Through our backend**: the browser never calls Photon. Every request comes from the backend with the User-Agent `PrayerFit/0.4 (+mailto:<OSM_CONTACT_EMAIL>)`.
    g) **Spaced out**: calls from the whole app are at least 0.25 seconds apart (`throttle.py`).
    h) **Credit**: OpenStreetMap's licence (the ODbL) requires credit wherever its data is shown. One small grey "© OpenStreetMap contributors" link sits in the footer of every page that uses it: setup and the settings page. The landing page shows no OpenStreetMap data, so it has no footer.
    i) **No postal codes**: suggestions and the saved address leave out the postal code. OpenStreetMap's Canadian postal codes are often wrong (it showed the wrong one for my address), and prayer times only need the location. Postal code areas Photon sends as places are dropped too. The cache key got a `v2` so old cached labels with postal codes are never shown.
@@ -934,7 +932,7 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 1. **Bigger text**: the base size is 17px on a phone and 18px on a computer, up from the browser's 16px. Almost every size in `styles.css` is in `rem`, so everything grew with that one change.
 2. **Wider pages**: Settings and the "Adding your prayers" page went from 600px and 440px wide to 880px and 680px, setup's questions from 620px to 900px, and the landing and setup frames to 1240px. Phones still get a 16px gutter on each side.
 3. **Dark mode**: every colour is a token at the top of `styles.css` (`--text`, `--card`, `--field` for text boxes, `--on-green` for text on a green button, and so on). A `prefers-color-scheme: dark` block only changes the tokens, so it follows the phone or computer's setting. I replaced the hard-coded `#fff` backgrounds with `--field` so nothing stays white in dark mode.
-4. **The landing page**: "Welcome to Muslim Calendar", "Keep your prayer times up to date, every day.", then the hadith. (Milestone 6, section 34, changed this to "Welcome to PrayerFit" and a new sentence.) The line about only having access to the Prayers calendar is gone.
+4. **The landing page**: a welcome heading, one sentence about what the app does, then the hadith. (Section 34 has the wording it uses now.) The line about only having access to the Prayers calendar is gone.
 5. **The hadith stands out**: it's the biggest text on the page, in a serif, in a warm cream block with a gold bar on the left, and its source ("Sahih al-Bukhari 527") is on its own line underneath, smaller and bold. Gold is only used here, so it doesn't look like the rest of the app's green. Dark mode has its own darker gold block with light text.
 6. **Why Amiri**: the hadith has the ﷺ sign (U+FDFA), and most fonts, including the one the site uses, don't have it, so it showed as an empty box. Amiri is a free serif with both English letters and ﷺ. It comes from npm (`@fontsource/amiri`) and is served by our own site, like Plus Jakarta Sans. Only the weight I use (400) is loaded, and the browser only downloads the parts of it the page needs.
 7. **A bug this caught**: once the location question stayed on screen (section 21), "Saving…" never went away after the location saved, and the address box stayed disabled. It used to disappear after saving, so it never had to reset. It resets now.
@@ -1324,7 +1322,7 @@ Section 34 simplified this: the /stats page is now total users, a graph of total
 
 ### 29. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`831 passed`) and `npx playwright test` in `web` (`246 passed`).
+1. **Tests**: `pytest` in `backend` (`841 passed`) and `npx playwright test` in `web` (`258 passed`).
 2. **For real**, the steps in section 14 now take up to 5 minutes, not 15.
 
 ### 30. Small fixes after review
@@ -1457,9 +1455,46 @@ Section 34 simplified this: the /stats page is now total users, a graph of total
    e) the README, CLAUDE.md, this file, and the product description, now `PrayerFit_App.md`
 6. **What didn't change**:
    a) The Google calendar the app makes is still called "Prayers".
-   b) The GitHub repo, the Docker project, the Docker volumes, and the database user and name (`muslim_calendar`) keep their names. Renaming the database user would break an existing database volume, and the repo gets renamed after this PR is merged.
+   b) The GitHub repo kept its name until this PR was merged. Section 36 renamed the Docker project, the volume, and the database user and name too.
    c) The app name on Google's sign-in screen comes from my Google Cloud project's settings, so I change that in the Google Cloud console. The README says where.
 7. **Tests**:
    a) Backend: total users, the daily points (including a sign-up at 10:30 pm in Ottawa that's already the next day in UTC, and days with 0), the masjid counts (home users and masjids with 0 users left out, the address never shown), the command's output, and that the snapshot table is gone.
    b) Playwright: only the 3 parts, a dot per day, hover, tap, and keyboard, no labels overlapping and 12px text on a phone, the box staying inside the graph and off its dot, the table with its tags, and the empty states. Also the new landing page text and the tab title.
 8. **Counts**: `pytest` in `backend` gives `831 passed`, and `npx playwright test` in `web` gives `246 passed`.
+
+### 35. Delete my account
+
+1. **Where**: the very bottom of Settings, under Sign out. It's outlined in red (`button.danger-outline`), not filled, so it looks careful rather than inviting.
+2. **It asks first**: "This deletes your PrayerFit account, your settings, and the Prayers calendar from your Google Calendar. This can't be undone." The confirm button is solid red. Cancel gets focus, so a stray Enter deletes nothing. It's an `alertdialog` inside the page, not a pop-up window, so it works the same on a phone.
+3. **`DELETE /account`** (`app/account.py`), in order:
+   a) Delete the app's "Prayers" calendar (`DELETE /calendars/{id}`), so every event goes with it. That's the only call into their Google Calendar. The `calendar.app.created` scope can't reach anything else anyway.
+   b) Revoke the app's access (`POST https://oauth2.googleapis.com/revoke` with the refresh token). That also ends every access token. Google answering "already revoked" counts as done.
+   c) Delete the user row. Every table with their data points at `users.id` with `ON DELETE CASCADE`, so Postgres deletes the rest in the same step: sessions (every browser they're signed in on), Google tokens, settings, weekly prayers, the calendar row, prayer events, drive times, and every job.
+   d) Masjids they typed in by address have `created_by_user_id`, so they go too, with their MAWAQIT link and saved times. Only the person who typed one in can pick it (`usable_masjid`), so no other user can be using it. Masjids from OpenStreetMap are public and stay.
+   e) The answer clears the session cookie, and the website shows the landing page with "Your account has been deleted."
+4. **When Google can't help**: if Google can't be reached, or their sign-in had expired, steps a and b are skipped and everything stored is still deleted. The answer says `{"google_cleaned": false}`, and the landing page adds that they can delete the "Prayers" calendar in Google Calendar themselves. A calendar they already deleted counts as done.
+5. **No races**: it holds the same per-user lock as calendar updates (`user_lock`), so a 5-minute check or the nightly job can't write to the calendar halfway through.
+6. **Not linked to them, so not deleted**: Photon search answers are cached for 7 days, keyed by a keyed hash of the search text and encrypted (`geocode_cache`). Nothing in a cache row says who searched, so it can't be found by user. It expires on its own after 7 days.
+7. **Tests** (`test_delete_account.py`):
+   a) Nothing about the user is left in any table. The test checks every table's ID columns for their ID, and every text column for their ID inside it, like a job ID. A 2nd user's rows are all still there.
+   b) Exactly 1 Calendar API call: deleting their Prayers calendar. Their access is revoked. The 2nd user's calendar and access are untouched.
+   c) Signed out in every browser.
+   d) A typed-in masjid goes, with its MAWAQIT link and times. KMA stays.
+   e) Google unreachable, and an expired sign-in: everything stored is still deleted, and the answer says `google_cleaned: false`.
+   f) It needs sign-in, and another site can't do it (the Origin check).
+   g) Playwright: the red outline, the question, Cancel, the landing message, the Google-unreachable message, and an error keeping them on Settings.
+
+### 36. The /stats box, and PrayerFit everywhere
+
+1. **The /stats box** now works like YouTube's:
+   a) It shows only while the mouse is over a dot, and moving off hides it. The rest of the graph shows nothing.
+   b) Each dot sits in a `g.dot-target` with an invisible 12px circle around it, so it's easy to point at.
+   c) On a phone there's no hover, so tapping a dot shows it. Tapping anywhere else hides it: while the box is up, a `pointerdown` listener on the page hides it unless the tap was on a dot. Lifting the finger fires "pointer leave", which is ignored for touch.
+   d) Keyboard focus still shows it, and Tab moves to the next day.
+2. **The last of the old name**:
+   a) `docker-compose.yml` has `name: prayerfit`. Docker named the project after the folder before, so the containers and the volume are now `prayerfit-*` and `prayerfit_db-data` wherever it's cloned.
+   b) The database user and name in `.env.example` are `prayerfit`.
+   c) The README's commands use `prayerfit`, and the clone link is `https://github.com/hakeemkashif-34/prayerfit`.
+   d) Searching the repo for the old name, in any capitalization and with a space, `_`, or `-`, finds only the README's 2 commands for removing the old Docker volume, which need its old name. Masjid names like Kanata Muslim Association stay as they are, and the Google calendar is still called "Prayers".
+3. **Moving to the new names**: a fresh database starts in `prayerfit_db-data`. The README says which 3 `.env` lines to change and how to remove the old volume.
+4. **Counts**: `pytest` in `backend` gives `841 passed`, and `npx playwright test` in `web` gives `258 passed`.
