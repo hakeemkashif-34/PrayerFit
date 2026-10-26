@@ -128,6 +128,9 @@ class Me(BaseModel):
     # True when the user has to sign in again before calendar updates work.
     google_sign_in_needed: bool
     calendar_access: bool
+    # False for users who signed in before free/busy was asked for. The
+    # website asks them to sign in again. Everything else still works.
+    busy_access: bool
     # False until the setup questions are answered and finished.
     setup_complete: bool
 
@@ -143,5 +146,6 @@ def me(
         email=user.email,
         google_sign_in_needed=tokens is None or tokens.needs_reauth,
         calendar_access=tokens is not None and google_oauth.has_calendar_scope(tokens.scopes),
+        busy_access=tokens is not None and google_oauth.has_freebusy_scope(tokens.scopes),
         setup_complete=settings is not None and settings.setup_completed_at is not None,
     )

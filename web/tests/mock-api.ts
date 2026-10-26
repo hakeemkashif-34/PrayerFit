@@ -3,7 +3,7 @@
 // records every request so tests can check what the website sent.
 
 import type { Page, Route } from "@playwright/test";
-import type { Masjid, MasjidSuggestion, Me, Settings, Step } from "../src/types";
+import type { JumuahChoices, JumuahSlot, Masjid, MasjidSuggestion, Me, Settings, SlotKey, Step } from "../src/types";
 
 export const KMA: Masjid = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -11,9 +11,12 @@ export const KMA: Masjid = {
   address: "351 Sandhill Rd",
   source: "openstreetmap",
   distance_km: 1.1,
-  iqamah_status: "Iqamah times not added yet",
+  iqamah_status: "Times from MAWAQIT, updated Oct 25, 2026",
 };
-export const STITTSVILLE: Masjid = { ...KMA, id: "22222222-2222-2222-2222-222222222222", name: "Stittsville Masjid", address: "Stittsville Main Street, Ottawa", distance_km: 5.8 };
+export const STITTSVILLE: Masjid = {
+  ...KMA, id: "22222222-2222-2222-2222-222222222222", name: "Stittsville Masjid", address: "Stittsville Main Street, Ottawa",
+  distance_km: 5.8, iqamah_status: "Not linked to MAWAQIT, so calculated times are used",
+};
 export const TORONTO: Masjid = { ...KMA, id: "33333333-3333-3333-3333-333333333333", name: "Kanata Masjid Toronto", address: "Toronto", distance_km: 352.1 };
 
 // What the pretend Photon knows about masjids, as the backend would send them.
@@ -24,7 +27,7 @@ const BY_ADDRESS: PretendMasjid = {
   kind: "address",
   masjid: {
     id: "44444444-4444-4444-4444-444444444444", name: null, address: "3500 Fallowfield Road, Ottawa, Ontario, Canada",
-    source: "user", distance_km: 7.2, iqamah_status: "Iqamah times not added yet",
+    source: "user", distance_km: 7.2, iqamah_status: "Not linked to MAWAQIT, so calculated times are used",
   },
 };
 
@@ -41,18 +44,21 @@ const CREDIT = { credit: "© OpenStreetMap contributors", credit_url: "https://w
 export function emptySettings(): Settings {
   return {
     setup_complete: false,
-    missing: ["address", "masjid", "weekly"],
+    missing: ["address", "masjid", "weekly", "optional"],
     address: null,
     place_name: null,
     time_zone: null,
-    method: "isna",
-    asr_method: "standard",
     main_masjid_choice: null,
     main_masjid: null,
     main_masjid_short_name: null,
     weekly: [],
     jumuah_saved: false,
     jumuah_masjids: [],
+    arrive_early_minutes: 0,
+    jumuah_arrive_early_minutes: 5,
+    jumuah_pick: null,
+    prayer_color_id: null,
+    drive_color_id: null,
   };
 }
 
@@ -63,8 +69,6 @@ export function finishedSettings(): Settings {
     address: HOME_PLACE,
     place_name: HOME_PLACE,
     time_zone: "America/Toronto",
-    method: "isna",
-    asr_method: "standard",
     main_masjid_choice: "masjid",
     main_masjid: KMA,
     main_masjid_short_name: "KMA",
@@ -73,7 +77,27 @@ export function finishedSettings(): Settings {
     })),
     jumuah_saved: true,
     jumuah_masjids: [KMA, STITTSVILLE],
+    arrive_early_minutes: 5,
+    jumuah_arrive_early_minutes: 10,
+    jumuah_pick: null,
+    prayer_color_id: "7",
+    drive_color_id: null,
   };
+}
+
+// The coming Friday in the pretend backend. Toronto is 4 hours behind UTC that day.
+export const FRIDAY = "2026-10-30";
+const OFFSET = "-04:00";
+const MINUTE = 60_000;
+
+// "13:30" on the Friday -> its time as an ISO string with the offset.
+export function friday(clock: string): string {
+  return `${FRIDAY}T${clock}:00${OFFSET}`;
+}
+
+function iso(time: number): string {
+  const local = new Date(time - 4 * 60 * MINUTE).toISOString().slice(11, 16);
+  return friday(local);
 }
 
 export type Recorded = { method: string; path: string; body: unknown };
@@ -86,10 +110,25 @@ export class MockApi {
   savedMasjids = new Map<string, Masjid>([KMA, STITTSVILLE].map((m) => [m.id, m]));
   // Make the next call to this path answer with this error.
   failNext: Record<string, { status: number; detail: unknown }> = {};
+  // Like optional_saved on the backend. The website never sees it, only "optional" in missing.
+  optionalSaved = false;
+  // What POST /api/setup/finish says about the calendar, and how long it takes.
+  finishCalendar: unknown = updated(70);
+  finishDelayMs = 0;
+  // Every Google Calendar URL the page went to. A fake page answers, so no test reaches Google.
+  googleVisits: string[] = [];
+  // This week's Jumuah times by masjid ID, in slot order. A masjid that isn't here has none.
+  jumuahTimes: Record<string, string[]> = { [KMA.id]: ["13:30", "14:30"], [STITTSVILLE.id]: ["13:15"] };
+  // Jumuah length by masjid ID. Missing means 45 minutes, estimated.
+  jumuahLength: Record<string, number> = {};
 
   signedIn(settings: Settings = emptySettings(), me: Partial<Me> = {}) {
     this.settings = settings;
-    this.me = { email: "hakeem@example.com", google_sign_in_needed: false, calendar_access: true, setup_complete: settings.setup_complete, ...me };
+    this.optionalSaved = !settings.missing.includes("optional");
+    this.me = {
+      email: "hakeem@example.com", google_sign_in_needed: false, calendar_access: true, busy_access: true,
+      setup_complete: settings.setup_complete, ...me,
+    };
     return this;
   }
 
@@ -114,7 +153,34 @@ export class MockApi {
     if (!s.address) missing.push("address");
     if (!s.main_masjid_choice) missing.push("masjid");
     if (s.main_masjid_choice !== "home" && s.weekly.length !== 7) missing.push("weekly");
+    if (!this.optionalSaved) missing.push("optional");
     return missing;
+  }
+
+  // Like GET /jumuah/slots: each slot at these masjids (or the saved Jumuah masjids), and which one is selected.
+  slots(masjidIds: string[]): JumuahChoices {
+    const s = this.settings;
+    const masjids = masjidIds.length ? masjidIds.map((id) => this.savedMasjids.get(id)!) : s.jumuah_masjids;
+    const slots: JumuahSlot[] = [];
+    masjids.forEach((masjid) => {
+      (this.jumuahTimes[masjid.id] ?? []).forEach((clock, i) => {
+        const length = this.jumuahLength[masjid.id] ?? 45;
+        const start = Date.parse(friday(clock));
+        slots.push({
+          masjid_id: masjid.id, masjid_label: masjid.id === s.main_masjid?.id && s.main_masjid_short_name ? s.main_masjid_short_name : masjid.name ?? "Your masjid",
+          order: i + 1, order_label: `${["1st", "2nd", "3rd"][i]} Jumuah`,
+          starts_at: iso(start), ends_at: iso(start + length * MINUTE),
+          jumuah_minutes: length, length_estimated: !(masjid.id in this.jumuahLength),
+        });
+      });
+    });
+    const listed = masjids.map((m) => m.id);
+    slots.sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at) || listed.indexOf(a.masjid_id) - listed.indexOf(b.masjid_id));
+    const key = (slot: JumuahSlot): SlotKey => ({ masjid_id: slot.masjid_id, order: slot.order });
+    const pick = s.jumuah_pick;
+    const picked = pick && slots.find((x) => x.masjid_id === pick.masjid_id && x.order === pick.order);
+    const firsts = [...slots].sort((a, b) => listed.indexOf(a.masjid_id) - listed.indexOf(b.masjid_id) || a.order - b.order);
+    return { time_zone: "America/Toronto", slots, selected: picked ? key(picked) : firsts[0] ? key(firsts[0]) : null };
   }
 
   private saved(calendar: unknown = null) {
@@ -122,9 +188,15 @@ export class MockApi {
     return { settings: this.settings, calendar: this.me?.setup_complete ? calendar ?? updated(3) : null };
   }
 
+  // On the whole browser context, so the tab that Finish opens is covered too.
   async install(page: Page) {
-    await page.route("**/api/**", (route) => this.handle(route));
-    await page.route("**/auth/logout", (route) => this.handle(route));
+    const context = page.context();
+    await context.route("**/api/**", (route) => this.handle(route));
+    await context.route("**/auth/logout", (route) => this.handle(route));
+    await context.route("https://calendar.google.com/**", (route) => {
+      this.googleVisits.push(route.request().url());
+      return route.fulfill({ contentType: "text/html", body: "<title>Fake Google Calendar</title><h1>Fake Google Calendar</h1>" });
+    });
   }
 
   private async handle(route: Route) {
@@ -164,9 +236,6 @@ export class MockApi {
         Object.assign(s, { address: label, place_name: label, time_zone: "America/Toronto" });
         return json(200, this.saved());
       }
-      case "PUT /api/settings/methods":
-        Object.assign(s, { method: body.method, asr_method: body.asr_method });
-        return json(200, this.saved());
       case "POST /api/setup/masjid/suggest":
         if (!s.address) return json(409, { detail: { message: "Save your location first." } });
         return json(200, {
@@ -182,12 +251,24 @@ export class MockApi {
         return json(200, picked.masjid);
       }
       case "PUT /api/settings/main-masjid": {
+        // Like the backend's follow_main_masjid: the main masjid is the first
+        // Jumuah masjid, unless the user changed the Jumuah list themselves.
+        const oldMain = s.main_masjid_choice === "masjid" ? s.main_masjid?.id ?? null : null;
+        const newMain = body.choice === "home" ? null : body.masjid_id;
+        const jumuahIds = s.jumuah_masjids.map((m) => m.id);
+        if (oldMain !== newMain && (jumuahIds.length === 0 || (jumuahIds.length === 1 && jumuahIds[0] === oldMain))) {
+          const picked = newMain ? this.savedMasjids.get(newMain) : undefined;
+          s.jumuah_masjids = picked ? [picked] : [];
+          if (picked) s.jumuah_saved = true;
+        }
         if (body.choice === "home") {
           Object.assign(s, { main_masjid_choice: "home", main_masjid: null, main_masjid_short_name: null });
         } else {
           const masjid = this.savedMasjids.get(body.masjid_id);
           if (!masjid) return json(404, { detail: { message: "Pick a masjid from the suggestions." } });
-          Object.assign(s, { main_masjid_choice: "masjid", main_masjid: masjid, main_masjid_short_name: body.short_name ?? null });
+          // Like the backend: a short name belongs to one masjid.
+          const shortName = s.main_masjid?.id === masjid.id ? s.main_masjid_short_name : null;
+          Object.assign(s, { main_masjid_choice: "masjid", main_masjid: masjid, main_masjid_short_name: shortName });
         }
         return json(200, this.saved(updated(20)));
       }
@@ -197,12 +278,29 @@ export class MockApi {
       case "PUT /api/settings/jumuah":
         s.jumuah_saved = true;
         s.jumuah_masjids = body.masjid_ids.map((id: string) => this.savedMasjids.get(id)!);
+        if (s.jumuah_pick && !body.masjid_ids.includes(s.jumuah_pick.masjid_id)) s.jumuah_pick = null;
         return json(200, this.saved());
+      case "PUT /api/settings/jumuah-pick":
+        s.jumuah_pick = body.masjid_id ? { masjid_id: body.masjid_id, order: body.order } : null;
+        return json(200, this.saved(updated(2)));
+      case "GET /api/jumuah/slots":
+        return json(200, this.slots(new URL(request.url()).searchParams.getAll("masjid_id")));
+      case "PUT /api/settings/optional":
+        this.optionalSaved = true;
+        Object.assign(s, {
+          arrive_early_minutes: body.arrive_early_minutes ?? 0,
+          jumuah_arrive_early_minutes: body.jumuah_arrive_early_minutes ?? 5,
+          main_masjid_short_name: s.main_masjid_choice === "masjid" ? body.short_name?.trim() || null : null,
+          prayer_color_id: body.prayer_color_id ?? null,
+          drive_color_id: body.drive_color_id ?? null,
+        });
+        return json(200, this.saved(updated(20)));
       case "POST /api/setup/finish":
+        await new Promise((resolve) => setTimeout(resolve, this.finishDelayMs));
         s.setup_complete = true;
         this.me.setup_complete = true;
         s.missing = this.missing();
-        return json(200, { settings: s, calendar: updated(70) });
+        return json(200, { settings: s, calendar: this.finishCalendar });
       case "POST /api/calendar/sync":
         return json(200, updated(0));
     }
@@ -234,6 +332,9 @@ function suggestMasjids(query: string): PretendMasjid[] {
   return found.slice(0, 5);
 }
 
-function updated(sent: number) {
+// Where a finished setup sends hakeem@example.com.
+export const GOOGLE_CALENDAR = "https://calendar.google.com/calendar/r?authuser=hakeem%40example.com";
+
+export function updated(sent: number) {
   return { status: "updated", sent, waiting: 0, message: `Calendar updated. ${sent} events sent to Google.` };
 }

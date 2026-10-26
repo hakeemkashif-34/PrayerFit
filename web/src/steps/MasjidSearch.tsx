@@ -10,9 +10,11 @@ import type { Masjid, MasjidSuggestion } from "../types";
 type Props = {
   onPicked: (masjid: Masjid) => void;
   placeholder?: string;
+  // Setup shows the box before a location is picked, but it can't search until then.
+  disabled?: boolean;
 };
 
-export function MasjidSearch({ onPicked, placeholder = "Start typing the masjid's name" }: Props) {
+export function MasjidSearch({ onPicked, placeholder = "Start typing the masjid's name", disabled = false }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -47,7 +49,7 @@ export function MasjidSearch({ onPicked, placeholder = "Start typing the masjid'
         optionName={(s) => `${s.label}, ${s.distance_km} km away`}
         onPick={pick}
         emptyText="No masjids found. Try its address instead."
-        disabled={saving}
+        disabled={saving || disabled}
       />
       <p className="hint small-line">Can't find it? Type its address.</p>
       {error && (

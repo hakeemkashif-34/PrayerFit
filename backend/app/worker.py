@@ -1,5 +1,11 @@
 """The background worker. Docker Compose runs it as its own service.
 
+Every minute it runs, in order:
+1. Nightly jobs that are due (3:00 am in each user's time zone).
+2. MAWAQIT fetches that are due (each linked masjid, once every 6 hours).
+3. Queued calendar updates, like the ones a masjid time change adds.
+Each step has its own try, so one failing doesn't stop the others.
+
     python -m app.worker                 checks every minute for due jobs (the service)
     python -m app.worker run-now         runs today's job for every user right away
     python -m app.worker run-now --email you@gmail.com --force
@@ -12,21 +18,35 @@ from datetime import UTC, datetime
 
 from app.db import get_engine
 from app.http_client import new_http_client
+from app.masjid_times.scheduler import run_due_fetches
 from app.nightly import run_due_jobs, run_now
+from app.update_jobs import run_due_updates
 
 logger = logging.getLogger("app.worker")
 
 CHECK_EVERY_SECONDS = 60
 
 
+STEPS = (
+    ("nightly jobs", run_due_jobs),
+    ("masjid times", run_due_fetches),
+    ("calendar updates", run_due_updates),
+)
+
+
+def run_once() -> None:
+    with new_http_client() as http:
+        for name, step in STEPS:
+            try:
+                step(get_engine(), http, datetime.now(UTC))
+            except Exception:  # noqa: BLE001 - for example, Postgres restarting. Try again next minute.
+                logger.exception("Checking for %s failed", name)
+
+
 def loop() -> None:
-    logger.info("Worker started. Checking for due nightly jobs every %d seconds.", CHECK_EVERY_SECONDS)
+    logger.info("Worker started. Checking for due jobs every %d seconds.", CHECK_EVERY_SECONDS)
     while True:
-        try:
-            with new_http_client() as http:
-                run_due_jobs(get_engine(), http, datetime.now(UTC))
-        except Exception:  # noqa: BLE001 - for example, Postgres restarting. Try again next minute.
-            logger.exception("Checking for nightly jobs failed")
+        run_once()
         time.sleep(CHECK_EVERY_SECONDS)
 
 

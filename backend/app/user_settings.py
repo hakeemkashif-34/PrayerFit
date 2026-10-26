@@ -7,28 +7,44 @@ and only decrypted here, when the app needs them.
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.auth.crypto import decrypt, encrypt
+from app.jumuah import JumuahPick
 from app.models import Masjid, UserJumuahMasjid, UserSettings, WeeklyMasjidPrayers
 from app.prayer_times import AsrMethod, CalculationMethod
 
 PRAYERS = ("fajr", "dhuhr", "asr", "maghrib", "isha")
-# The setup questions, in the order the website asks them. The methods and
-# Jumuah steps are out of setup for now: methods use the defaults below,
-# and Jumuah starts with no masjid. Both can still be changed on the
-# settings page, and anything already saved for them is kept.
-STEPS = ("address", "masjid", "weekly")
+# The setup questions, in the order the website asks them. "optional" can
+# be skipped, but skipping counts as answering it (with the defaults).
+STEPS = ("address", "masjid", "weekly", "optional")
+# Calculated times always use these. There's no setting for them.
 DEFAULT_METHOD = CalculationMethod.ISNA
 DEFAULT_ASR_METHOD = AsrMethod.STANDARD
+# The optional step's defaults, used when it's skipped. Users who saved
+# the step before these existed keep what they have.
+DEFAULT_ARRIVE_EARLY_MINUTES = 5
+DEFAULT_JUMUAH_ARRIVE_EARLY_MINUTES = 5
+DEFAULT_COLOR_ID = "10"  # Basil, Google Calendar's green
+
+
+def _empty(user_id: uuid.UUID) -> UserSettings:
+    # Column defaults only apply on insert, so an unsaved row needs them set here.
+    return UserSettings(
+        user_id=user_id,
+        jumuah_saved=False,
+        optional_saved=False,
+        arrive_early_minutes=0,
+        jumuah_arrive_early_minutes=DEFAULT_JUMUAH_ARRIVE_EARLY_MINUTES,
+    )
 
 
 def get_settings(db: Session, user_id: uuid.UUID) -> UserSettings:
     """This user's settings row, made empty the first time."""
     row = db.scalars(select(UserSettings).where(UserSettings.user_id == user_id)).first()
     if row is None:
-        row = UserSettings(user_id=user_id, jumuah_saved=False)
+        row = _empty(user_id)
         db.add(row)
         db.flush()
     return row
@@ -38,7 +54,7 @@ def find_settings(db: Session, user_id: uuid.UUID) -> UserSettings:
     """This user's settings, or an unsaved empty row. For reading only:
     GET requests must never change data."""
     row = db.scalars(select(UserSettings).where(UserSettings.user_id == user_id)).first()
-    return row if row is not None else UserSettings(user_id=user_id, jumuah_saved=False)
+    return row if row is not None else _empty(user_id)
 
 
 def save_location(row: UserSettings, label: str, latitude: float, longitude: float, time_zone: str) -> None:
@@ -47,14 +63,6 @@ def save_location(row: UserSettings, label: str, latitude: float, longitude: flo
     row.place_name_encrypted = encrypt(label)
     row.location_encrypted = encrypt(f"{latitude},{longitude}")
     row.time_zone = time_zone
-
-
-def method_of(row: UserSettings) -> CalculationMethod:
-    return CalculationMethod(row.method) if row.method else DEFAULT_METHOD
-
-
-def asr_method_of(row: UserSettings) -> AsrMethod:
-    return AsrMethod(row.asr_method) if row.asr_method else DEFAULT_ASR_METHOD
 
 
 def read_address(row: UserSettings) -> str | None:
@@ -83,14 +91,37 @@ def weekly_rows(db: Session, user_id: uuid.UUID) -> list[WeeklyMasjidPrayers]:
 
 
 def jumuah_masjids(db: Session, user_id: uuid.UUID) -> list[Masjid]:
+    """In the order the user listed them. The Jumuah picker uses it when drive times are unknown."""
     return list(
         db.scalars(
             select(Masjid)
             .join(UserJumuahMasjid, UserJumuahMasjid.masjid_id == Masjid.id)
             .where(UserJumuahMasjid.user_id == user_id)
-            .order_by(Masjid.name)
+            .order_by(UserJumuahMasjid.position, Masjid.name)
         )
     )
+
+
+def follow_main_masjid(
+    db: Session, row: UserSettings, old_main_id: uuid.UUID | None, new_main_id: uuid.UUID | None
+) -> None:
+    """Keep the main masjid as the first Jumuah masjid, so users don't pick it twice.
+
+    1. A first main masjid, with no Jumuah masjids yet: it becomes the Jumuah masjid.
+    2. The Jumuah list was only the old main masjid: the new one takes its place.
+       Going to "I pray at home" empties it, so skipping the masjid means no Jumuah.
+    3. Anything else means the user chose their Jumuah list themselves, so it's left alone.
+    Doesn't commit.
+    """
+    if old_main_id == new_main_id:
+        return
+    current = [m.id for m in jumuah_masjids(db, row.user_id)]
+    if current and current != [old_main_id]:
+        return
+    db.execute(delete(UserJumuahMasjid).where(UserJumuahMasjid.user_id == row.user_id))
+    if new_main_id is not None:
+        db.add(UserJumuahMasjid(user_id=row.user_id, masjid_id=new_main_id, position=0))
+        row.jumuah_saved = True
 
 
 def usable_masjid(db: Session, user_id: uuid.UUID, masjid_id: uuid.UUID) -> Masjid | None:
@@ -114,6 +145,8 @@ def missing_steps(db: Session, row: UserSettings) -> list[str]:
     # Someone who prays at home skips the grid.
     if row.main_masjid_choice != "home" and len(weekly_rows(db, row.user_id)) != 7:
         missing.append("weekly")
+    if not row.optional_saved:
+        missing.append("optional")
     return missing
 
 
@@ -132,6 +165,22 @@ class Setup:
     masjid_label: str | None
     # weekday (0 is Monday) -> the prayers usually prayed at the masjid
     at_masjid: dict[int, frozenset[str]]
+    user_id: uuid.UUID | None = None
+    # In the order the user listed them. Empty means no Jumuah.
+    jumuah_masjids: tuple[Masjid, ...] = ()
+    arrive_early_minutes: int = 0
+    jumuah_arrive_early_minutes: int = 5
+    # The Jumuah the user picked, or None for the earliest that fits.
+    jumuah_pick: "JumuahPick | None" = None
+    # Google event colours, "1" to "11". None uses the calendar's colour.
+    prayer_color_id: str | None = None
+    drive_color_id: str | None = None
+
+    def label_for(self, masjid: Masjid) -> str:
+        """The main masjid's short name if this is it, otherwise the masjid's name."""
+        if self.masjid is not None and masjid.id == self.masjid.id:
+            return self.masjid_label
+        return masjid_label(masjid, None)
 
     def place_for(self, weekday: int, prayer: str) -> str:
         if self.masjid is not None and prayer in self.at_masjid.get(weekday, frozenset()):
@@ -160,9 +209,20 @@ def load_setup(db: Session, user_id: uuid.UUID) -> Setup | None:
         latitude=latitude,
         longitude=longitude,
         time_zone=row.time_zone,
-        method=method_of(row),
-        asr_method=asr_method_of(row),
+        method=DEFAULT_METHOD,
+        asr_method=DEFAULT_ASR_METHOD,
         masjid=masjid,
         masjid_label=masjid_label(masjid, row.main_masjid_short_name) if masjid else None,
         at_masjid=at_masjid,
+        user_id=user_id,
+        jumuah_masjids=tuple(jumuah_masjids(db, user_id)),
+        arrive_early_minutes=row.arrive_early_minutes or 0,
+        jumuah_arrive_early_minutes=row.jumuah_arrive_early_minutes,
+        jumuah_pick=(
+            JumuahPick(row.jumuah_pick_masjid_id, row.jumuah_pick_order)
+            if row.jumuah_pick_masjid_id is not None and row.jumuah_pick_order is not None
+            else None
+        ),
+        prayer_color_id=row.prayer_color_id,
+        drive_color_id=row.drive_color_id,
     )

@@ -14,6 +14,8 @@ from app.prayer_times import calculate_prayer_times
 from tests.conftest import sign_in
 from tests.setup_helpers import save_setup
 
+# Fajr, Asr, and Maghrib blocks are 10 minutes. Dhuhr and Isha are 15.
+MINUTES = {"fajr": 10, "dhuhr": 15, "asr": 10, "maghrib": 10, "isha": 15}
 TORONTO = (43.6532, -79.3832)
 PRAYERS = ["fajr", "dhuhr", "asr", "maghrib", "isha"]
 
@@ -52,8 +54,8 @@ def test_window_across_daylight_saving(client, fake_google, set_today, db, first
             end = datetime.fromisoformat(event["end"]["dateTime"])
             assert start == getattr(expected, name).time
             assert event["start"]["dateTime"].endswith(offset)
-            # 15 real minutes, even on the change day.
-            assert end - start == timedelta(minutes=15)
+            # Real minutes, even on the change day.
+            assert end - start == timedelta(minutes=MINUTES[name])
 
 
 def test_window_dates_never_add_24_hours():

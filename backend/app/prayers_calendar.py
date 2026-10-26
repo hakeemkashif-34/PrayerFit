@@ -49,12 +49,16 @@ def ensure_prayers_calendar(
         saved = PrayerCalendar(user_id=user_id, google_calendar_id=new_id, time_zone=time_zone)
         db.add(saved)
     else:
+        old = (PrayerEvent.user_id == user_id) & (PrayerEvent.google_calendar_id == saved.google_calendar_id)
+        # Drive blocks waiting to be deleted went with the old calendar.
         db.execute(
             update(PrayerEvent)
-            .where(
-                PrayerEvent.user_id == user_id,
-                PrayerEvent.google_calendar_id == saved.google_calendar_id,
-            )
+            .where(old, PrayerEvent.sync_status.in_(("delete_pending", "deleted")))
+            .values(sync_status="deleted", synced_hash=None)
+        )
+        db.execute(
+            update(PrayerEvent)
+            .where(old, PrayerEvent.sync_status.notin_(("delete_pending", "deleted")))
             .values(sync_status="pending")
         )
         saved.google_calendar_id = new_id

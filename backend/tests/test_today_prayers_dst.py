@@ -13,6 +13,8 @@ from app.prayer_times import calculate_prayer_times
 from tests.conftest import sign_in
 from tests.setup_helpers import save_setup
 
+# Fajr, Asr, and Maghrib blocks are 10 minutes. Dhuhr and Isha are 15.
+MINUTES = {"fajr": 10, "dhuhr": 15, "asr": 10, "maghrib": 10, "isha": 15}
 TORONTO = {"latitude": 43.6532, "longitude": -79.3832, "timezone": "America/Toronto"}
 
 
@@ -44,7 +46,7 @@ def test_event_times_on_daylight_saving_days(client, fake_google, set_today, db,
         assert start.date() == day
         assert event["start"]["dateTime"].endswith(offset)
         assert event["end"]["dateTime"].endswith(offset)
-        assert end - start == timedelta(minutes=15)
+        assert end - start == timedelta(minutes=MINUTES[name])
 
 
 def test_spring_forward_dhuhr_is_an_hour_later_on_the_clock(client, fake_google, set_today, db):

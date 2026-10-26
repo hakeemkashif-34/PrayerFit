@@ -2,7 +2,10 @@
 // The session cookie is HttpOnly, so this code never sees it. The browser
 // sends it because the website and the API are the same site.
 
-import type { CalendarUpdate, Masjid, MasjidSuggestion, Me, SaveResponse, Settings, Suggestions } from "./types";
+import type {
+  CalendarUpdate, JumuahChoices, Masjid, MasjidSuggestion, Me, OptionalAnswers, SaveResponse, Settings,
+  SlotKey, Suggestions,
+} from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -56,17 +59,24 @@ export const api = {
     request<Suggestions>("POST", "/api/setup/location/suggest", { query }, signal),
   saveLocation: (query: string, index: number) =>
     request<SaveResponse>("PUT", "/api/settings/location", { query, index }),
-  saveMethods: (method: string, asr_method: string) =>
-    request<SaveResponse>("PUT", "/api/settings/methods", { method, asr_method }),
   suggestMasjids: (query: string, signal?: AbortSignal) =>
     request<{ suggestions: MasjidSuggestion[] }>("POST", "/api/setup/masjid/suggest", { query }, signal),
   // Saves the picked suggestion as a masjid, so it can be the main or a Jumuah masjid.
   masjidFromSuggestion: (query: string, index: number) =>
     request<Masjid>("POST", "/api/masjids/from-suggestion", { query, index }),
-  saveMainMasjid: (body: { choice: "masjid" | "home"; masjid_id?: string; short_name?: string }) =>
+  saveMainMasjid: (body: { choice: "masjid" | "home"; masjid_id?: string }) =>
     request<SaveResponse>("PUT", "/api/settings/main-masjid", body),
   saveWeekly: (days: Settings["weekly"]) => request<SaveResponse>("PUT", "/api/settings/weekly", { days }),
   saveJumuah: (masjid_ids: string[]) => request<SaveResponse>("PUT", "/api/settings/jumuah", { masjid_ids }),
+  // Skip sends the defaults.
+  saveOptional: (answers: OptionalAnswers) => request<SaveResponse>("PUT", "/api/settings/optional", answers),
+  // null clears the pick, so the earliest Jumuah that fits is used.
+  saveJumuahPick: (pick: SlotKey | null) => request<SaveResponse>("PUT", "/api/settings/jumuah-pick", pick ?? {}),
+  // masjidIds: masjids setup hasn't saved yet. Left out, the saved Jumuah masjids are used.
+  jumuahSlots: (masjidIds?: string[], signal?: AbortSignal) => {
+    const query = new URLSearchParams((masjidIds ?? []).map((id) => ["masjid_id", id]));
+    return request<JumuahChoices>("GET", `/api/jumuah/slots${masjidIds?.length ? `?${query}` : ""}`, undefined, signal);
+  },
   finishSetup: () => request<SaveResponse>("POST", "/api/setup/finish"),
   syncCalendar: () => request<CalendarUpdate>("POST", "/api/calendar/sync"),
   // /auth/ goes straight to the backend, like the sign-in links.

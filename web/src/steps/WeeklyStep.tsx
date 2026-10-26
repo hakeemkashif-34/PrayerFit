@@ -17,7 +17,7 @@ type Props = {
   onCancel?: () => void;
 };
 
-function emptyWeek(): WeekdayPrayers[] {
+export function emptyWeek(): WeekdayPrayers[] {
   return WEEKDAYS.map((_, weekday) => ({ weekday, fajr: false, dhuhr: false, asr: false, maghrib: false, isha: false }));
 }
 
@@ -47,37 +47,7 @@ export function WeeklyStep({ initial, masjidLabel, page = false, submitLabel = "
     <form onSubmit={save} aria-labelledby="weekly-title">
       <Heading id="weekly-title">Which prayers do you usually pray at {masjidLabel}?</Heading>
       <p className="hint">Ticked means at the masjid. Unticked means at home.</p>
-      <table className="grid">
-        <thead>
-          <tr>
-            <th scope="col">
-              <span className="visually-hidden">Prayer</span>
-            </th>
-            {WEEKDAYS_SHORT.map((day, weekday) => (
-              <th key={day} scope="col">
-                <abbr title={WEEKDAYS[weekday]}>{day}</abbr>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {PRAYERS.map((prayer) => (
-            <tr key={prayer}>
-              <th scope="row">{PRAYER_NAMES[prayer]}</th>
-              {days.map((day) => (
-                <td key={day.weekday}>
-                  <input
-                    type="checkbox"
-                    aria-label={`${PRAYER_NAMES[prayer]} on ${WEEKDAYS[day.weekday]} at the masjid`}
-                    checked={day[prayer]}
-                    onChange={() => toggle(day.weekday, prayer)}
-                  />
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <WeeklyGrid days={days} onToggle={toggle} />
       {error && (
         <p className="error" role="alert">
           {error}
@@ -94,5 +64,42 @@ export function WeeklyStep({ initial, masjidLabel, page = false, submitLabel = "
         )}
       </div>
     </form>
+  );
+}
+
+// The grid on its own, so setup can show it on the same page as the other questions.
+export function WeeklyGrid({ days, onToggle }: { days: WeekdayPrayers[]; onToggle: (weekday: number, prayer: Prayer) => void }) {
+  return (
+    <table className="grid">
+      <thead>
+        <tr>
+          <th scope="col">
+            <span className="visually-hidden">Prayer</span>
+          </th>
+          {WEEKDAYS_SHORT.map((day, weekday) => (
+            <th key={day} scope="col">
+              <abbr title={WEEKDAYS[weekday]}>{day}</abbr>
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {PRAYERS.map((prayer) => (
+          <tr key={prayer}>
+            <th scope="row">{PRAYER_NAMES[prayer]}</th>
+            {days.map((day) => (
+              <td key={day.weekday}>
+                <input
+                  type="checkbox"
+                  aria-label={`${PRAYER_NAMES[prayer]} on ${WEEKDAYS[day.weekday]} at the masjid`}
+                  checked={day[prayer]}
+                  onChange={() => onToggle(day.weekday, prayer)}
+                />
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }

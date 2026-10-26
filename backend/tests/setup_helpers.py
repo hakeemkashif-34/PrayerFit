@@ -23,8 +23,6 @@ def save_setup(
     sub: str = "user-a",
     location: tuple[float, float] = OTTAWA,
     time_zone: str = "America/Toronto",
-    method: str = "isna",
-    asr_method: str = "standard",
     masjid_name: str | None = None,
     short_name: str | None = None,
     at_masjid: dict[int, set[str]] | None = None,
@@ -39,9 +37,8 @@ def save_setup(
         user = db.scalars(select(User).where(User.google_sub == sub)).one()
         row = get_settings(db, user.id)
         save_location(row, "1 Test Street, Ottawa", *location, time_zone)
-        row.method = method
-        row.asr_method = asr_method
         row.jumuah_saved = True
+        row.optional_saved = True
         if masjid_name is None:
             row.main_masjid_choice = "home"
             row.main_masjid_id = None
@@ -128,7 +125,7 @@ def setup_through_api(
     at_masjid: dict[int, list[str]] | None = None,
     finish: bool = True,
 ):
-    """Answer the 3 setup questions through the API, then finish. Returns the finish response.
+    """Answer the 4 setup questions through the API, then finish. Returns the finish response.
 
     masjid=None means the user pressed "Skip": every prayer at home, no weekly grid.
     """
@@ -144,10 +141,7 @@ def setup_through_api(
         assert client.put("/settings/main-masjid", json={"choice": "home"}).status_code == 200
     else:
         picked = pick_masjid(client, masjid, masjid)
-        response = client.put(
-            "/settings/main-masjid",
-            json={"choice": "masjid", "masjid_id": picked["id"], "short_name": short_name},
-        )
+        response = client.put("/settings/main-masjid", json={"choice": "masjid", "masjid_id": picked["id"]})
         assert response.status_code == 200
         # Default: Dhuhr and Isha at the masjid on weekdays.
         if at_masjid is None:
@@ -156,6 +150,10 @@ def setup_through_api(
             {"weekday": day, **{p: p in at_masjid.get(day, []) for p in PRAYERS}} for day in range(7)
         ]
         assert client.put("/settings/weekly", json={"days": days}).status_code == 200
+
+    # The optional step. The short name is part of it.
+    response = client.put("/settings/optional", json={"short_name": short_name if masjid else None})
+    assert response.status_code == 200, response.text
 
     if finish:
         return client.post("/setup/finish")

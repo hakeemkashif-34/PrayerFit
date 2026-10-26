@@ -19,6 +19,7 @@ x-backend-environment: &backend-environment
   SESSION_DAYS: ${SESSION_DAYS}
   OSM_CONTACT_EMAIL: ${OSM_CONTACT_EMAIL}
   PHOTON_URL: ${PHOTON_URL:-}
+  ORS_API_KEY: ${ORS_API_KEY:-}
 
 services:
   db:

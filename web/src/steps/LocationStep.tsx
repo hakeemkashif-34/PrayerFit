@@ -15,9 +15,11 @@ type Props = {
   // Keep the saved place and move on (setup) or close the editor (settings).
   onKeep?: () => void;
   keepLabel?: string;
+  // A line under the question, like "e.g. 24 Maple Drive, Ottawa".
+  example?: string;
 };
 
-export function LocationStep({ current, page = false, onSaved, onKeep, keepLabel = "Keep this location" }: Props) {
+export function LocationStep({ current, page = false, onSaved, onKeep, keepLabel = "Keep this location", example }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const Heading = page ? "h1" : "h2";
@@ -29,6 +31,8 @@ export function LocationStep({ current, page = false, onSaved, onKeep, keepLabel
       onSaved(await api.saveLocation(query, suggestion.index));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't save. Try again.");
+    } finally {
+      // Setup keeps this question on screen after saving, so it must be usable again.
       setSaving(false);
     }
   }
@@ -36,6 +40,7 @@ export function LocationStep({ current, page = false, onSaved, onKeep, keepLabel
   return (
     <section aria-labelledby="location-title">
       <Heading id="location-title">What's your location?</Heading>
+      {example && <p className="hint example">{example}</p>}
       {current && (
         <div className="current">
           <p>

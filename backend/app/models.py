@@ -5,7 +5,7 @@ one user. That's how one user can never see another user's data.
 """
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 from sqlalchemy import (
     JSON,
@@ -19,6 +19,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    Time,
     UniqueConstraint,
     func,
 )
@@ -91,8 +92,9 @@ class PrayerEvent(Base):
     """One prayer on one day. Saved here before it's sent to Google."""
 
     __tablename__ = "prayer_events"
-    # One row per prayer per day per user. Running twice updates this row.
-    __table_args__ = (UniqueConstraint("user_id", "local_date", "prayer"),)
+    # One row per prayer per day per user, plus one for its drive block.
+    # Running twice updates these rows.
+    __table_args__ = (UniqueConstraint("user_id", "local_date", "prayer", "kind"),)
 
     # The app's own event ID. Its hex form is also the Google event ID.
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -106,7 +108,8 @@ class PrayerEvent(Base):
     source_description: Mapped[str] = mapped_column(Text)
     # Which Google calendar it was last sent to. Changes if the calendar is recreated.
     google_calendar_id: Mapped[str | None] = mapped_column(String(1024))
-    # "pending" until Google confirms it, then "synced".
+    # "pending" until Google confirms it, then "synced". Drive blocks can
+    # also be "delete_pending" and then "deleted".
     sync_status: Mapped[str] = mapped_column(String(16), default="pending")
     synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
@@ -121,6 +124,12 @@ class PrayerEvent(Base):
     # SHA-256 of the event Google last confirmed. If the new event hashes
     # the same, nothing changed and Google isn't called.
     synced_hash: Mapped[str | None] = mapped_column(String(64))
+    # "prayer", or "drive" for the drive block before a masjid prayer.
+    kind: Mapped[str] = mapped_column(String(8), default="prayer", server_default="prayer")
+    # Google's event colour, "1" to "11". Empty uses the calendar's colour.
+    color_id: Mapped[str | None] = mapped_column(String(2))
+    # A popup this many minutes before the start. Empty sends no reminder settings.
+    reminder_minutes: Mapped[int | None] = mapped_column(SmallInteger)
 
 
 class UserSettings(Base):
@@ -142,9 +151,6 @@ class UserSettings(Base):
     location_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     # Not encrypted: the nightly job needs it to know when 3:00 am is.
     time_zone: Mapped[str | None] = mapped_column(String(64))
-    # Empty means the defaults (ISNA, standard). Setup doesn't ask for now.
-    method: Mapped[str | None] = mapped_column(String(16))
-    asr_method: Mapped[str | None] = mapped_column(String(16))
     # "masjid" or "home". Empty until the masjid step is saved.
     main_masjid_choice: Mapped[str | None] = mapped_column(String(8))
     main_masjid_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -154,6 +160,21 @@ class UserSettings(Base):
     main_masjid_short_name: Mapped[str | None] = mapped_column(String(40))
     # True once Jumuah masjids are saved on the settings page. Not part of setup for now.
     jumuah_saved: Mapped[bool] = mapped_column(default=False)
+    # The optional setup step. True once it's saved or skipped.
+    optional_saved: Mapped[bool] = mapped_column(default=False, server_default="false")
+    # How many minutes before iqamah the user wants to arrive, 0 to 60.
+    arrive_early_minutes: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
+    # The same for Jumuah, 0 to 60. Jumuah often needs more time to park and find a spot.
+    jumuah_arrive_early_minutes: Mapped[int] = mapped_column(SmallInteger, default=5, server_default="5")
+    # The Jumuah the user picked: a masjid and the slot's order (1, 2, or 3),
+    # not a clock time, since a masjid's 3rd Jumuah can move every week.
+    jumuah_pick_masjid_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("masjids.id", ondelete="SET NULL")
+    )
+    jumuah_pick_order: Mapped[int | None] = mapped_column(SmallInteger)
+    # Google event colours, "1" to "11". Empty uses the calendar's colour.
+    prayer_color_id: Mapped[str | None] = mapped_column(String(2))
+    drive_color_id: Mapped[str | None] = mapped_column(String(2))
     setup_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -187,6 +208,9 @@ class Masjid(Base):
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
+    # How long its Jumuah (khutbah and prayer) takes, 15 to 90 minutes. Set
+    # with the admin command, since MAWAQIT doesn't publish it. Empty uses 45.
+    jumuah_minutes: Mapped[int | None] = mapped_column(SmallInteger)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -220,6 +244,137 @@ class UserJumuahMasjid(Base):
     masjid_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("masjids.id", ondelete="CASCADE"), primary_key=True
     )
+    # The order the user listed them in, 0 first. The Jumuah picker uses
+    # it when drive times are unknown.
+    position: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
+
+
+class MasjidSource(Base):
+    """Where a masjid's times are read from. Only the admin command adds these.
+
+    external_id is the masjid's ID on that source, like the MAWAQIT page
+    name. The app builds the URL itself, so a saved value can't point anywhere else.
+    """
+
+    __tablename__ = "masjid_sources"
+
+    masjid_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("masjids.id", ondelete="CASCADE"), primary_key=True
+    )
+    # "mawaqit" for now. Each source has its own adapter.
+    source: Mapped[str] = mapped_column(String(16))
+    external_id: Mapped[str] = mapped_column(String(200))
+    linked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The last fetch that passed every check. Freshness is measured from this.
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The last time a fetch changed a future time. Event descriptions show this date.
+    last_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # After a 403, a 429, or 3 failures in a row, no fetch before this.
+    retry_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+
+class MasjidDayTimes(Base):
+    """One masjid's published times for one local date.
+
+    Times are clock times in the masjid's time zone, not instants, so the
+    daylight saving offset is applied for that exact date when an event is
+    built. Iqamah is empty when the masjid didn't publish one.
+    """
+
+    __tablename__ = "masjid_day_times"
+    __table_args__ = (UniqueConstraint("masjid_id", "local_date", "source"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    masjid_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("masjids.id", ondelete="CASCADE"), index=True)
+    local_date: Mapped[date] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(String(16))
+    fajr_adhan: Mapped[time] = mapped_column(Time)
+    dhuhr_adhan: Mapped[time] = mapped_column(Time)
+    asr_adhan: Mapped[time] = mapped_column(Time)
+    maghrib_adhan: Mapped[time] = mapped_column(Time)
+    isha_adhan: Mapped[time] = mapped_column(Time)
+    fajr_iqamah: Mapped[time | None] = mapped_column(Time)
+    dhuhr_iqamah: Mapped[time | None] = mapped_column(Time)
+    asr_iqamah: Mapped[time | None] = mapped_column(Time)
+    maghrib_iqamah: Mapped[time | None] = mapped_column(Time)
+    isha_iqamah: Mapped[time | None] = mapped_column(Time)
+    # Jumuah slots like {"order": 1, "time": "12:45"}, in MAWAQIT's order.
+    # Only on the coming Friday, since later ones aren't published yet.
+    jumuah: Mapped[list] = mapped_column(JSON, default=list)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MasjidFetchJob(Base):
+    """One read of one masjid's source.
+
+    The ID is "{source}:{masjid_id}:{6-hour block}", so each masjid is read
+    at most once per block, however many users picked it.
+    """
+
+    __tablename__ = "masjid_fetch_jobs"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    masjid_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("masjids.id", ondelete="CASCADE"), index=True)
+    # pending, running, done, failed, or blocked
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+
+
+class UserDriveTime(Base):
+    """How long the drive from one user's home to one masjid takes.
+
+    route_key is a keyed hash of the rounded home and masjid points. If
+    either one moves, the key changes and the drive time is asked again.
+    The points themselves are never stored here.
+    """
+
+    __tablename__ = "user_drive_times"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    masjid_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("masjids.id", ondelete="CASCADE"), primary_key=True
+    )
+    # Empty when there's no route.
+    seconds: Mapped[int | None] = mapped_column(Integer)
+    # "ok" or "no_route"
+    status: Mapped[str] = mapped_column(String(16))
+    route_key: Mapped[str] = mapped_column(String(64))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class UpdateJob(Base):
+    """A queued calendar update for one user, outside the nightly run.
+
+    The ID is "update:{user_id}", one row per user. Queuing again while it's
+    waiting changes nothing, so 5 changes in a row become 1 update.
+    """
+
+    __tablename__ = "update_jobs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True
+    )
+    # pending, running, done, failed, needs_sign_in, or skipped
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    # Why it was queued last, like "settings" or "mawaqit".
+    reason: Mapped[str] = mapped_column(String(32))
+    # When it was last queued. If that's after the run started, it runs again.
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    events_sent: Mapped[int] = mapped_column(Integer, default=0)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
 
 
 class GeocodeCache(Base):

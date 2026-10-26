@@ -29,7 +29,15 @@ from app.prayer_times import AsrMethod, CalculationMethod, DailyPrayerTimes, Pra
 # Sunrise isn't a prayer. It's when Fajr ends, so it doesn't get an event.
 PRAYERS = ("fajr", "dhuhr", "asr", "maghrib", "isha")
 PRAYER_TITLES = {"fajr": "Fajr", "dhuhr": "Dhuhr", "asr": "Asr", "maghrib": "Maghrib", "isha": "Isha"}
-EVENT_LENGTH = timedelta(minutes=15)
+# How long each prayer block is. Dhuhr and Isha have longer prayers, so they
+# get more time. Jumuah uses each masjid's own length instead (event_plan.py).
+PRAYER_LENGTHS = {
+    "fajr": timedelta(minutes=10),
+    "dhuhr": timedelta(minutes=15),
+    "asr": timedelta(minutes=10),
+    "maghrib": timedelta(minutes=10),
+    "isha": timedelta(minutes=15),
+}
 
 METHOD_NAMES = {
     CalculationMethod.ISNA: "ISNA",
@@ -49,9 +57,9 @@ def source_description(prayer: PrayerTime) -> str:
     return f"{prayer.source.capitalize()} ({', '.join(parts)})"
 
 
-def event_end(start: datetime) -> datetime:
-    """15 minutes after start, counted in UTC so a clock change can't stretch it."""
-    return (start.astimezone(UTC) + EVENT_LENGTH).astimezone(start.tzinfo)
+def event_end(start: datetime, length: timedelta) -> datetime:
+    """length after start, counted in UTC so a clock change can't stretch it."""
+    return (start.astimezone(UTC) + length).astimezone(start.tzinfo)
 
 
 def save_day(db: Session, user_id: uuid.UUID, day: DailyPrayerTimes) -> list[PrayerEvent]:
@@ -64,16 +72,16 @@ def save_day(db: Session, user_id: uuid.UUID, day: DailyPrayerTimes) -> list[Pra
         prayer: PrayerTime = getattr(day, name)
         values = {
             "starts_at": prayer.time,
-            "ends_at": event_end(prayer.time),
+            "ends_at": event_end(prayer.time, PRAYER_LENGTHS[name]),
             "time_zone": day.timezone,
             "source_description": source_description(prayer),
             "sync_status": "pending",
         }
         db.execute(
             insert(PrayerEvent)
-            .values(id=uuid.uuid4(), user_id=user_id, local_date=day.date, prayer=name, **values)
+            .values(id=uuid.uuid4(), user_id=user_id, local_date=day.date, prayer=name, kind="prayer", **values)
             .on_conflict_do_update(
-                index_elements=["user_id", "local_date", "prayer"], set_=values
+                index_elements=["user_id", "local_date", "prayer", "kind"], set_=values
             )
         )
     db.commit()
@@ -95,7 +103,7 @@ def google_event_id(row: PrayerEvent) -> str:
 
 def google_event(row: PrayerEvent) -> dict:
     zone = ZoneInfo(row.time_zone)
-    return {
+    event = {
         "id": google_event_id(row),
         # Rows from before milestone 4 have no title or description saved.
         "summary": row.summary or PRAYER_TITLES[row.prayer],
@@ -104,10 +112,23 @@ def google_event(row: PrayerEvent) -> dict:
         "end": {"dateTime": row.ends_at.astimezone(zone).isoformat(), "timeZone": row.time_zone},
         # "confirmed" brings an event back if the user had deleted it.
         "status": "confirmed",
+        # Private: people who can see the user's calendar see "Busy", not
+        # the details. Users can change it for an event in Google Calendar.
+        "visibility": "private",
         # Private: only this app can see it. Lets later milestones match
         # Google events back to rows even if the event ID ever differs.
         "extendedProperties": {"private": {"appEventId": str(row.id)}},
     }
+    # Only added when set, so events from before milestone 5 hash the same
+    # and aren't sent again.
+    if row.color_id:
+        event["colorId"] = row.color_id
+    if row.reminder_minutes is not None:
+        event["reminders"] = {
+            "useDefault": False,
+            "overrides": [{"method": "popup", "minutes": row.reminder_minutes}],
+        }
+    return event
 
 
 def event_hash(row: PrayerEvent) -> str:
@@ -146,8 +167,27 @@ def _write_event(calendar: GoogleCalendar, calendar_id: str, row: PrayerEvent) -
         calendar.update_event(calendar_id, event_id, body)
 
 
+class NotADriveBlock(Exception):
+    """Something asked to delete an event the app may not delete."""
+
+
+def delete_drive_block(calendar: GoogleCalendar, calendar_id: str, row: PrayerEvent, now: datetime) -> None:
+    """Delete one future drive block the app made. The only delete the app does.
+
+    Prayer blocks, past events, and anything the app didn't make are never deleted.
+    """
+    if row.kind != "drive" or row.starts_at <= now:
+        raise NotADriveBlock(f"Refused to delete {row.kind} event {row.id}")
+    if row.google_calendar_id != calendar_id:
+        return  # it was in a calendar that's gone, so there's nothing to delete
+    try:
+        calendar.delete_event(calendar_id, google_event_id(row))
+    except GoogleNotFound:
+        pass  # already gone, for example the user deleted it
+
+
 def send_to_google(
-    db: Session, calendar: GoogleCalendar, calendar_id: str, rows: list[PrayerEvent]
+    db: Session, calendar: GoogleCalendar, calendar_id: str, rows: list[PrayerEvent], now: datetime
 ) -> None:
     """Send each row to Google, committing after each one.
 
@@ -156,7 +196,10 @@ def send_to_google(
     """
     for index, row in enumerate(rows):
         try:
-            _write_event(calendar, calendar_id, row)
+            if row.sync_status == "delete_pending":
+                delete_drive_block(calendar, calendar_id, row, now)
+            else:
+                _write_event(calendar, calendar_id, row)
         except GoogleError as error:
             row.last_error = str(error)
             db.commit()
@@ -165,9 +208,14 @@ def send_to_google(
                 saved=[r.prayer for r in rows[:index]],
                 waiting=[r.prayer for r in rows[index:]],
             ) from error
-        row.google_calendar_id = calendar_id
-        row.synced_hash = event_hash(row)
-        row.sync_status = "synced"
+        if row.sync_status == "delete_pending":
+            # Gone from Google. No hash, so if it's needed again it's sent again.
+            row.sync_status = "deleted"
+            row.synced_hash = None
+        else:
+            row.google_calendar_id = calendar_id
+            row.synced_hash = event_hash(row)
+            row.sync_status = "synced"
         row.synced_at = datetime.now(UTC)
         row.last_error = None
         db.commit()

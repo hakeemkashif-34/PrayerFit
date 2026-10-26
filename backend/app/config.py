@@ -59,6 +59,23 @@ def get_osm_settings() -> OsmSettings:
     )
 
 
+@dataclass(frozen=True)
+class OrsSettings:
+    """OpenRouteService, for drive times. An empty key turns drive times off."""
+
+    api_key: str
+    url: str
+
+
+@lru_cache
+def get_ors_settings() -> OrsSettings:
+    return OrsSettings(
+        api_key=os.environ.get("ORS_API_KEY", "").strip(),
+        # HeiGIT shut off api.openrouteservice.org on September 28, 2026.
+        url=_optional("ORS_URL", "https://api.heigit.org/openrouteservice").rstrip("/"),
+    )
+
+
 @lru_cache
 def get_google_settings() -> GoogleSettings:
     return GoogleSettings(

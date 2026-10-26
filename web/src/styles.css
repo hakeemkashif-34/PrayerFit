@@ -1,29 +1,84 @@
-/* Mobile first: one column, large tap targets. Wider screens get two columns
-   on the landing and setup pages. Colours stay simple: one green, greys. */
+/* The look of the whole website.
+
+   A calm tool for praying on time, so the interface stays quiet: one deep
+   masjid green for anything you can press, ink for values, slate for
+   labels, and a cool off-white page. The one bold thing is the hadith on
+   the landing page, in Amiri with a brass bar. Brass is used nowhere else.
+
+   Every colour is a token here, so dark mode only changes the tokens.
+   Mobile first: one column and large tap targets, two columns on wider screens. */
 
 :root {
+  /* Masjid green: buttons, links, focus, the picked Jumuah. */
   --green: #1f5f4a;
+  --green-hover: #174a39;
   --green-dark: #164536;
   --green-soft: #e7f2ed;
+  /* Text on a solid green button or dot. */
+  --on-green: #ffffff;
+  /* Ink for values and headings, slate for labels and hints. */
   --text: #17201c;
   --muted: #5c6862;
   --faint: #8a948f;
   --line: #dde3e0;
-  --background: #f6f8f7;
+  /* Mist for the page, paper for the main surfaces, and text boxes. */
+  --background: #f5f7f6;
   --card: #ffffff;
+  --field: #ffffff;
   --error: #a32020;
   --warning-bg: #fff4dc;
+  --focus: #1f5f4a;
+  --shadow: rgb(23 32 28 / 0.12);
+  /* Brass, only for the hadith. */
+  --quote-bg: #fbf4e2;
+  --quote-accent: #b07d1c;
+  --quote-text: #3a2c0f;
+  --quote-source: #7a5a1c;
 
-  /* Plus Jakarta Sans, served from our own site (see main.tsx). */
+  /* Both fonts are served from our own site (see main.tsx). */
   --font: "Plus Jakarta Sans Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  color-scheme: light;
+  --serif: "Amiri", Georgia, "Times New Roman", serif;
+  --radius: 12px;
+  color-scheme: light dark;
   font-family: var(--font);
-  font-size: 16px;
+  /* Bigger than the browser's 16px, and bigger again on wider screens. */
+  font-size: 17px;
   line-height: 1.6;
   color: var(--text);
   background: var(--background);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+@media (min-width: 760px) {
+  :root {
+    font-size: 18px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --green: #4cb38a;
+    --green-hover: #63c79d;
+    --green-dark: #a9e2c8;
+    --green-soft: #17342a;
+    --on-green: #0b1712;
+    --text: #e6ece9;
+    --muted: #a6b3ad;
+    --faint: #7f8c86;
+    --line: #2d3a35;
+    --background: #0f1513;
+    --card: #161e1b;
+    --field: #1c2622;
+    --error: #ff8f85;
+    --warning-bg: #3a2f12;
+    --focus: #7fd3ae;
+    --shadow: rgb(0 0 0 / 0.5);
+    --quote-bg: #2b2414;
+    --quote-accent: #e3b552;
+    --quote-text: #f6e8c4;
+    --quote-source: #d9b56a;
+  }
 }
 
 * {
@@ -42,11 +97,27 @@ textarea {
   font: inherit;
 }
 
+/* One focus ring for everything you can reach with the keyboard. */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+a {
+  color: var(--green);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  color: var(--green-hover);
+}
+
 /* ---- Type ---- */
 
 h1,
 h2,
-h3 {
+h3,
+h4 {
   color: var(--text);
   letter-spacing: -0.02em;
   text-wrap: balance;
@@ -60,9 +131,17 @@ h1 {
 }
 
 h2 {
-  font-size: 1.125rem;
+  font-size: 1.1875rem;
   font-weight: 700;
   line-height: 1.35;
+  margin: 0 0 8px;
+}
+
+h3,
+h4 {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.4;
   margin: 0 0 8px;
 }
 
@@ -74,17 +153,36 @@ strong {
   font-weight: 650;
 }
 
-.hint,
-.muted {
+.hint {
   color: var(--muted);
   font-size: 0.9375rem;
+}
+
+/* A second, quieter line under a name, like a distance or where times come from. */
+.hint.detail {
+  display: block;
+  font-size: 0.875rem;
+  margin-top: 2px;
 }
 
 .lead {
   font-size: 1.1875rem;
   line-height: 1.55;
   color: var(--muted);
-  max-width: 34ch;
+}
+
+.small-line {
+  font-size: 0.875rem;
+  margin: 8px 0 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 @media (min-width: 760px) {
@@ -96,25 +194,23 @@ strong {
 /* ---- Page frames ---- */
 
 .page {
-  max-width: 600px;
+  max-width: 880px;
   margin: 0 auto;
   padding: 32px 16px 48px;
 }
 
 .page.narrow {
-  max-width: 440px;
+  max-width: 680px;
   padding-top: 64px;
 }
 
-.top {
-  margin-bottom: 24px;
+@media (min-width: 760px) {
+  .page {
+    padding: 48px 32px 56px;
+  }
 }
 
-.top h1 {
-  margin-bottom: 4px;
-}
-
-/* Pages with the OpenStreetMap footer: the footer sits at the bottom. */
+/* Pages with the credits footer: the footer sits at the bottom. */
 .page-with-footer {
   min-height: 100vh;
   display: flex;
@@ -126,8 +222,11 @@ strong {
 }
 
 .site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 20px;
   padding: 24px 16px 32px;
-  text-align: center;
   font-size: 0.8125rem;
 }
 
@@ -137,65 +236,111 @@ strong {
 }
 
 .site-footer a:hover {
+  color: var(--muted);
   text-decoration: underline;
 }
 
-/* ---- Landing page: welcome on the left, sign-in card on the right ---- */
+/* ---- Landing page: welcome on the left, sign-in on the right ---- */
 
 .landing {
-  max-width: 1000px;
+  max-width: 1240px;
   margin: 0 auto;
-  padding: 48px 16px;
+  padding: 40px 16px;
   display: grid;
-  gap: 32px;
+  gap: 28px;
   align-items: center;
   /* Keeps the two parts together in the middle instead of spread apart. */
   align-content: center;
   min-height: 100vh;
 }
 
+/* Smaller than the hadith on purpose: the hadith is what the eye lands on. */
 .welcome h1 {
-  font-size: 2.5rem;
-  line-height: 1.1;
+  font-size: 1.625rem;
+  line-height: 1.15;
   letter-spacing: -0.03em;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
+}
+
+.welcome .lead {
+  margin-bottom: 28px;
+}
+
+/* The hadith: Amiri, large, in a warm block with a brass bar on the left. */
+.hadith {
+  margin: 0;
+  padding: 24px 24px 22px;
+  background: var(--quote-bg);
+  border-left: 6px solid var(--quote-accent);
+  border-radius: 4px 18px 18px 4px;
+}
+
+.hadith blockquote {
+  margin: 0;
+}
+
+.hadith blockquote p {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.875rem;
+  line-height: 1.45;
+  color: var(--quote-text);
+  text-wrap: pretty;
+}
+
+.hadith figcaption {
+  margin-top: 14px;
+  font-size: 0.9375rem;
+  font-weight: 650;
+  color: var(--quote-source);
 }
 
 .card.sign-in {
-  padding: 28px;
+  padding: 32px;
+  box-shadow: 0 20px 40px -24px var(--shadow);
 }
 
 .card.sign-in h2 {
-  font-size: 1.25rem;
+  font-size: 1.375rem;
+  margin-bottom: 18px;
 }
 
 @media (min-width: 760px) {
   .landing {
-    grid-template-columns: 1.2fr 1fr;
-    gap: 64px;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 72px;
+    padding: 48px 32px;
   }
 
   .welcome h1 {
-    font-size: 3.25rem;
+    font-size: 2.25rem;
+  }
+
+  .hadith {
+    padding: 36px 40px 32px;
+  }
+
+  .hadith blockquote p {
+    font-size: 2.375rem;
   }
 }
 
-/* ---- Setup: the steps on the left, the question on the right ---- */
+/* ---- Setup: the pages on the left, the questions on the right ---- */
 
 .setup {
-  max-width: 1000px;
+  max-width: 1240px;
   width: 100%;
   margin: 0 auto;
   padding: 24px 16px 32px;
 }
 
-/* On a phone the step list is hidden, and "Setup · Step X of 3" shows instead. */
+/* On a phone the list is hidden, and "Step 1 of 2" shows instead. */
 .setup-steps {
   display: none;
 }
 
 .setup-title {
-  font-size: 1.5rem;
+  font-size: 1.375rem;
   font-weight: 800;
   margin-bottom: 20px;
 }
@@ -238,17 +383,12 @@ strong {
 .setup-steps li.current .dot {
   background: var(--green);
   border-color: var(--green);
-  color: #fff;
+  color: var(--on-green);
 }
 
 .setup-steps li.done .dot {
   border-color: var(--green);
   color: var(--green);
-}
-
-.setup-steps li.skipped {
-  color: var(--faint);
-  text-decoration: line-through;
 }
 
 .question-top {
@@ -269,9 +409,9 @@ strong {
 @media (min-width: 760px) {
   .setup {
     display: grid;
-    grid-template-columns: 220px 1fr;
+    grid-template-columns: 240px 1fr;
     gap: 64px;
-    padding-top: 64px;
+    padding: 64px 32px 32px;
   }
 
   .setup-steps {
@@ -283,7 +423,7 @@ strong {
   }
 
   .setup-question {
-    max-width: 620px;
+    max-width: 900px;
   }
 }
 
@@ -292,171 +432,157 @@ button.back {
   color: var(--green);
   padding: 8px 0;
   min-height: 0;
-  font-weight: 600;
+  font-weight: 650;
 }
 
 button.back:hover {
   background: none;
+  color: var(--green-hover);
   text-decoration: underline;
 }
 
-/* ---- Cards ---- */
-
-.card {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 20px;
-  margin-bottom: 12px;
-  box-shadow: 0 1px 2px rgb(23 32 28 / 0.04);
+/* Page 1 asks its questions one after another on the same page. */
+.page-section {
+  margin-top: 36px;
 }
 
-.card.setting {
+.required-page h2,
+.chooser h2 {
+  font-size: 1.1875rem;
+}
+
+/* The "e.g." line under a question. */
+.hint.example {
+  margin: -4px 0 10px;
+  font-size: 0.875rem;
+}
+
+button.home-choice {
+  margin-top: 12px;
+}
+
+/* The optional page's heading, with Skip in the top-right corner. */
+.step-top {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: baseline;
   gap: 16px;
 }
 
-.card.setting h2 {
-  font-size: 0.8125rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.step-top .skip {
+  flex: none;
   color: var(--muted);
-  margin-bottom: 6px;
+  font-weight: 500;
 }
 
-.card.setting p {
-  margin-bottom: 4px;
+/* ---- Surfaces ---- */
+
+/* A plain surface: paper, a hairline, no shadow. Shadows are only added
+   where something should sit forward (the sign-in panel, Settings' Required card). */
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
 }
 
 /* ---- Forms ---- */
 
-label {
+/* Labels are smaller and quieter than what goes in the box. */
+label,
+.field-label {
   display: block;
   font-weight: 600;
   font-size: 0.9375rem;
-  margin: 16px 0 6px;
+  color: var(--muted);
+  margin: 20px 0 8px;
 }
 
 input[type="text"],
+input[type="number"],
 input:not([type]) {
   width: 100%;
-  font-size: 1rem;
+  font-size: 1.0625rem;
   padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fff;
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--field);
   color: var(--text);
+  transition: border-color 0.15s;
 }
 
-input:not([type]):focus,
-input[type="text"]:focus {
-  outline: 2px solid var(--green);
-  outline-offset: 1px;
+input:not([type]):hover,
+input[type="number"]:hover,
+input[type="text"]:hover {
+  border-color: var(--faint);
+}
+
+input:not([type]):focus-visible,
+input[type="number"]:focus-visible,
+input[type="text"]:focus-visible {
+  outline-offset: 0;
   border-color: var(--green);
+}
+
+input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 input::placeholder {
   color: var(--faint);
 }
 
-fieldset {
-  border: none;
-  padding: 0;
-  margin: 16px 0;
+input[aria-invalid="true"] {
+  border-color: var(--error);
 }
 
-legend {
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-label.choice {
+/* "How early": a short number box with "minutes" after it. */
+.minutes-field {
   display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  font-weight: normal;
-  font-size: 1rem;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #fff;
-  margin: 10px 0;
-  cursor: pointer;
-}
-
-label.choice:has(input:checked) {
-  border-color: var(--green);
-  background: var(--green-soft);
-}
-
-label.choice input {
-  margin-top: 4px;
-  width: 20px;
-  height: 20px;
-  flex: none;
-  accent-color: var(--green);
-}
-
-label.choice span {
-  display: flex;
-  flex-direction: column;
-}
-
-label.choice strong {
-  font-weight: 650;
-}
-
-label.choice small {
-  font-size: 0.875rem;
+  align-items: center;
+  gap: 12px;
   color: var(--muted);
 }
 
-/* The closest masjid stands out. */
-label.choice.closest {
-  border-color: var(--green);
-  border-width: 2px;
+.minutes-field input[type="number"] {
+  width: 120px;
 }
 
-.badge {
-  align-self: flex-start;
-  background: var(--green);
-  color: #fff;
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  border-radius: 999px;
-  padding: 2px 8px;
-  margin-bottom: 6px;
-}
-
-.indent {
-  padding: 0 0 8px 34px;
+.field-error {
+  margin: 6px 0 0;
 }
 
 /* ---- Buttons ---- */
 
+/* Solid green means "this does the thing". It darkens on hover and sinks
+   a little when pressed, so it always reads as something to click. */
 button,
 .button {
   display: inline-block;
   font-weight: 650;
   font-size: 1rem;
-  border: none;
-  border-radius: 10px;
-  padding: 12px 22px;
+  line-height: 1.4;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  padding: 11px 22px;
   min-height: 48px;
   background: var(--green);
-  color: #fff;
+  color: var(--on-green);
   text-decoration: none;
   cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, transform 0.08s;
 }
 
 button:hover,
 .button:hover {
-  background: var(--green-dark);
+  background: var(--green-hover);
+  color: var(--on-green);
+}
+
+button:active:not(:disabled),
+.button:active {
+  transform: translateY(1px);
 }
 
 button:disabled {
@@ -464,19 +590,21 @@ button:disabled {
   cursor: default;
 }
 
+/* Outlined: the second choice next to a solid button (Cancel, Edit, Sign out). */
 button.secondary {
-  background: #fff;
+  background: transparent;
   color: var(--green);
-  border: 1px solid var(--green);
+  border-color: var(--green);
 }
 
-button.secondary:hover {
+button.secondary:hover:not(:disabled) {
   background: var(--green-soft);
+  color: var(--green-dark);
 }
 
 button.small {
   min-height: 40px;
-  padding: 8px 16px;
+  padding: 7px 16px;
   font-size: 0.9375rem;
 }
 
@@ -486,8 +614,13 @@ button.link {
   color: var(--green);
   padding: 0;
   min-height: 0;
-  font-weight: 600;
+  font-weight: 650;
   text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+button.link:hover:not(:disabled) {
+  color: var(--green-hover);
 }
 
 .button.google {
@@ -503,6 +636,14 @@ button.link {
   margin-top: 24px;
 }
 
+/* "Skip" is a quiet link at the end of the buttons. */
+.actions .skip {
+  align-self: center;
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 500;
+}
+
 /* ---- Messages ---- */
 
 .error {
@@ -512,34 +653,45 @@ button.link {
 
 .notice {
   background: var(--green-soft);
-  border-radius: 10px;
-  padding: 12px 16px;
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  margin-bottom: 20px;
 }
 
 .notice.warning {
   background: var(--warning-bg);
 }
 
-fieldset .notice,
-fieldset .searching {
-  margin: 10px 0;
+/* The banner asking older users to sign in again. */
+.notice.banner p {
+  margin: 0 0 4px;
 }
 
-/* ---- Location: the saved place and the address dropdown ---- */
+.notice.banner .actions {
+  margin-top: 12px;
+}
 
+/* ---- Picked answers and search boxes ---- */
+
+/* A saved answer, like the location or the masjid, with Change next to it. */
 .current {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 16px;
   align-items: center;
   background: var(--green-soft);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 12px 16px;
   margin: 16px 0;
 }
 
 .current p {
   margin: 0;
+}
+
+.picked-masjid {
+  justify-content: space-between;
 }
 
 .combobox {
@@ -551,10 +703,10 @@ ul.suggestions {
   list-style: none;
   margin: 6px 0 0;
   padding: 6px;
-  background: #fff;
+  background: var(--field);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgb(23 32 28 / 0.12);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 32px -16px var(--shadow);
   position: absolute;
   left: 0;
   right: 0;
@@ -577,6 +729,16 @@ ul.suggestions li.empty {
   cursor: default;
 }
 
+ul.suggestions .option {
+  display: flex;
+  flex-direction: column;
+}
+
+ul.suggestions .option small {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
 /* ---- Weekly grid: prayers are rows, days are columns ---- */
 
 table.grid {
@@ -594,8 +756,8 @@ table.grid td {
 }
 
 table.grid thead th {
-  font-size: 0.8125rem;
-  font-weight: 700;
+  font-size: 0.875rem;
+  font-weight: 600;
   color: var(--muted);
 }
 
@@ -608,52 +770,25 @@ table.grid input {
   width: 24px;
   height: 24px;
   accent-color: var(--green);
+  cursor: pointer;
 }
 
 table.grid abbr {
   text-decoration: none;
 }
 
-/* ---- Lists and helpers ---- */
+/* ---- Lists ---- */
 
-ul.plain {
+ul.plain,
+ol.plain {
   list-style: none;
   padding: 0;
   margin: 0;
 }
 
-ul.plain li {
-  padding: 2px 0;
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-
-/* ---- Masjid search ---- */
-
-ul.suggestions .option {
-  display: flex;
-  flex-direction: column;
-}
-
-ul.suggestions .option small {
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-.small-line {
-  font-size: 0.8125rem;
-  margin: 8px 0 0;
-}
-
-.picked-masjid {
-  justify-content: space-between;
+ul.plain li,
+ol.plain li {
+  padding: 3px 0;
 }
 
 ul.picked-list {
@@ -669,10 +804,453 @@ ul.picked-list li {
   border-bottom: 1px solid var(--line);
 }
 
-/* "Skip" is a quiet link at the end of the buttons. */
-.actions .skip {
-  align-self: center;
+/* ---- Colour picker: a list like Google Calendar's own colour menu ---- */
+
+/* Two pickers side by side on wider screens, stacked on a phone. */
+.colour-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0 16px;
+}
+
+@media (min-width: 560px) {
+  .colour-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.colour-picker {
+  position: relative;
+}
+
+button.colour-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--field);
+  color: var(--text);
+  border: 1.5px solid var(--line);
+  font-weight: 500;
+  font-size: 1.0625rem;
+  text-align: left;
+}
+
+button.colour-button:hover {
+  background: var(--field);
+  color: var(--text);
+  border-color: var(--faint);
+}
+
+.colour-button .chevron {
   margin-left: auto;
   color: var(--muted);
+}
+
+ul.colour-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 6px;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 32px -16px var(--shadow);
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 10;
+}
+
+ul.colour-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+ul.colour-list li.active {
+  background: var(--green-soft);
+}
+
+ul.colour-list li[aria-selected="true"] {
+  font-weight: 700;
+}
+
+/* Round dots, like Google Calendar's colour menu. */
+.swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+
+/* No colour picked: an empty ring, since it's whatever the calendar's colour is. */
+.swatch.none {
+  border: 2px solid var(--faint);
+}
+
+/* The tick on the chosen colour, white on the dot like Google's menu. */
+.swatch .tick::after {
+  content: "✓";
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.swatch.none .tick::after {
+  color: var(--text);
+}
+
+/* A chosen colour on Settings: the swatch first, then its name. */
+.colour-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---- Settings: 2 cards, Required on the left and Optional on the right ---- */
+
+.page.settings-page {
+  max-width: 1240px;
+}
+
+/* Title and email on the left, Open Google Calendar on the right. */
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px 24px;
+  margin-bottom: 28px;
+}
+
+.top h1 {
+  margin-bottom: 4px;
+}
+
+.top p {
+  margin: 0;
+}
+
+.top-action {
+  max-width: 360px;
+}
+
+.blocked-note {
+  margin: 8px 0 0;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (min-width: 1000px) {
+  .settings-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 28px;
+  }
+}
+
+/* Required sits forward: paper with a soft shadow. Optional is quieter:
+   no fill and no shadow, just the outline, so the two never look the same. */
+.settings-card {
+  border-radius: 16px;
+  padding: 8px 24px 12px;
+}
+
+.settings-card.required {
+  box-shadow: 0 1px 2px rgb(23 32 28 / 0.05), 0 20px 40px -28px var(--shadow);
+}
+
+.settings-card.optional {
+  background: transparent;
+  border: 1px solid var(--line);
+}
+
+.section-title {
+  font-size: 1.25rem;
+  margin: 20px 0 4px;
+}
+
+.setting-row {
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+
+.section-title + .setting-row {
+  border-top: none;
+}
+
+.row-view {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.row-text {
+  min-width: 0;
+}
+
+/* The label: small and slate. The value under it: larger and ink. */
+.setting-row h3 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--muted);
+  margin: 0 0 4px;
+}
+
+.row-value {
+  font-size: 1.0625rem;
   font-weight: 500;
+  color: var(--text);
+}
+
+.row-value p {
+  margin: 0 0 2px;
+}
+
+.row-value .hint {
+  font-weight: 400;
+}
+
+.row-value strong {
+  font-weight: 650;
+}
+
+/* After a row opens or closes, its new content fades in while SettingsPage.tsx
+   eases the height. Not on page load: only rows the user has touched. */
+@media (prefers-reduced-motion: no-preference) {
+  .setting-row.moved .row-edit,
+  .setting-row.moved .row-view {
+    animation: row-in 0.22s ease-out;
+  }
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Headings inside an open editor sit at the row's size, not the page's. */
+.row-edit h2 {
+  font-size: 1.0625rem;
+}
+
+/* ---- The Jumuah question's midday calendar ---- */
+
+.chooser {
+  margin-top: 8px;
+}
+
+.day-view {
+  display: grid;
+  column-gap: 6px;
+  margin-top: 12px;
+  padding: 10px 0;
+  position: relative;
+}
+
+/* A line every half hour. Height 0, so the time label never makes its row taller. */
+.day-line {
+  height: 0;
+  border-top: 1px solid var(--line);
+  position: relative;
+  z-index: 0;
+}
+
+.day-time {
+  position: absolute;
+  top: -0.7em;
+  left: 0;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  color: var(--muted);
+  background: var(--background);
+  padding-right: 4px;
+}
+
+.card .day-time {
+  background: var(--card);
+}
+
+.settings-card.optional .day-time {
+  background: var(--background);
+}
+
+.slot {
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1.5px solid var(--line);
+  background: var(--field);
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.35;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.slot:hover {
+  border-color: var(--green);
+}
+
+.slot.selected {
+  background: var(--green-soft);
+  border-color: var(--green);
+  box-shadow: 0 0 0 1.5px var(--green);
+  color: var(--green-dark);
+}
+
+.slot:has(input:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.slot-name {
+  font-size: 0.9375rem;
+}
+
+.slot-fit {
+  font-weight: 700;
+}
+
+/* ---- The "Adding your prayers" page ---- */
+
+.page.adding {
+  max-width: 960px;
+}
+
+/* One line each, never wrapping. The heading shrinks with the screen instead:
+   it's about 20 of its own font sizes wide, so dividing the space left after
+   the page's side padding (32px on a phone, 64px wider) by 20.5 always fits. */
+.one-line {
+  white-space: nowrap;
+}
+
+.adding h1.one-line {
+  font-size: min(2rem, calc((100vw - 40px) / 20.5));
+}
+
+@media (min-width: 760px) {
+  .adding h1.one-line {
+    font-size: min(2rem, calc((min(100vw, 960px) - 72px) / 20.5));
+  }
+}
+
+/* A week of prayer blocks: 7 days across, 5 prayers down. Each block drops in
+   on its turn (--i), day by day, then they all fade in the same order and it
+   starts again. Every block has the same 7 second cycle, so they stay in step. */
+.mini-week {
+  --prayer: var(--green);
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: auto repeat(5, 16px);
+  gap: 6px;
+  width: min(100%, 340px);
+  margin: 28px 0 0;
+  padding: 14px 16px 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.mini-day {
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.mini-cell {
+  border-radius: 4px;
+  background: var(--background);
+}
+
+.mini-block {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--prayer);
+  opacity: 0;
+  animation: mini-drop 7s ease-out infinite;
+  animation-delay: calc(var(--i) * 0.13s);
+}
+
+@keyframes mini-drop {
+  0% {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+  4% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  74% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  80%,
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+}
+
+.spinner {
+  display: none;
+}
+
+/* Motion turned off on the device: no falling blocks, just a slow spinner,
+   and no small movements anywhere else either. */
+@media (prefers-reduced-motion: reduce) {
+  .mini-week {
+    display: none;
+  }
+
+  .spinner {
+    display: block;
+    width: 40px;
+    height: 40px;
+    margin-top: 28px;
+    border: 4px solid var(--line);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin 1.4s linear infinite;
+  }
+
+  button,
+  .button,
+  .slot,
+  input {
+    transition: none;
+  }
+
+  button:active:not(:disabled),
+  .button:active {
+    transform: none;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

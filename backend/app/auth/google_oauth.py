@@ -30,7 +30,10 @@ TOKEN_URL = "https://oauth2.googleapis.com/token"
 CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.app.created"
 # calendar.app.created only lets the app see and change calendars it created
 # itself. It can't read the user's other calendars. No Gmail, no full calendar.
-SCOPES = ("openid", "email", CALENDAR_SCOPE)
+FREEBUSY_SCOPE = "https://www.googleapis.com/auth/calendar.freebusy"
+# calendar.freebusy only shows when the user is busy: start and end times,
+# never titles or details. The Jumuah picker uses it to avoid clashes.
+SCOPES = ("openid", "email", CALENDAR_SCOPE, FREEBUSY_SCOPE)
 
 GOOGLE_ISSUERS = ("https://accounts.google.com", "accounts.google.com")
 
@@ -188,3 +191,8 @@ def read_id_token(id_token: str) -> GoogleIdentity:
 
 def has_calendar_scope(scopes: str) -> bool:
     return CALENDAR_SCOPE in scopes.split()
+
+
+def has_freebusy_scope(scopes: str) -> bool:
+    """False for users who signed in before it was asked for, or who unticked it."""
+    return FREEBUSY_SCOPE in scopes.split()
