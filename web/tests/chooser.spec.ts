@@ -1,6 +1,6 @@
 // The Jumuah chooser, on setup's page 2 and on Settings. The mock API works
 // out each window like the backend: KMA's Jumuah is at 1:30 and 2:30 with a
-// 14 minute commute, Stittsville's at 1:15 with a 20 minute commute.
+// 14 minute drive, Stittsville's at 1:15 with a 20 minute drive.
 
 import { expect, test, type Page } from "@playwright/test";
 import { finishedSettings, HOME_PLACE, KMA, MockApi, STITTSVILLE } from "./mock-api";
@@ -28,12 +28,12 @@ test("busy slots are grey, ones that fit are green, and the earliest that fits i
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Jumuah on Friday, Oct 30" })).toBeVisible();
-  // Earliest first, each with its masjid, time, commute, and window.
+  // Earliest first, each with its masjid, time, drive, and window.
   await expect(page.getByRole("radio")).toHaveCount(3);
   await expect(slot(page, STITTSVILLE_1ST)).toHaveAccessibleName(
-    /20 min commute Leave 12:50 PM, done 2:00 PM \(end time estimated\) Clashes with your calendar/,
+    /20 min drive Leave 12:50 PM, done 2:00 PM \(end time estimated\) Clashes with your calendar/,
   );
-  await expect(slot(page, KMA_1ST)).toHaveAccessibleName(/14 min commute Leave 1:11 PM, done 2:15 PM.*Clashes/);
+  await expect(slot(page, KMA_1ST)).toHaveAccessibleName(/14 min drive Leave 1:11 PM, done 2:15 PM.*Clashes/);
   await expect(slot(page, KMA_2ND)).toHaveAccessibleName(/Leave 2:11 PM, done 3:15 PM.*Fits/);
   await expect(page.locator(".slot.clashes")).toHaveCount(2);
   await expect(page.locator(".slot.fits")).toHaveCount(1);
@@ -82,26 +82,24 @@ test("with no Jumuah times this week, setup skips the chooser", async ({ page })
   expect(api.calls("PUT", "/api/settings/jumuah-pick")).toHaveLength(0);
 });
 
-test("the windows follow what's typed, before it's saved", async ({ page }) => {
+test("the windows follow the Jumuah how early typed, before it's saved", async ({ page }) => {
   const api = new MockApi().signedIn(onPage2([KMA]));
   await api.install(page);
   await page.goto("/");
-  await expect(slot(page, KMA_1ST)).toHaveAccessibleName(/14 min commute Leave 1:11 PM/);
+  await expect(slot(page, KMA_1ST)).toHaveAccessibleName(/14 min drive Leave 1:11 PM/);
 
   await page.getByLabel("How early do you want to arrive before Jumuah?").fill("20");
-  await page.getByLabel("Commute time to Kanata Muslim Association").fill("30");
-  // 1:30, 20 minutes early, 30 minute commute: leave 12:40.
-  await expect(slot(page, KMA_1ST)).toHaveAccessibleName(/30 min commute Leave 12:40 PM/);
+  // 1:30, 20 minutes early, 14 minute drive: leave 12:56.
+  await expect(slot(page, KMA_1ST)).toHaveAccessibleName(/14 min drive Leave 12:56 PM/);
   const last = api.calls("POST", "/api/jumuah/choices").at(-1)!;
-  expect(last.body).toEqual({ jumuah_arrive_early_minutes: 20, commute_minutes: { [KMA.id]: 30 } });
+  expect(last.body).toEqual({ jumuah_arrive_early_minutes: 20 });
   // Typing pauses are waited for, so not every key press asks again.
-  expect(api.calls("POST", "/api/jumuah/choices").length).toBeLessThan(5);
+  expect(api.calls("POST", "/api/jumuah/choices").length).toBeLessThan(4);
   // Nothing was saved.
-  expect(api.calls("PUT", "/api/settings/commute-times")).toHaveLength(0);
   expect(api.calls("PUT", "/api/settings/optional")).toHaveLength(0);
 });
 
-test("an unknown commute starts the window at arrival", async ({ page }) => {
+test("an unknown drive time starts the window at arrival", async ({ page }) => {
   const api = new MockApi().signedIn(onPage2([KMA]));
   api.jumuahTimes = { [KMA.id]: ["13:30"] };
   // No driving estimate for this masjid, like OpenRouteService finding no route.
@@ -109,7 +107,7 @@ test("an unknown commute starts the window at arrival", async ({ page }) => {
   await api.install(page);
   await page.goto("/");
 
-  await expect(slot(page, KMA_1ST)).toHaveAccessibleName(/Commute time unknown Arrive 1:25 PM, done 2:15 PM/);
+  await expect(slot(page, KMA_1ST)).toHaveAccessibleName(/Drive time unknown Arrive 1:25 PM, done 2:15 PM/);
 });
 
 test("without free/busy access, the chooser says busy times weren't checked", async ({ page }) => {

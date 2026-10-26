@@ -5,7 +5,7 @@
 //
 // The backend works out every window (POST /api/jumuah/choices), so the
 // times here are the same ones the calendar would use. Answers the page
-// hasn't saved yet (how early, commute times) are sent along, so the cards
+// hasn't saved yet (the Jumuah "how early") are sent along, so the cards
 // change as the user types.
 //
 // The day view is a CSS grid with one row per minute. Busy blocks and cards
@@ -145,7 +145,7 @@ export function JumuahChooser({ overrides, selected, onSelect, emptyText, headin
 
         {slots.map((slot, i) => {
           const isSelected = sameSlot(slot, selected);
-          const commute = slot.commute_minutes === null ? "Commute time unknown" : `${slot.commute_minutes} min commute`;
+          const drive = slot.drive_minutes === null ? "Drive time unknown" : `${slot.drive_minutes} min drive`;
           return (
             <label
               key={`${slot.masjid_id}-${slot.order}`}
@@ -169,7 +169,7 @@ export function JumuahChooser({ overrides, selected, onSelect, emptyText, headin
               <span>
                 {slot.order_label} at {time(slot.starts_at)}
               </span>
-              <span>{commute}</span>
+              <span>{drive}</span>
               <span>
                 {slot.leave_at ? `Leave ${time(slot.leave_at)}` : `Arrive ${time(slot.arrive_at)}`}, done {time(slot.ends_at)}
                 {slot.length_estimated && <span className="visually-hidden"> (end time estimated)</span>}
