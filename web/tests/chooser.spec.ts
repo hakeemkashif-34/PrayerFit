@@ -1,150 +1,170 @@
-// The Jumuah chooser, on setup's page 2 and on Settings. The mock API works
-// out each window like the backend: KMA's Jumuah is at 1:30 and 2:30 with a
-// 14 minute drive, Stittsville's at 1:15 with a 20 minute drive.
+// The Jumuah question at the bottom of the Required page, and on Settings.
+// The mock API has KMA's Jumuah at 1:30 (1st) and 2:30 (2nd), and
+// Stittsville's at 1:15 (1st). Without a set length, each is 45 minutes.
 
 import { expect, test, type Page } from "@playwright/test";
 import { finishedSettings, HOME_PLACE, KMA, MockApi, STITTSVILLE } from "./mock-api";
-import type { Settings } from "../src/types";
 
-// Page 1 already answered on an earlier visit, so setup opens on page 2.
-function onPage2(jumuah = [KMA, STITTSVILLE]): Settings {
-  return {
-    ...new MockApi().settings,
-    address: HOME_PLACE, place_name: HOME_PLACE, time_zone: "America/Toronto",
-    main_masjid_choice: "masjid", main_masjid: KMA, jumuah_saved: true, jumuah_masjids: jumuah,
-    weekly: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, fajr: false, dhuhr: false, asr: false, maghrib: false, isha: false })),
-  };
-}
+const QUESTION = "Generally speaking, which Jumuah would you like to attend?";
+const KMA_1ST = /^Kanata Muslim Association 1st Jumuah 1:30 PM to 2:15 PM/;
+const KMA_2ND = /^Kanata Muslim Association 2nd Jumuah 2:30 PM to 3:15 PM/;
 
 const slot = (page: Page, name: RegExp) => page.getByRole("radio", { name });
-const KMA_1ST = /^Kanata Muslim Association 1st Jumuah at 1:30 PM/;
-const KMA_2ND = /^Kanata Muslim Association 2nd Jumuah at 2:30 PM/;
-const STITTSVILLE_1ST = /^Stittsville Masjid 1st Jumuah at 1:15 PM/;
+const question = (page: Page) => page.getByRole("heading", { name: QUESTION });
 
-test("busy slots are grey, ones that fit are green, and the earliest that fits is picked", async ({ page }) => {
-  const api = new MockApi().signedIn(onPage2());
-  api.busy = [["13:00", "13:40"]];
+// Page 1 with the location saved and a masjid picked (not saved yet).
+async function atMasjid(page: Page) {
+  await page.getByRole("combobox", { name: "Address" }).pressSequentially("200 Kanata", { delay: 30 });
+  await page.getByRole("option", { name: HOME_PLACE }).click();
+  await expect(page.getByRole("combobox", { name: "Masjid" })).toBeEnabled();
+  await page.getByRole("combobox", { name: "Masjid" }).pressSequentially("Kanata", { delay: 30 });
+  await page.getByRole("option", { name: /^Kanata Muslim Association/ }).click();
+}
+
+test("the question comes last on the Required page, with the 1st Jumuah picked", async ({ page }) => {
+  const api = new MockApi().signedIn();
   await api.install(page);
   await page.goto("/");
+  await atMasjid(page);
 
-  await expect(page.getByRole("heading", { name: "Jumuah on Friday, Oct 30" })).toBeVisible();
-  // Earliest first, each with its masjid, time, drive, and window.
-  await expect(page.getByRole("radio")).toHaveCount(3);
-  await expect(slot(page, STITTSVILLE_1ST)).toHaveAccessibleName(
-    /20 min drive Leave 12:50 PM, done 2:00 PM \(end time estimated\) Clashes with your calendar/,
-  );
-  await expect(slot(page, KMA_1ST)).toHaveAccessibleName(/14 min drive Leave 1:11 PM, done 2:15 PM.*Clashes/);
-  await expect(slot(page, KMA_2ND)).toHaveAccessibleName(/Leave 2:11 PM, done 3:15 PM.*Fits/);
-  await expect(page.locator(".slot.clashes")).toHaveCount(2);
-  await expect(page.locator(".slot.fits")).toHaveCount(1);
-  await expect(page.locator(".busy-block")).toHaveText("Busy 1:00 PM to 1:40 PM");
-  await expect(slot(page, KMA_2ND)).toBeChecked();
+  const headings = page.getByRole("main").getByRole("heading", { level: 2 });
+  await expect(headings.last()).toHaveText(QUESTION);
+  await expect(page.getByText("This week's times, as an example.")).toBeVisible();
+  // Each slot, from its start to its end.
+  await expect(page.getByRole("radio")).toHaveCount(2);
+  await expect(slot(page, KMA_1ST)).toBeChecked();
+  await expect(slot(page, KMA_2ND)).not.toBeChecked();
+  // Asked about the masjid before it's saved.
+  await api.sent("GET", "/api/jumuah/slots");
+  expect(api.calls("PUT", "/api/settings/main-masjid")).toHaveLength(0);
+  // Not about one Friday, and nothing from the user's calendar.
+  await expect(page.getByText(/Friday, Oct|Busy|Fits|Clashes/)).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Next" }).click();
+  expect((await api.sent("PUT", "/api/settings/jumuah-pick", 1))[0].body).toEqual({ masjid_id: KMA.id, order: 1 });
+  await expect(page.getByRole("heading", { level: 1, name: "Optional" })).toBeVisible();
 });
 
-test("a grey slot can still be picked, and Finish saves it", async ({ page }) => {
-  const api = new MockApi().signedIn(onPage2());
-  api.busy = [["13:00", "13:40"]];
+test("clicking a block picks it, and Next saves it by order", async ({ page }) => {
+  const api = new MockApi().signedIn();
   await api.install(page);
   await page.goto("/");
+  await atMasjid(page);
+
+  await page.locator(".slot", { hasText: "2nd Jumuah" }).click();
   await expect(slot(page, KMA_2ND)).toBeChecked();
+  await expect(slot(page, KMA_1ST)).not.toBeChecked();
+  await expect(page.locator(".slot.selected")).toContainText("2nd Jumuah");
+  await page.getByRole("button", { name: "Next" }).click();
 
-  await page.locator(".slot", { hasText: "Stittsville Masjid" }).click();
-  await expect(slot(page, STITTSVILLE_1ST)).toBeChecked();
-  await expect(slot(page, KMA_2ND)).not.toBeChecked();
-  await page.getByRole("button", { name: "Finish" }).click();
-
-  expect((await api.sent("PUT", "/api/settings/jumuah-pick", 1))[0].body).toEqual({ masjid_id: STITTSVILLE.id, order: 1 });
-  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  expect((await api.sent("PUT", "/api/settings/jumuah-pick", 1))[0].body).toEqual({ masjid_id: KMA.id, order: 2 });
 });
 
 test("the slots can be picked with the keyboard", async ({ page }) => {
-  await new MockApi().signedIn(onPage2()).install(page);
+  await new MockApi().signedIn().install(page);
   await page.goto("/");
-  await expect(slot(page, STITTSVILLE_1ST)).toBeChecked();
-
-  await slot(page, STITTSVILLE_1ST).focus();
-  await page.keyboard.press("ArrowDown");
+  await atMasjid(page);
   await expect(slot(page, KMA_1ST)).toBeChecked();
+
+  await slot(page, KMA_1ST).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(slot(page, KMA_2ND)).toBeChecked();
 });
 
-test("with no Jumuah times this week, setup skips the chooser", async ({ page }) => {
-  const api = new MockApi().signedIn(onPage2());
+test("blocks run from start to end, using the masjid's Jumuah length", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  api.jumuahLength = { [KMA.id]: 40 };
+  await api.install(page);
+  await page.goto("/");
+  await atMasjid(page);
+
+  await expect(slot(page, /1st Jumuah 1:30 PM to 2:10 PM/)).toBeChecked();
+  // Later slots sit lower on the calendar.
+  const [first, second] = await page.locator(".slot").evaluateAll((blocks) => blocks.map((b) => b.getBoundingClientRect().toJSON()));
+  expect(second.top).toBeGreaterThan(first.bottom - 1);
+});
+
+test("a masjid with no Jumuah times yet skips the question and saves the 1st Jumuah", async ({ page }) => {
+  const api = new MockApi().signedIn();
   api.jumuahTimes = {};
   await api.install(page);
   await page.goto("/");
+  await atMasjid(page);
 
+  await api.sent("GET", "/api/jumuah/slots");
+  await expect(question(page)).toHaveCount(0);
+  await page.getByRole("button", { name: "Next" }).click();
+  expect((await api.sent("PUT", "/api/settings/jumuah-pick", 1))[0].body).toEqual({ masjid_id: KMA.id, order: 1 });
+});
+
+test("praying at home skips the question", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  await api.install(page);
+  await page.goto("/");
+  await atMasjid(page);
+  await expect(question(page)).toBeVisible();
+
+  await page.getByRole("button", { name: "Change" }).click();
+  await page.getByRole("button", { name: "I pray at home" }).click();
+  await expect(question(page)).toHaveCount(0);
+  await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Optional" })).toBeVisible();
-  await api.sent("POST", "/api/jumuah/choices");
-  await expect(page.getByRole("heading", { name: /^Jumuah on/ })).toHaveCount(0);
-  await expect(page.getByRole("radio")).toHaveCount(0);
-  await page.getByRole("button", { name: "Finish" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  // No Jumuah masjid, so there's nothing to save a pick for.
   expect(api.calls("PUT", "/api/settings/jumuah-pick")).toHaveLength(0);
 });
 
-test("the windows follow the Jumuah how early typed, before it's saved", async ({ page }) => {
-  const api = new MockApi().signedIn(onPage2([KMA]));
+test("a different masjid asks again, about that masjid", async ({ page }) => {
+  const api = new MockApi().signedIn();
   await api.install(page);
   await page.goto("/");
-  await expect(slot(page, KMA_1ST)).toHaveAccessibleName(/14 min drive Leave 1:11 PM/);
+  await atMasjid(page);
+  await page.locator(".slot", { hasText: "2nd Jumuah" }).click();
 
-  await page.getByLabel("How early do you want to arrive before Jumuah (Friday prayer)?").fill("20");
-  // 1:30, 20 minutes early, 14 minute drive: leave 12:56.
-  await expect(slot(page, KMA_1ST)).toHaveAccessibleName(/14 min drive Leave 12:56 PM/);
-  const last = api.calls("POST", "/api/jumuah/choices").at(-1)!;
-  expect(last.body).toEqual({ jumuah_arrive_early_minutes: 20 });
-  // Typing pauses are waited for, so not every key press asks again.
-  expect(api.calls("POST", "/api/jumuah/choices").length).toBeLessThan(4);
-  // Nothing was saved.
-  expect(api.calls("PUT", "/api/settings/optional")).toHaveLength(0);
+  await page.getByRole("button", { name: "Change" }).click();
+  await page.getByRole("combobox", { name: "Masjid" }).pressSequentially("Stittsville", { delay: 30 });
+  await page.getByRole("option", { name: /^Stittsville Masjid/ }).click();
+
+  await expect(page.getByRole("radio")).toHaveCount(1);
+  await expect(slot(page, /^Stittsville Masjid 1st Jumuah 1:15 PM to 2:00 PM/)).toBeChecked();
+  await page.getByRole("button", { name: "Next" }).click();
+  expect((await api.sent("PUT", "/api/settings/jumuah-pick", 1))[0].body).toEqual({ masjid_id: STITTSVILLE.id, order: 1 });
 });
 
-test("an unknown drive time starts the window at arrival", async ({ page }) => {
-  const api = new MockApi().signedIn(onPage2([KMA]));
-  api.jumuahTimes = { [KMA.id]: ["13:30"] };
-  // No driving estimate for this masjid, like OpenRouteService finding no route.
-  api.orsMinutes = {};
-  await api.install(page);
+test("the Optional page has no Jumuah question", async ({ page }) => {
+  await new MockApi().signedIn().install(page);
   await page.goto("/");
+  await atMasjid(page);
+  await page.getByRole("button", { name: "Next" }).click();
 
-  await expect(slot(page, KMA_1ST)).toHaveAccessibleName(/Drive time unknown Arrive 1:25 PM, done 2:15 PM/);
+  await expect(page.getByRole("heading", { level: 1, name: "Optional" })).toBeVisible();
+  await expect(question(page)).toHaveCount(0);
+  await expect(page.getByRole("radio")).toHaveCount(0);
 });
 
-test("without free/busy access, the chooser says busy times weren't checked", async ({ page }) => {
-  const api = new MockApi().signedIn(onPage2([KMA]));
-  api.busyChecked = false;
-  api.busy = [["13:00", "13:40"]];
+test("the calendar view fits a phone screen with no sideways scrolling", async ({ page }) => {
+  const api = new MockApi().signedIn({ ...finishedSettings(), jumuah_masjids: [KMA, STITTSVILLE] });
   await api.install(page);
   await page.goto("/");
-
-  await expect(page.getByText("Your calendar's busy times couldn't be checked.")).toBeVisible();
-  await expect(page.locator(".busy-block")).toHaveCount(0);
-  await expect(page.locator(".slot.fits")).toHaveCount(2);
-});
-
-test("the day view fits a phone screen with no sideways scrolling", async ({ page }) => {
-  const api = new MockApi().signedIn(onPage2());
-  api.busy = [["13:00", "13:40"]];
-  await api.install(page);
-  await page.goto("/");
+  await page.getByRole("button", { name: "Edit jumuah pick" }).click();
   await expect(page.getByRole("radio")).toHaveCount(3);
 
   const width = await page.evaluate(() => document.documentElement.clientWidth);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-  for (const box of await page.locator(".slot").evaluateAll((cards) => cards.map((c) => c.getBoundingClientRect().toJSON()))) {
+  for (const box of await page.locator(".slot").evaluateAll((blocks) => blocks.map((b) => b.getBoundingClientRect().toJSON()))) {
     expect(box.right).toBeLessThanOrEqual(width);
   }
 });
 
-test("the pick is changed on Settings", async ({ page }) => {
+test("on Settings, the pick is in the Required section and changed with the same view", async ({ page }) => {
   const api = new MockApi().signedIn({ ...finishedSettings(), jumuah_masjids: [KMA] });
   await api.install(page);
   await page.goto("/");
-  const row = page.getByRole("region", { name: "Jumuah pick" });
+  const row = page.getByRole("region", { name: "Required" }).getByRole("region", { name: "Jumuah pick" });
   await expect(row).toContainText("The earliest Jumuah that fits your calendar");
 
   await page.getByRole("button", { name: "Edit jumuah pick" }).click();
-  // Settings has a short name, so the cards use it.
+  await expect(question(page)).toBeVisible();
+  // Settings has a short name, so the blocks use it.
   await expect(page.getByRole("radio", { name: /^KMA 1st Jumuah/ })).toBeChecked();
   await page.locator(".slot", { hasText: "2nd Jumuah" }).click();
   await page.getByRole("button", { name: "Save" }).click();
@@ -165,5 +185,5 @@ test("Settings says when there are no Jumuah times to pick from", async ({ page 
   await page.goto("/");
 
   await page.getByRole("button", { name: "Edit jumuah pick" }).click();
-  await expect(page.getByText("None of your Jumuah masjids have Jumuah times for this Friday yet.")).toBeVisible();
+  await expect(page.getByText("None of your Jumuah masjids have Jumuah times yet.")).toBeVisible();
 });

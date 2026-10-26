@@ -1,6 +1,6 @@
 // The Settings page, where returning users land: a button to open Google
 // Calendar, then one card with 2 sections. "Required" has the setup
-// questions (location, masjid, weekly prayers). "Optional" has everything
+// questions (location, masjid, weekly prayers, Jumuah pick). "Optional" has everything
 // with a default. Each item has its own Edit button and saves on its own.
 // Saving updates the calendar.
 
@@ -141,6 +141,13 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
                 </ul>
               </Row>
             )}
+
+            {settings.jumuah_masjids.length > 0 && (
+              <Row title="Jumuah pick" step="jumuah_pick" {...rows}
+                edit={<JumuahPickEditor settings={settings} onSaved={saved} onCancel={cancel} />}>
+                <p>{pickText(settings)}</p>
+              </Row>
+            )}
           </section>
 
           <section aria-labelledby="optional-section-title">
@@ -159,13 +166,6 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
                 </ol>
               )}
             </Row>
-
-            {settings.jumuah_masjids.length > 0 && (
-              <Row title="Jumuah pick" step="jumuah_pick" {...rows}
-                edit={<JumuahPickEditor settings={settings} onSaved={saved} onCancel={cancel} />}>
-                <p>{pickText(settings)}</p>
-              </Row>
-            )}
 
             {!atHome && settings.main_masjid && (
               <Row title="Short name" step="short_name" {...rows}

@@ -82,13 +82,6 @@ export function timeText(iso: string, timeZone: string): string {
   return `${part("hour")}:${part("minute")} ${part("dayPeriod").toUpperCase()}`;
 }
 
-// "2026-10-30" -> "Friday, Oct 30". Read as a plain date, so no time zone can move it.
-export function fridayText(date: string): string {
-  const [, month, day] = date.split("-").map(Number);
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `Friday, ${months[month - 1]} ${day}`;
-}
-
 // "5" -> 5. Anything that isn't a whole number from min to max is null.
 export function wholeMinutes(text: string, min: number, max: number): number | null {
   if (!/^\d{1,3}$/.test(text.trim())) return null;

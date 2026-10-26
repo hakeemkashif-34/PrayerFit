@@ -10,17 +10,17 @@ test("Settings is one card: a Required section and an Optional section, each ite
   await expect(page.locator(".card")).toHaveCount(1);
   const required = page.getByRole("region", { name: "Required" });
   const optional = page.getByRole("region", { name: "Optional" });
-  for (const name of ["Location", "Main masjid", "Prayers at the masjid"]) {
+  for (const name of ["Location", "Main masjid", "Prayers at the masjid", "Jumuah pick"]) {
     await expect(required.getByRole("region", { name })).toBeVisible();
   }
   const optionalItems = [
-    "Jumuah masjids", "Jumuah pick", "Short name", "How early for prayers", "How early for Jumuah",
+    "Jumuah masjids", "Short name", "How early for prayers", "How early for Jumuah",
     "Prayer colour", "Drive colour",
   ];
   for (const name of optionalItems) {
     await expect(optional.getByRole("region", { name })).toBeVisible();
   }
-  for (const name of ["Location", "Main masjid", "Prayers at the masjid", ...optionalItems]) {
+  for (const name of ["Location", "Main masjid", "Prayers at the masjid", "Jumuah pick", ...optionalItems]) {
     await expect(page.getByRole("button", { name: `Edit ${name.toLowerCase()}` })).toBeVisible();
   }
   await expect(page.getByText("Monday: Dhuhr, Isha")).toBeVisible();

@@ -1,15 +1,18 @@
 // Setup page 1, "Required": location, main masjid (or "I pray at home"),
-// and the weekly grid, all on one page and all shown at once.
+// the weekly grid, and which Jumuah, all on one page and all shown at once.
 //
 // Picking a location saves it straight away, since the masjid search needs
-// it to sort masjids by distance. Next saves the masjid and the grid.
+// it to sort masjids by distance. Next saves the masjid, the grid, and the
+// Jumuah pick. The Jumuah question is skipped when there's nothing to pick
+// from (praying at home, or no Jumuah times yet), and the 1st Jumuah is saved.
 // Nothing goes to Google Calendar until the user presses Finish or Skip on
 // page 2.
 
 import { useState } from "react";
 import { api, ApiError } from "../api";
+import { JumuahChooser } from "../JumuahChooser";
 import { distanceText, masjidName } from "../labels";
-import type { Masjid, Prayer, Settings } from "../types";
+import type { Masjid, Prayer, Settings, SlotKey } from "../types";
 import { LocationStep } from "./LocationStep";
 import { MasjidSearch } from "./MasjidSearch";
 import { emptyWeek, WeeklyGrid } from "./WeeklyStep";
@@ -26,10 +29,14 @@ export function RequiredPage({ settings, onChange, onNext }: Props) {
   const [choice, setChoice] = useState<"masjid" | "home" | null>(settings.main_masjid_choice);
   const [picked, setPicked] = useState<Masjid | null>(settings.main_masjid);
   const [days, setDays] = useState(settings.weekly.length === 7 ? settings.weekly : emptyWeek());
+  const [pick, setPick] = useState<SlotKey | null>(settings.jumuah_pick);
+  // How many Jumuah slots the question shows. 0 means it was skipped.
+  const [slotCount, setSlotCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const hasLocation = settings.place_name !== null;
   const atMasjid = choice === "masjid" && picked !== null;
+  const jumuahIds = picked && atMasjid ? jumuahAfterSaving(settings, picked) : [];
 
   function toggle(weekday: number, prayer: Prayer) {
     setDays((current) => current.map((d) => (d.weekday === weekday ? { ...d, [prayer]: !d[prayer] } : d)));
@@ -52,6 +59,12 @@ export function RequiredPage({ settings, onChange, onNext }: Props) {
         choice === "masjid" && picked ? { choice: "masjid", masjid_id: picked.id } : { choice: "home" },
       );
       if (atMasjid) saved = await api.saveWeekly(days);
+      // The pick from the question, or the 1st Jumuah when it was skipped.
+      const jumuah = saved.settings.jumuah_masjids;
+      const chosen = slotCount > 0 && pick && jumuah.some((m) => m.id === pick.masjid_id) ? pick : null;
+      if (chosen || jumuah.length > 0) {
+        saved = await api.saveJumuahPick(chosen ?? { masjid_id: jumuah[0].id, order: 1 });
+      }
       onNext(saved.settings);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't save. Try again.");
@@ -109,6 +122,12 @@ export function RequiredPage({ settings, onChange, onNext }: Props) {
         </section>
       )}
 
+      {jumuahIds.length > 0 && (
+        <div className="page-section">
+          <JumuahChooser masjidIds={jumuahIds} selected={pick} onSelect={setPick} onLoaded={setSlotCount} />
+        </div>
+      )}
+
       {error && (
         <p className="error" role="alert">
           {error}
@@ -121,4 +140,15 @@ export function RequiredPage({ settings, onChange, onNext }: Props) {
       </div>
     </div>
   );
+}
+
+// The Jumuah masjids once Next saves this masjid, the same rule as the
+// backend: the main masjid is the first Jumuah masjid, unless the user
+// changed the Jumuah list themselves on Settings.
+function jumuahAfterSaving(settings: Settings, picked: Masjid): string[] {
+  const listed = settings.jumuah_masjids.map((m) => m.id);
+  const oldMain = settings.main_masjid_choice === "masjid" ? settings.main_masjid?.id : undefined;
+  if (oldMain === picked.id) return listed;
+  const onlyOldMain = listed.length === 1 && listed[0] === oldMain;
+  return listed.length === 0 || onlyOldMain ? [picked.id] : listed;
 }

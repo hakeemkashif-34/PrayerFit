@@ -1,8 +1,8 @@
 // Setup page 2, "Optional": short name, how early for prayers and for
-// Jumuah, colours, and the Jumuah chooser. Every answer has a default, so
-// Skip (top right) saves the defaults and finishes.
+// Jumuah, and colours. Every answer has a default, so Skip (top right)
+// saves the defaults and finishes.
 //
-// Finish saves the Jumuah pick and the other answers,
+// Finish saves the answers,
 // then App fills the calendar. Nothing goes to Google Calendar before that.
 // Setup keeps this page mounted while the user goes Back, so nothing typed
 // here is lost.
@@ -10,17 +10,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api";
 import { ColourPicker } from "../ColourPicker";
-import { JumuahChooser } from "../JumuahChooser";
 import {
   DEFAULT_ARRIVE_EARLY, DEFAULT_COLOUR, DEFAULT_JUMUAH_ARRIVE_EARLY, EARLY_ERROR, MAX_EARLY, wholeMinutes,
 } from "../labels";
 import { MinutesField } from "../MinutesField";
-import type { ChoicesRequest, OptionalAnswers, Settings, SlotKey } from "../types";
+import type { OptionalAnswers, Settings } from "../types";
 
 type Props = {
   settings: Settings;
-  // Only the page on screen asks for this Friday's Jumuah times.
-  active: boolean;
   // Setup opens the Google Calendar tab here, inside the click, so the
   // browser allows it. onSaveFailed closes it again.
   onFinishClick: () => void;
@@ -35,7 +32,7 @@ const DEFAULTS: OptionalAnswers = {
   drive_color_id: DEFAULT_COLOUR,
 };
 
-export function OptionalPage({ settings, active, onFinishClick, onSaveFailed, onSaved }: Props) {
+export function OptionalPage({ settings, onFinishClick, onSaveFailed, onSaved }: Props) {
   const masjid = settings.main_masjid_choice === "masjid" ? settings.main_masjid : null;
   const hasJumuah = settings.jumuah_masjids.length > 0;
 
@@ -44,7 +41,6 @@ export function OptionalPage({ settings, active, onFinishClick, onSaveFailed, on
   const [jumuahEarly, setJumuahEarly] = useState(String(DEFAULT_JUMUAH_ARRIVE_EARLY));
   const [prayerColour, setPrayerColour] = useState<string | null>(DEFAULT_COLOUR);
   const [driveColour, setDriveColour] = useState<string | null>(DEFAULT_COLOUR);
-  const [pick, setPick] = useState<SlotKey | null>(settings.jumuah_pick);
   const [errors, setErrors] = useState({ early: "", jumuahEarly: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -56,9 +52,6 @@ export function OptionalPage({ settings, active, onFinishClick, onSaveFailed, on
 
   const shownName = shortName.trim() || masjid?.name || "the masjid";
 
-  // What the chooser should show: the Jumuah "how early" typed so far, if it's valid.
-  const typedJumuahEarly = wholeMinutes(jumuahEarly, 0, MAX_EARLY);
-  const overrides: ChoicesRequest = typedJumuahEarly === null ? {} : { jumuah_arrive_early_minutes: typedJumuahEarly };
 
   async function run(save: () => Promise<Settings>) {
     setBusy(true);
@@ -80,7 +73,7 @@ export function OptionalPage({ settings, active, onFinishClick, onSaveFailed, on
   function finish(event: FormEvent) {
     event.preventDefault();
     const minutes = wholeMinutes(early, 0, MAX_EARLY);
-    const jumuahMinutes = hasJumuah ? typedJumuahEarly : DEFAULT_JUMUAH_ARRIVE_EARLY;
+    const jumuahMinutes = hasJumuah ? wholeMinutes(jumuahEarly, 0, MAX_EARLY) : DEFAULT_JUMUAH_ARRIVE_EARLY;
     const found = {
       early: minutes === null ? EARLY_ERROR : "",
       jumuahEarly: jumuahMinutes === null ? EARLY_ERROR : "",
@@ -90,7 +83,6 @@ export function OptionalPage({ settings, active, onFinishClick, onSaveFailed, on
 
     onFinishClick();
     void run(async () => {
-      if (hasJumuah && pick) await api.saveJumuahPick(pick);
       const saved = await api.saveOptional({
         arrive_early_minutes: minutes,
         jumuah_arrive_early_minutes: jumuahMinutes,
@@ -136,8 +128,6 @@ export function OptionalPage({ settings, active, onFinishClick, onSaveFailed, on
         <ColourPicker label="Prayer colour" value={prayerColour} onChange={setPrayerColour} />
         <ColourPicker label="Drive colour" value={driveColour} onChange={setDriveColour} />
       </div>
-
-      {hasJumuah && active && <JumuahChooser overrides={overrides} selected={pick} onSelect={setPick} />}
 
       {error && (
         <p className="error" role="alert">

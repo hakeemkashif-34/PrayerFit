@@ -3,7 +3,7 @@
 // records every request so tests can check what the website sent.
 
 import type { Page, Route } from "@playwright/test";
-import type { ChoicesRequest, JumuahChoices, JumuahSlot, Masjid, MasjidSuggestion, Me, Settings, SlotKey, Step } from "../src/types";
+import type { JumuahChoices, JumuahSlot, Masjid, MasjidSuggestion, Me, Settings, SlotKey, Step } from "../src/types";
 
 export const KMA: Masjid = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -117,16 +117,10 @@ export class MockApi {
   finishDelayMs = 0;
   // Every Google Calendar URL the page went to. A fake page answers, so no test reaches Google.
   googleVisits: string[] = [];
-  // This Friday's Jumuah times by masjid ID, in slot order. A masjid that isn't here has none.
+  // This week's Jumuah times by masjid ID, in slot order. A masjid that isn't here has none.
   jumuahTimes: Record<string, string[]> = { [KMA.id]: ["13:30", "14:30"], [STITTSVILLE.id]: ["13:15"] };
-  // Busy times on the Friday, as ["13:00", "13:40"] clock pairs.
-  busy: [string, string][] = [];
-  // False is like a user without free/busy access: no busy times.
-  busyChecked = true;
   // Jumuah length by masjid ID. Missing means 45 minutes, estimated.
   jumuahLength: Record<string, number> = {};
-  // OpenRouteService's pretend driving estimates, in minutes. A masjid that isn't here has no estimate.
-  orsMinutes: Record<string, number> = { [KMA.id]: 14, [STITTSVILLE.id]: 20 };
 
   signedIn(settings: Settings = emptySettings(), me: Partial<Me> = {}) {
     this.settings = settings;
@@ -163,45 +157,30 @@ export class MockApi {
     return missing;
   }
 
-  // Like POST /jumuah/choices: every slot's window, and which one is selected.
-  choices(body: ChoicesRequest): JumuahChoices {
+  // Like GET /jumuah/slots: each slot at these masjids (or the saved Jumuah masjids), and which one is selected.
+  slots(masjidIds: string[]): JumuahChoices {
     const s = this.settings;
-    const empty: JumuahChoices = { friday: null, time_zone: null, busy_checked: false, busy: [], slots: [], selected: null };
-    if (s.jumuah_masjids.length === 0) return empty;
-    const early = body.jumuah_arrive_early_minutes ?? s.jumuah_arrive_early_minutes;
-    const busy = this.busyChecked ? this.busy.map(([start, end]) => [Date.parse(friday(start)), Date.parse(friday(end))]) : [];
+    const masjids = masjidIds.length ? masjidIds.map((id) => this.savedMasjids.get(id)!) : s.jumuah_masjids;
     const slots: JumuahSlot[] = [];
-    s.jumuah_masjids.forEach((masjid) => {
+    masjids.forEach((masjid) => {
       (this.jumuahTimes[masjid.id] ?? []).forEach((clock, i) => {
-        const drive = this.orsMinutes[masjid.id] ?? null;
         const length = this.jumuahLength[masjid.id] ?? 45;
         const start = Date.parse(friday(clock));
-        const arrive = start - early * MINUTE;
-        const leave = drive === null ? null : arrive - drive * MINUTE;
-        const end = start + length * MINUTE;
-        const from = leave ?? arrive;
         slots.push({
           masjid_id: masjid.id, masjid_label: masjid.id === s.main_masjid?.id && s.main_masjid_short_name ? s.main_masjid_short_name : masjid.name ?? "Your masjid",
           order: i + 1, order_label: `${["1st", "2nd", "3rd"][i]} Jumuah`,
-          starts_at: iso(start), leave_at: leave === null ? null : iso(leave), arrive_at: iso(arrive), ends_at: iso(end),
-          drive_minutes: drive,
+          starts_at: iso(start), ends_at: iso(start + length * MINUTE),
           jumuah_minutes: length, length_estimated: !(masjid.id in this.jumuahLength),
-          fits: !busy.some(([b0, b1]) => from < b1 && b0 < end),
         });
       });
     });
-    const listed = s.jumuah_masjids.map((m) => m.id);
+    const listed = masjids.map((m) => m.id);
     slots.sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at) || listed.indexOf(a.masjid_id) - listed.indexOf(b.masjid_id));
     const key = (slot: JumuahSlot): SlotKey => ({ masjid_id: slot.masjid_id, order: slot.order });
     const pick = s.jumuah_pick;
     const picked = pick && slots.find((x) => x.masjid_id === pick.masjid_id && x.order === pick.order);
-    const fitting = slots.find((x) => x.fits);
-    const selected = picked ? key(picked) : fitting ? key(fitting) : slots[0] ? key(slots[0]) : null;
-    return {
-      friday: FRIDAY, time_zone: "America/Toronto", busy_checked: this.busyChecked,
-      busy: this.busyChecked ? this.busy.map(([start, end]) => ({ starts_at: friday(start), ends_at: friday(end) })) : [],
-      slots, selected,
-    };
+    const firsts = [...slots].sort((a, b) => listed.indexOf(a.masjid_id) - listed.indexOf(b.masjid_id) || a.order - b.order);
+    return { time_zone: "America/Toronto", slots, selected: picked ? key(picked) : firsts[0] ? key(firsts[0]) : null };
   }
 
   private saved(calendar: unknown = null) {
@@ -304,8 +283,8 @@ export class MockApi {
       case "PUT /api/settings/jumuah-pick":
         s.jumuah_pick = body.masjid_id ? { masjid_id: body.masjid_id, order: body.order } : null;
         return json(200, this.saved(updated(2)));
-      case "POST /api/jumuah/choices":
-        return json(200, this.choices(body));
+      case "GET /api/jumuah/slots":
+        return json(200, this.slots(new URL(request.url()).searchParams.getAll("masjid_id")));
       case "PUT /api/settings/optional":
         this.optionalSaved = true;
         Object.assign(s, {

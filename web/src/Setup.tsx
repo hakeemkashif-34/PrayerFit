@@ -1,6 +1,6 @@
 // Setup is 2 pages. Page 1, "Required": location, main masjid (or "I pray
-// at home"), and the weekly grid. Page 2, "Optional": short name, how
-// early, colours, and the Jumuah chooser. It matches the
+// at home"), the weekly grid, and which Jumuah. Page 2, "Optional": short
+// name, how early, and colours. It matches the
 // landing page: the list of pages on the left and the questions on the
 // right. On a phone, the list becomes one line at the top.
 //
@@ -110,7 +110,7 @@ export function Setup({ initial, onDone }: Props) {
           {page === "required" && <RequiredPage settings={settings} onChange={setSettings} onNext={toOptional} />}
           {optionalShown && (
             <div hidden={page !== "optional"}>
-              <OptionalPage settings={settings} active={page === "optional"} onFinishClick={openTab}
+              <OptionalPage settings={settings} onFinishClick={openTab}
                 onSaveFailed={closeTab} onSaved={(saved) => onDone(saved, tab.current)} />
             </div>
           )}

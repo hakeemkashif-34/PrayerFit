@@ -3,7 +3,7 @@
 // sends it because the website and the API are the same site.
 
 import type {
-  CalendarUpdate, ChoicesRequest, JumuahChoices, Masjid, MasjidSuggestion, Me, OptionalAnswers, SaveResponse, Settings,
+  CalendarUpdate, JumuahChoices, Masjid, MasjidSuggestion, Me, OptionalAnswers, SaveResponse, Settings,
   SlotKey, Suggestions,
 } from "./types";
 
@@ -72,9 +72,11 @@ export const api = {
   saveOptional: (answers: OptionalAnswers) => request<SaveResponse>("PUT", "/api/settings/optional", answers),
   // null clears the pick, so the earliest Jumuah that fits is used.
   saveJumuahPick: (pick: SlotKey | null) => request<SaveResponse>("PUT", "/api/settings/jumuah-pick", pick ?? {}),
-  // A POST, but it saves nothing.
-  jumuahChoices: (body: ChoicesRequest, signal?: AbortSignal) =>
-    request<JumuahChoices>("POST", "/api/jumuah/choices", body, signal),
+  // masjidIds: masjids setup hasn't saved yet. Left out, the saved Jumuah masjids are used.
+  jumuahSlots: (masjidIds?: string[], signal?: AbortSignal) => {
+    const query = new URLSearchParams((masjidIds ?? []).map((id) => ["masjid_id", id]));
+    return request<JumuahChoices>("GET", `/api/jumuah/slots${masjidIds?.length ? `?${query}` : ""}`, undefined, signal);
+  },
   finishSetup: () => request<SaveResponse>("POST", "/api/setup/finish"),
   syncCalendar: () => request<CalendarUpdate>("POST", "/api/calendar/sync"),
   // /auth/ goes straight to the backend, like the sign-in links.

@@ -98,35 +98,21 @@ export type MasjidSuggestion = {
   distance_km: number;
 };
 
-// What the Jumuah chooser shows for the coming Friday. Times are ISO strings with an offset.
-export type BusyTime = { starts_at: string; ends_at: string };
-
+// What the Jumuah chooser shows: each slot at the user's Jumuah masjids. Times are ISO strings with an offset.
 export type JumuahSlot = SlotKey & {
   masjid_label: string;
   order_label: string; // "1st Jumuah"
+  // This week's times, as an example.
   starts_at: string;
-  // null when the drive time is unknown.
-  leave_at: string | null;
-  arrive_at: string;
   ends_at: string;
-  // OpenRouteService's driving estimate.
-  drive_minutes: number | null;
   jumuah_minutes: number;
   length_estimated: boolean;
-  fits: boolean;
 };
 
 export type JumuahChoices = {
-  friday: string | null;
-  time_zone: string | null;
-  busy_checked: boolean;
-  busy: BusyTime[];
-  // Earliest first. Empty means there's nothing to choose.
+  time_zone: string;
+  // Earliest first. Empty means the question is skipped.
   slots: JumuahSlot[];
+  // The saved pick, or the 1st Jumuah.
   selected: SlotKey | null;
-};
-
-// Answers the optional page hasn't saved yet, so the chooser can show them.
-export type ChoicesRequest = {
-  jumuah_arrive_early_minutes?: number;
 };

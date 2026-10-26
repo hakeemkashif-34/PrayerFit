@@ -126,13 +126,20 @@ test("the full setup: required page, optional page, then a filled calendar", asy
   await page.getByLabel("Dhuhr on Monday at the masjid").check();
   await page.getByLabel("Isha on Friday at the masjid").check();
   await page.getByLabel("Fajr on Sunday at the masjid").check();
-  // Nothing about the masjid or grid is saved until Next.
+
+  // Last on the page: which Jumuah, with the 1st Jumuah already picked.
+  await expect(page.getByRole("main").getByRole("heading", { level: 2 }).last()).toHaveText(
+    "Generally speaking, which Jumuah would you like to attend?",
+  );
+  await expect(page.getByRole("radio", { name: /^Kanata Muslim Association 1st Jumuah 1:30 PM to 2:15 PM/ })).toBeChecked();
+  // Nothing about the masjid, grid, or Jumuah is saved until Next.
   expect(api.calls("PUT", "/api/settings/main-masjid")).toHaveLength(0);
   await page.getByRole("button", { name: "Next" }).click();
 
   expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({ choice: "masjid", masjid_id: KMA.id });
   const days = ((await api.sent("PUT", "/api/settings/weekly", 1))[0].body as { days: Record<string, unknown>[] }).days;
   expect(days).toHaveLength(7);
+  expect((await api.sent("PUT", "/api/settings/jumuah-pick", 1))[0].body).toEqual({ masjid_id: KMA.id, order: 1 });
   expect(days[0]).toEqual({ weekday: 0, fajr: false, dhuhr: true, asr: false, maghrib: false, isha: false });
   expect(days[4].isha).toBe(true);
   expect(days[6].fajr).toBe(true);
@@ -172,13 +179,11 @@ test("the full setup: required page, optional page, then a filled calendar", asy
   await pickColour(page, "Drive colour", "Tomato");
   await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Tomato");
 
-  // The Jumuah chooser, with the earliest that fits already picked.
-  await expect(page.getByRole("heading", { name: "Jumuah on Friday, Oct 30" })).toBeVisible();
-  await expect(page.getByRole("radio", { name: /^Kanata Muslim Association 1st Jumuah at 1:30 PM/ })).toBeChecked();
+  // The Jumuah question moved to page 1.
+  await expect(page.getByRole("radio")).toHaveCount(0);
   await page.getByRole("button", { name: "Finish" }).click();
 
-  // Finish saves the pick and the other answers, then finishes.
-  expect((await api.sent("PUT", "/api/settings/jumuah-pick", 1))[0].body).toEqual({ masjid_id: KMA.id, order: 1 });
+  // Finish saves the other answers, then finishes.
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({
     arrive_early_minutes: 10, jumuah_arrive_early_minutes: 15, short_name: "KMA", prayer_color_id: "7", drive_color_id: "11",
   });
@@ -283,15 +288,16 @@ test("I pray at home means every prayer at home, with no weekly grid", async ({ 
   await expectPage(page, 2);
   await expect(page.getByLabel(/Short name/)).toHaveCount(0);
   await expect(page.getByLabel(/before Jumuah/)).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: /^Jumuah on/ })).toHaveCount(0);
+  await expect(page.getByRole("radio")).toHaveCount(0);
   await page.getByRole("button", { name: "Finish" }).click();
 
   await expectGoogleCalendar(page, api);
   expect(api.settings.main_masjid_choice).toBe("home");
   expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({ choice: "home" });
   expect(api.calls("PUT", "/api/settings/weekly")).toHaveLength(0);
+  // No Jumuah masjid, so there's no Jumuah to ask about or save.
   expect(api.calls("PUT", "/api/settings/jumuah-pick")).toHaveLength(0);
-  expect(api.calls("POST", "/api/jumuah/choices")).toHaveLength(0);
+  expect(api.calls("GET", "/api/jumuah/slots")).toHaveLength(0);
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
 });
 
@@ -460,7 +466,7 @@ test("the page uses Plus Jakarta Sans from our own site", async ({ page }) => {
   expect(fontRequests.every((url) => url.startsWith("http://localhost:4173/assets/"))).toBe(true);
 });
 
-test("Skip saves the defaults, and no Jumuah pick", async ({ page }) => {
+test("Skip saves the defaults", async ({ page }) => {
   const api = new MockApi().signedIn();
   await api.install(page);
   await page.goto("/");
@@ -468,7 +474,6 @@ test("Skip saves the defaults, and no Jumuah pick", async ({ page }) => {
 
   // Something typed and picked, then skipped: the defaults win.
   await page.getByLabel("How early do you want to arrive before iqamah (daily prayers)?").fill("20");
-  await page.getByRole("radio", { name: /2nd Jumuah/ }).check({ force: true });
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(0);
   await page.getByRole("button", { name: "Skip" }).click();
 
@@ -476,7 +481,6 @@ test("Skip saves the defaults, and no Jumuah pick", async ({ page }) => {
     arrive_early_minutes: 5, jumuah_arrive_early_minutes: 5, prayer_color_id: "10", drive_color_id: "10",
   });
   await expectGoogleCalendar(page, api);
-  expect(api.calls("PUT", "/api/settings/jumuah-pick")).toHaveLength(0);
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
   expect([api.settings.prayer_color_id, api.settings.drive_color_id]).toEqual(["10", "10"]);
 });
@@ -679,19 +683,30 @@ test("the adding page opened by hand just links to Settings", async ({ page }) =
   expect(api.requests).toEqual([]);
 });
 
-for (const path of ["/api/settings/jumuah-pick", "/api/settings/optional"]) {
-  test(`a failed save (${path}) closes the new tab and stays on page 2`, async ({ page }) => {
-    const api = new MockApi().signedIn();
-    api.failNext[path] = { status: 503, detail: { message: "The server is busy. Try again." } };
-    await api.install(page);
-    await page.goto("/");
-    await toOptionalAtKma(page);
-    await expect(page.getByRole("radio", { name: /1st Jumuah/ })).toBeChecked();
-    await page.getByRole("button", { name: "Finish" }).click();
+test("a failed save closes the new tab and stays on page 2", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  api.failNext["/api/settings/optional"] = { status: 503, detail: { message: "The server is busy. Try again." } };
+  await api.install(page);
+  await page.goto("/");
+  await toOptionalAtKma(page);
+  await page.getByRole("button", { name: "Finish" }).click();
 
-    await expect(page.getByRole("alert")).toHaveText("The server is busy. Try again.");
-    await expect.poll(() => page.context().pages().length).toBe(1);
-    await expectPage(page, 2);
-    expect(api.calls("POST", "/api/setup/finish")).toHaveLength(0);
-  });
-}
+  await expect(page.getByRole("alert")).toHaveText("The server is busy. Try again.");
+  await expect.poll(() => page.context().pages().length).toBe(1);
+  await expectPage(page, 2);
+  expect(api.calls("POST", "/api/setup/finish")).toHaveLength(0);
+});
+
+test("a failed Jumuah pick save stays on page 1 with the error", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  api.failNext["/api/settings/jumuah-pick"] = { status: 503, detail: { message: "The server is busy. Try again." } };
+  await api.install(page);
+  await page.goto("/");
+  await pickHome(page);
+  await pickMasjid(page, "Kanata", "Kanata Muslim Association");
+  await expect(page.getByRole("radio", { name: /1st Jumuah/ })).toBeChecked();
+  await page.getByRole("button", { name: "Next" }).click();
+
+  await expect(page.getByRole("alert")).toHaveText("The server is busy. Try again.");
+  await expectPage(page, 1);
+});

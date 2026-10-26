@@ -126,8 +126,8 @@ export function JumuahPickEditor({ settings, onSaved, onCancel }: EditorProps) {
   const [pick, setPick] = useState<SlotKey | null>(settings.jumuah_pick);
   return (
     <EditorForm title="Jumuah pick" onCancel={onCancel} onSave={() => api.saveJumuahPick(pick).then(onSaved)}>
-      <JumuahChooser overrides={{}} selected={pick} onSelect={setPick} heading="h4"
-        emptyText="None of your Jumuah masjids have Jumuah times for this Friday yet." />
+      <JumuahChooser selected={pick} onSelect={setPick} heading="h4"
+        emptyText="None of your Jumuah masjids have Jumuah times yet." />
     </EditorForm>
   );
 }
