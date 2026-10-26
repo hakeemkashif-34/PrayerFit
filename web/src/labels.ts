@@ -58,15 +58,19 @@ export function colourName(id: string | null): string {
   return GOOGLE_COLOURS.find((c) => c.id === id)?.name ?? CALENDAR_COLOUR;
 }
 
-export function earlyText(minutes: number): string {
-  if (minutes === 0) return "Arrive at iqamah time";
-  return `Arrive ${minutes} min before iqamah`;
+// "5 minutes", "1 minute". Settings shows the question as the label, so the value is just this.
+export function minutesText(minutes: number): string {
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
-export function jumuahEarlyText(minutes: number): string {
-  if (minutes === 0) return "Arrive at Jumuah time";
-  return `Arrive ${minutes} min before Jumuah`;
-}
+// The setup questions, shown as labels on Settings too.
+export const QUESTIONS = {
+  location: "What's your location?",
+  masjid: "Which masjid do you usually go to?",
+  weekly: "Which prayers do you usually pray at the masjid?",
+  early: "How early do you want to arrive before iqamah (daily prayers)?",
+  jumuahEarly: "How early do you want to arrive before Jumuah (Friday prayer)?",
+};
 
 // The masjid's name in event titles: the short name if there is one.
 export function masjidLabel(settings: Settings): string {

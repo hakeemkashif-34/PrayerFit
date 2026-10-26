@@ -4,7 +4,7 @@
 // masjids is a block at its real time, from when to leave home to the end
 // of Jumuah. The rest of the day is greyed out. The user clicks a block to
 // pick it. The times are this week's, only as an example: the pick is saved
-// by order, not by time.
+// by order, not by time. Jumuah is always at the main masjid.
 //
 // It doesn't show the user's busy times. Every Friday, the calendar update
 // still checks the pick against their calendar.
@@ -18,8 +18,8 @@ import { hourText, minutesIntoDay, spanText, timeText } from "./labels";
 import type { JumuahChoices, JumuahSlot, SlotKey } from "./types";
 
 type Props = {
-  // Setup asks about masjids it hasn't saved yet. Settings leaves this out to use the saved Jumuah masjids.
-  masjidIds?: string[];
+  // Setup asks about the main masjid before it's saved. Settings leaves this out to use the saved one.
+  masjidId?: string;
   selected: SlotKey | null;
   onSelect: (key: SlotKey) => void;
   // How many slots there are, once known. Setup saves the 1st Jumuah when it's 0.
@@ -42,7 +42,8 @@ export const sameSlot = (a: SlotKey | null, b: SlotKey | null) =>
 
 type Placed = { slot: JumuahSlot; leave: number; start: number; end: number; lane: number };
 
-// Blocks that overlap go side by side. Each gets the first lane that's free by then.
+// Blocks that overlap (the 2nd leaving before the 1st ends) go side by side.
+// Each gets the first lane that's free by then.
 function place(slots: JumuahSlot[], zone: string): Placed[] {
   const freeAt: number[] = [];
   return slots.map((slot) => {
@@ -61,18 +62,18 @@ export function noTimesText(name: string, where: "setup" | "settings"): string {
   return where === "setup" ? `${base} We'll use the 1st Jumuah, and you can change it in Settings later.` : base;
 }
 
-export function JumuahChooser({ masjidIds, selected, onSelect, onLoaded, where = "setup", heading = "h2" }: Props) {
+export function JumuahChooser({ masjidId, selected, onSelect, onLoaded, where = "setup", heading = "h2" }: Props) {
   const [choices, setChoices] = useState<JumuahChoices | null>(null);
   const [error, setError] = useState("");
   const latest = useRef({ selected, onSelect, onLoaded });
   latest.current = { selected, onSelect, onLoaded };
-  const key = JSON.stringify(masjidIds ?? null);
+  const key = masjidId ?? "";
 
   useEffect(() => {
     const controller = new AbortController();
     setChoices(null);
     api
-      .jumuahSlots(masjidIds, controller.signal)
+      .jumuahSlots(masjidId, controller.signal)
       .then((answer) => {
         setChoices(answer);
         setError("");
@@ -87,7 +88,6 @@ export function JumuahChooser({ masjidIds, selected, onSelect, onLoaded, where =
         latest.current.onLoaded?.(0);
       });
     return () => controller.abort();
-    // masjidIds is compared by its text, so a new array with the same IDs doesn't ask again.
   }, [key]);
 
   const Heading = heading;

@@ -1,4 +1,5 @@
-// The Jumuah question at the bottom of the Required page, and on Settings:
+// The Jumuah question at the bottom of the Required page, and on Settings.
+// Jumuah is always at the main masjid. It's
 // a Friday in a day calendar, each slot a block from when to leave home to
 // the end of Jumuah. The mock API has KMA's Jumuah at 1:30 (1st) and 2:30
 // (2nd), and Stittsville's at 1:15 (1st). Without a set length, each is 45
@@ -150,11 +151,11 @@ test("the Optional page has no Jumuah question", async ({ page }) => {
 });
 
 test("the calendar view fits a phone screen with no sideways scrolling", async ({ page }) => {
-  const api = new MockApi().signedIn({ ...finishedSettings(), jumuah_masjids: [KMA, STITTSVILLE] });
+  const api = new MockApi().signedIn(finishedSettings());
   await api.install(page);
   await page.goto("/");
   await page.getByRole("button", { name: "Edit jumuah pick" }).click();
-  await expect(page.getByRole("radio")).toHaveCount(3);
+  await expect(page.getByRole("radio")).toHaveCount(2);
 
   const width = await page.evaluate(() => document.documentElement.clientWidth);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
@@ -164,7 +165,7 @@ test("the calendar view fits a phone screen with no sideways scrolling", async (
 });
 
 test("on Settings, the pick is in the Required section and changed with the same view", async ({ page }) => {
-  const api = new MockApi().signedIn({ ...finishedSettings(), jumuah_masjids: [KMA] });
+  const api = new MockApi().signedIn(finishedSettings());
   await api.install(page);
   await page.goto("/");
   const row = page.getByRole("region", { name: "Required" }).getByRole("region", { name: "Jumuah pick" });
@@ -179,7 +180,7 @@ test("on Settings, the pick is in the Required section and changed with the same
 
   expect((await api.sent("PUT", "/api/settings/jumuah-pick", 1))[0].body).toEqual({ masjid_id: KMA.id, order: 2 });
   // Just the pick, nothing more.
-  await expect(row.locator(".row-value")).toHaveText("2nd Jumuah at Kanata Muslim Association");
+  await expect(row.locator(".row-value")).toHaveText("2nd Jumuah");
   await expect(page.getByRole("status")).toHaveText("Calendar updated. 2 events sent to Google.");
 
   // Editing again starts from the saved pick.
@@ -188,7 +189,7 @@ test("on Settings, the pick is in the Required section and changed with the same
 });
 
 test("Settings says when there are no Jumuah times to pick from", async ({ page }) => {
-  const api = new MockApi().signedIn({ ...finishedSettings(), jumuah_masjids: [KMA] });
+  const api = new MockApi().signedIn(finishedSettings());
   api.jumuahTimes = {};
   await api.install(page);
   await page.goto("/");

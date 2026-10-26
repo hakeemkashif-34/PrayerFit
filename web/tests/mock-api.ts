@@ -54,8 +54,6 @@ export function emptySettings(): Settings {
     main_masjid: null,
     main_masjid_short_name: null,
     weekly: [],
-    jumuah_saved: false,
-    jumuah_masjids: [],
     arrive_early_minutes: 0,
     jumuah_arrive_early_minutes: 5,
     jumuah_pick: null,
@@ -78,8 +76,6 @@ export function finishedSettings(): Settings {
     weekly: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
       weekday, fajr: false, dhuhr: weekday < 5, asr: false, maghrib: false, isha: weekday < 5,
     })),
-    jumuah_saved: true,
-    jumuah_masjids: [KMA, STITTSVILLE],
     arrive_early_minutes: 5,
     jumuah_arrive_early_minutes: 10,
     jumuah_pick: null,
@@ -176,10 +172,13 @@ export class MockApi {
     return missing;
   }
 
-  // Like GET /jumuah/slots: each slot at these masjids (or the saved Jumuah masjids), and which one is selected.
-  slots(masjidIds: string[]): JumuahChoices {
+  // Like POST /jumuah/slots: each slot at this masjid (or the saved main masjid), and which one is selected.
+  // Jumuah is always at the main masjid.
+  slots(masjidId?: string | null): JumuahChoices {
     const s = this.settings;
-    const masjids = masjidIds.length ? masjidIds.map((id) => this.savedMasjids.get(id)!) : s.jumuah_masjids;
+    const main = s.main_masjid_choice === "masjid" ? s.main_masjid : null;
+    const one = masjidId ? this.savedMasjids.get(masjidId)! : main;
+    const masjids = one ? [one] : [];
     const slots: JumuahSlot[] = [];
     masjids.forEach((masjid) => {
       (this.jumuahTimes[masjid.id] ?? []).forEach((clock, i) => {
@@ -311,16 +310,10 @@ export class MockApi {
         return json(200, picked.masjid);
       }
       case "PUT /api/settings/main-masjid": {
-        // Like the backend's follow_main_masjid: the main masjid is the first
-        // Jumuah masjid, unless the user changed the Jumuah list themselves.
-        const oldMain = s.main_masjid_choice === "masjid" ? s.main_masjid?.id ?? null : null;
-        const newMain = body.choice === "home" ? null : body.masjid_id;
-        const jumuahIds = s.jumuah_masjids.map((m) => m.id);
-        if (oldMain !== newMain && (jumuahIds.length === 0 || (jumuahIds.length === 1 && jumuahIds[0] === oldMain))) {
-          const picked = newMain ? this.savedMasjids.get(newMain) : undefined;
-          s.jumuah_masjids = picked ? [picked] : [];
-          if (picked) s.jumuah_saved = true;
-        }
+        // Like the backend: Jumuah is always at the main masjid. Home means no pick,
+        // and a new main masjid starts at its 1st Jumuah.
+        if (body.choice === "home") s.jumuah_pick = null;
+        else if (s.jumuah_pick?.masjid_id !== body.masjid_id) s.jumuah_pick = { masjid_id: body.masjid_id, order: 1 };
         if (body.choice === "home") {
           Object.assign(s, { main_masjid_choice: "home", main_masjid: null, main_masjid_short_name: null });
         } else {
@@ -335,16 +328,11 @@ export class MockApi {
       case "PUT /api/settings/weekly":
         s.weekly = body.days;
         return json(200, this.saved(updated(2)));
-      case "PUT /api/settings/jumuah":
-        s.jumuah_saved = true;
-        s.jumuah_masjids = body.masjid_ids.map((id: string) => this.savedMasjids.get(id)!);
-        if (s.jumuah_pick && !body.masjid_ids.includes(s.jumuah_pick.masjid_id)) s.jumuah_pick = null;
-        return json(200, this.saved());
       case "PUT /api/settings/jumuah-pick":
         s.jumuah_pick = body.masjid_id ? { masjid_id: body.masjid_id, order: body.order } : null;
         return json(200, this.saved(updated(2)));
       case "POST /api/jumuah/slots":
-        return json(200, this.slots(body?.masjid_ids ?? []));
+        return json(200, this.slots(body?.masjid_id));
       case "POST /api/calendar/preview":
         if (this.previewNotReady > 0 || !s.address || !s.main_masjid_choice) {
           this.previewNotReady = Math.max(0, this.previewNotReady - 1);

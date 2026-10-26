@@ -13,7 +13,7 @@ test("Settings has 2 cards, Required and Optional, each item with its own Edit",
     await expect(required.getByRole("region", { name })).toBeVisible();
   }
   const optionalItems = [
-    "Jumuah masjids", "Short name", "How early for prayers", "How early for Jumuah",
+    "Short name", "How early for prayers", "How early for Jumuah",
     "Prayer colour", "Drive colour",
   ];
   for (const name of optionalItems) {
@@ -27,8 +27,26 @@ test("Settings has 2 cards, Required and Optional, each item with its own Edit",
   // Where each masjid's times come from.
   await expect(page.getByRole("region", { name: "Main masjid" })).toContainText("Times from MAWAQIT, updated Oct 25, 2026");
   await expect(page.getByRole("region", { name: "Short name" })).toContainText("KMA");
-  await expect(page.getByRole("region", { name: "How early for prayers" })).toContainText("Arrive 5 min before iqamah");
-  await expect(page.getByRole("region", { name: "How early for Jumuah" })).toContainText("Arrive 10 min before Jumuah");
+  // The setup question as the label, and just the answer as the value.
+  const early = page.getByRole("region", { name: "How early for prayers" });
+  await expect(early.locator("h3")).toHaveText("How early do you want to arrive before iqamah (daily prayers)?");
+  await expect(early.locator(".row-value")).toHaveText("5 minutes");
+  const jumuahEarly = page.getByRole("region", { name: "How early for Jumuah" });
+  await expect(jumuahEarly.locator("h3")).toHaveText("How early do you want to arrive before Jumuah (Friday prayer)?");
+  await expect(jumuahEarly.locator(".row-value")).toHaveText("10 minutes");
+  await expect(page.getByText(/Arrive \d+ min/)).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Location" }).locator("h3")).toHaveText("What's your location?");
+  await expect(page.getByRole("region", { name: "Main masjid" }).locator("h3")).toHaveText("Which masjid do you usually go to?");
+  await expect(page.getByRole("region", { name: "Prayers at the masjid" }).locator("h3")).toHaveText(
+    "Which prayers do you usually pray at the masjid?",
+  );
+  await expect(page.getByRole("region", { name: "Jumuah pick" }).locator("h3")).toHaveText(
+    "Generally speaking, which Jumuah would you like to attend?",
+  );
+  // Jumuah is always at the main masjid, so there's no Jumuah masjids setting.
+  await expect(page.getByRole("region", { name: "Jumuah masjids" })).toHaveCount(0);
+  // How often the calendar catches up.
+  await expect(page.getByText("Updates and changes are reflected on your calendar every 5 minutes.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Prayer colour" })).toContainText("Peacock");
   await expect(page.getByRole("region", { name: "Drive colour" })).toContainText("Calendar colour");
   // Drive times always come from OpenRouteService, so there's nothing to set for them.
@@ -177,8 +195,8 @@ test("how early for prayers is edited on its own", async ({ page }) => {
 
   // Every other answer is sent as it was saved.
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({ ...SAVED_OPTIONAL, arrive_early_minutes: 45 });
-  await expect(page.getByRole("region", { name: "How early for prayers" })).toContainText("Arrive 45 min before iqamah");
-  await expect(page.getByRole("region", { name: "How early for Jumuah" })).toContainText("Arrive 10 min before Jumuah");
+  await expect(page.getByRole("region", { name: "How early for prayers" }).locator(".row-value")).toHaveText("45 minutes");
+  await expect(page.getByRole("region", { name: "How early for Jumuah" }).locator(".row-value")).toHaveText("10 minutes");
   await expect(page.getByRole("status")).toHaveText("Calendar updated. 20 events sent to Google.");
 });
 
@@ -192,7 +210,7 @@ test("how early for Jumuah is edited on its own", async ({ page }) => {
   await page.getByRole("button", { name: "Save" }).click();
 
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({ ...SAVED_OPTIONAL, jumuah_arrive_early_minutes: 0 });
-  await expect(page.getByRole("region", { name: "How early for Jumuah" })).toContainText("Arrive at Jumuah time");
+  await expect(page.getByRole("region", { name: "How early for Jumuah" }).locator(".row-value")).toHaveText("0 minutes");
 });
 
 test("the short name is edited on its own", async ({ page }) => {
@@ -243,7 +261,7 @@ test("cancel leaves an optional item as it was", async ({ page }) => {
   await page.getByLabel("How early do you want to arrive before iqamah (daily prayers)?").fill("0");
   await page.getByRole("button", { name: "Cancel" }).click();
 
-  await expect(page.getByRole("region", { name: "How early for prayers" })).toContainText("Arrive 5 min before iqamah");
+  await expect(page.getByRole("region", { name: "How early for prayers" }).locator(".row-value")).toHaveText("5 minutes");
   expect(api.calls("PUT", "/api/settings/optional")).toHaveLength(0);
 });
 
@@ -256,26 +274,12 @@ test("only one item is edited at a time", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Edit prayer colour" })).toBeDisabled();
 });
 
-test("a new main masjid takes the old one's place as the Jumuah masjid", async ({ page }) => {
-  const api = new MockApi().signedIn({ ...finishedSettings(), jumuah_masjids: [KMA] });
+test("a new main masjid moves Jumuah there too, starting at its 1st Jumuah", async ({ page }) => {
+  const api = new MockApi().signedIn({ ...finishedSettings(), jumuah_pick: { masjid_id: KMA.id, order: 2 } });
   await api.install(page);
   await page.goto("/");
-  const jumuah = page.getByRole("region", { name: "Jumuah masjids" });
-  await expect(jumuah.getByRole("listitem")).toHaveText([/^Kanata Muslim Association/]);
-
-  await page.getByRole("button", { name: "Edit main masjid" }).click();
-  await page.getByRole("button", { name: "Change" }).click();
-  await page.getByRole("combobox").pressSequentially("Stittsville", { delay: 30 });
-  await page.getByRole("option", { name: /^Stittsville Masjid/ }).click();
-  await page.getByRole("button", { name: "Save" }).click();
-
-  await expect(jumuah.getByRole("listitem")).toHaveText([/^Stittsville Masjid/]);
-});
-
-test("a Jumuah list the user chose stays when the main masjid changes", async ({ page }) => {
-  const api = new MockApi().signedIn(finishedSettings()); // Jumuah: KMA and Stittsville
-  await api.install(page);
-  await page.goto("/");
+  const pick = page.getByRole("region", { name: "Jumuah pick" });
+  await expect(pick.locator(".row-value")).toHaveText("2nd Jumuah");
 
   await page.getByRole("button", { name: "Edit main masjid" }).click();
   await page.getByRole("button", { name: "Change" }).click();
@@ -284,9 +288,7 @@ test("a Jumuah list the user chose stays when the main masjid changes", async ({
   await page.getByRole("button", { name: "Save" }).click();
 
   await expect(page.getByRole("region", { name: "Main masjid" })).toContainText("Stittsville Masjid");
-  await expect(page.getByRole("region", { name: "Jumuah masjids" }).getByRole("listitem")).toHaveText([
-    /^Kanata Muslim Association/, /^Stittsville Masjid/,
-  ]);
+  await expect(pick.locator(".row-value")).toHaveText("1st Jumuah");
 });
 
 test("I pray at home on the settings page moves every prayer home", async ({ page }) => {
@@ -301,48 +303,9 @@ test("I pray at home on the settings page moves every prayer home", async ({ pag
   await expect(page.getByRole("region", { name: "Main masjid" })).toContainText("I pray at home");
   await expect(page.getByRole("region", { name: "Prayers at the masjid" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Short name" })).toHaveCount(0);
-});
-
-test("Jumuah masjids are added with the masjid search and can be removed", async ({ page }) => {
-  const api = new MockApi().signedIn(finishedSettings());
-  await api.install(page);
-  await page.goto("/");
-
-  await page.getByRole("button", { name: "Edit jumuah masjids" }).click();
-  await page.getByRole("button", { name: "Remove Stittsville Masjid" }).click();
-  // A masjid that isn't on the map, found by its address.
-  await page.getByRole("combobox").pressSequentially("3500 Fallowfield", { delay: 30 });
-  await page.getByRole("option", { name: /^3500 Fallowfield Road/ }).click();
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-
-  expect((await api.sent("PUT", "/api/settings/jumuah", 1))[0].body).toEqual({
-    masjid_ids: ["11111111-1111-1111-1111-111111111111", "44444444-4444-4444-4444-444444444444"],
-  });
-  await expect(page.getByRole("region", { name: "Jumuah masjids" })).toContainText("3500 Fallowfield Road");
-});
-
-test("Jumuah masjids keep the order they were added in, each with where its times come from", async ({ page }) => {
-  const api = new MockApi().signedIn({ ...finishedSettings(), jumuah_masjids: [] });
-  await api.install(page);
-  await page.goto("/");
-  await expect(page.getByRole("region", { name: "Jumuah masjids" })).toContainText("None picked");
-
-  await page.getByRole("button", { name: "Edit jumuah masjids" }).click();
-  for (const [typed, name] of [["Stittsville", "Stittsville Masjid"], ["Kanata Muslim", "Kanata Muslim Association"]]) {
-    await page.getByRole("combobox").fill("");
-    await page.getByRole("combobox").pressSequentially(typed, { delay: 30 });
-    await page.getByRole("option", { name: new RegExp(`^${name}`) }).click();
-    await expect(page.locator("ul.picked-list")).toContainText(name);
-  }
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-
-  expect((await api.sent("PUT", "/api/settings/jumuah", 1))[0].body).toEqual({
-    masjid_ids: ["22222222-2222-2222-2222-222222222222", "11111111-1111-1111-1111-111111111111"],
-  });
-  await expect(page.getByRole("region", { name: "Jumuah masjids" }).getByRole("listitem")).toHaveText([
-    "Stittsville MasjidNot linked to MAWAQIT, so calculated times are used",
-    "Kanata Muslim AssociationTimes from MAWAQIT, updated Oct 25, 2026",
-  ]);
+  // Praying at home means no Jumuah.
+  await expect(page.getByRole("region", { name: "Jumuah pick" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "How early for Jumuah" })).toHaveCount(0);
 });
 
 test("sign out calls the API and goes back to the sign-in screen", async ({ page }) => {
@@ -364,7 +327,7 @@ test("existing users keep their own answers, not the new defaults", async ({ pag
   const api = new MockApi().signedIn({ ...finishedSettings(), arrive_early_minutes: 0, prayer_color_id: null, drive_color_id: null });
   await api.install(page);
   await page.goto("/");
-  await expect(page.getByRole("region", { name: "How early for prayers" })).toContainText("Arrive at iqamah time");
+  await expect(page.getByRole("region", { name: "How early for prayers" }).locator(".row-value")).toHaveText("0 minutes");
   await expect(page.getByRole("region", { name: "Prayer colour" })).toContainText("Calendar colour");
 
   await page.getByRole("button", { name: "Edit how early for prayers" }).click();
@@ -462,7 +425,7 @@ test("labels are small and muted, values larger and darker, and nothing is in al
   expect(label.size).toBeLessThan(value.size);
   expect(label.colour).not.toBe(value.colour);
   expect(label.transform).toBe("none");
-  await expect(row.locator("h3")).toHaveText("Location");
+  await expect(row.locator("h3")).toHaveText("What's your location?");
 });
 
 test("the chosen colours show as swatches", async ({ page }) => {

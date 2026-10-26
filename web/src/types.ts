@@ -45,9 +45,6 @@ export type Settings = {
   main_masjid: Masjid | null;
   main_masjid_short_name: string | null;
   weekly: WeekdayPrayers[];
-  jumuah_saved: boolean;
-  // In the order the user listed them.
-  jumuah_masjids: Masjid[];
   // The optional step. Colours are Google's event colour IDs, "1" to "11". null uses the calendar's colour.
   arrive_early_minutes: number;
   jumuah_arrive_early_minutes: number;

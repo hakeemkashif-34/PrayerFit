@@ -1,19 +1,20 @@
 // The Settings page, where returning users land: a button to open Google
 // Calendar, then 2 cards, side by side on a computer. "Required" has the setup
 // questions (location, masjid, weekly prayers, Jumuah pick). "Optional" has everything
-// with a default. Each item has its own Edit button and saves on its own.
-// Saving updates the calendar.
+// with a default. Each item shows its setup question as the label and just the
+// answer as the value, with its own Edit button, and saves on its own.
+// Saving updates the calendar. Jumuah is always at the main masjid.
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { api, ApiError, SIGN_IN_URL } from "./api";
 import { BusyBanner } from "./BusyBanner";
 import { googleCalendarUrl } from "./googleCalendar";
 import {
-  colourName, earlyText, GOOGLE_COLOURS, jumuahEarlyText, masjidLabel, masjidName, PRAYER_NAMES, PRAYERS, WEEKDAYS,
+  colourName, GOOGLE_COLOURS, masjidLabel, masjidName, minutesText, PRAYER_NAMES, PRAYERS, QUESTIONS, WEEKDAYS,
 } from "./labels";
 import { OsmFooter } from "./OsmFooter";
+import { QUESTION as JUMUAH_QUESTION } from "./JumuahChooser";
 import { ColourEditor, EarlyEditor, JumuahPickEditor, ShortNameEditor } from "./SettingsEditors";
-import { JumuahStep } from "./steps/JumuahStep";
 import { LocationStep } from "./steps/LocationStep";
 import { MasjidStep } from "./steps/MasjidStep";
 import { WeeklyStep } from "./steps/WeeklyStep";
@@ -74,6 +75,8 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
 
   const cancel = () => setEditing(null);
   const atHome = settings.main_masjid_choice === "home";
+  // Jumuah is always at the main masjid. Praying at home means no Jumuah.
+  const hasJumuah = !atHome && settings.main_masjid !== null;
   const rows = { editing, onEdit: setEditing };
 
   return (
@@ -83,6 +86,7 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
           <div>
             <h1>Settings</h1>
             <p className="hint">Signed in as {email}</p>
+            <p className="hint">Updates and changes are reflected on your calendar every 5 minutes.</p>
           </div>
           <div className="top-action">
             <a className="button open-calendar" href={googleCalendarUrl(email)}>
@@ -115,7 +119,7 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
         <div className="settings-grid">
           <section className="card settings-card required" aria-labelledby="required-title">
             <h2 id="required-title" className="section-title">Required</h2>
-            <Row title="Location" step="address" {...rows}
+            <Row title="Location" question={QUESTIONS.location} step="address" {...rows}
               edit={<LocationStep current={settings.place_name} onSaved={saved} onKeep={cancel} keepLabel="Cancel" />}>
               <p>{settings.place_name}</p>
               <p className="hint">Time zone: {settings.time_zone}</p>
@@ -123,7 +127,7 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
               <p className="hint">Calculated times use ISNA with standard Asr.</p>
             </Row>
 
-            <Row title="Main masjid" step="masjid" {...rows}
+            <Row title="Main masjid" question={QUESTIONS.masjid} step="masjid" {...rows}
               edit={<MasjidStep settings={settings} onSaved={saved} onCancel={cancel} skipLabel="I pray at home" />}>
               {atHome || !settings.main_masjid ? (
                 <p>I pray at home</p>
@@ -136,7 +140,7 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
             </Row>
 
             {!atHome && (
-              <Row title="Prayers at the masjid" step="weekly" {...rows}
+              <Row title="Prayers at the masjid" question={QUESTIONS.weekly} step="weekly" {...rows}
                 edit={<WeeklyStep initial={settings.weekly} masjidLabel={masjidLabel(settings)} onSaved={saved}
                   onCancel={settings.missing.includes("weekly") ? undefined : cancel} />}>
                 <ul className="plain">
@@ -152,8 +156,8 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
               </Row>
             )}
 
-            {settings.jumuah_masjids.length > 0 && (
-              <Row title="Jumuah pick" step="jumuah_pick" {...rows}
+            {hasJumuah && (
+              <Row title="Jumuah pick" question={JUMUAH_QUESTION} step="jumuah_pick" {...rows}
                 edit={<JumuahPickEditor settings={settings} onSaved={saved} onCancel={cancel} />}>
                 <p>{pickText(settings)}</p>
               </Row>
@@ -162,22 +166,6 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
 
           <section className="settings-card optional" aria-labelledby="optional-section-title">
             <h2 id="optional-section-title" className="section-title">Optional</h2>
-            <Row title="Jumuah masjids" step="jumuah" {...rows}
-              edit={<JumuahStep settings={settings} onSaved={saved} onCancel={cancel} />}>
-              {settings.jumuah_masjids.length === 0 ? (
-                <p>None picked</p>
-              ) : (
-                <ol className="plain">
-                  {settings.jumuah_masjids.map((m) => (
-                    <li key={m.id}>
-                      {masjidName(m)}
-                      <span className="hint detail">{m.iqamah_status}</span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </Row>
-
             {!atHome && settings.main_masjid && (
               <Row title="Short name" step="short_name" {...rows}
                 edit={<ShortNameEditor settings={settings} onSaved={saved} onCancel={cancel} />}>
@@ -185,15 +173,15 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
               </Row>
             )}
 
-            <Row title="How early for prayers" step="early" {...rows}
+            <Row title="How early for prayers" question={QUESTIONS.early} step="early" {...rows}
               edit={<EarlyEditor settings={settings} onSaved={saved} onCancel={cancel} jumuah={false} />}>
-              <p>{earlyText(settings.arrive_early_minutes)}</p>
+              <p>{minutesText(settings.arrive_early_minutes)}</p>
             </Row>
 
-            {settings.jumuah_masjids.length > 0 && (
-              <Row title="How early for Jumuah" step="jumuah_early" {...rows}
+            {hasJumuah && (
+              <Row title="How early for Jumuah" question={QUESTIONS.jumuahEarly} step="jumuah_early" {...rows}
                 edit={<EarlyEditor settings={settings} onSaved={saved} onCancel={cancel} jumuah />}>
-                <p>{jumuahEarlyText(settings.jumuah_arrive_early_minutes)}</p>
+                <p>{minutesText(settings.jumuah_arrive_early_minutes)}</p>
               </Row>
             )}
 
@@ -237,16 +225,18 @@ function firstMissing(settings: Settings): Editable | null {
   return step === "address" || step === "masjid" || step === "weekly" ? step : null;
 }
 
+// Just the answer: the question already says it's about Jumuah at the main masjid.
 function pickText(settings: Settings): string {
   const pick = settings.jumuah_pick;
-  const masjid = pick && settings.jumuah_masjids.find((m) => m.id === pick.masjid_id);
-  if (!pick || !masjid) return "The earliest Jumuah that fits your calendar";
-  const order = ["1st", "2nd", "3rd"][pick.order - 1] ?? `${pick.order}th`;
-  return `${order} Jumuah at ${masjidName(masjid)}`;
+  if (!pick || pick.masjid_id !== settings.main_masjid?.id) return "The earliest Jumuah that fits your calendar";
+  return `${["1st", "2nd", "3rd"][pick.order - 1] ?? `${pick.order}th`} Jumuah`;
 }
 
 type RowProps = {
+  // A short name, for screen readers and the Edit button, like "How early for prayers".
   title: string;
+  // What's shown as the label: the setup question when there is one. Otherwise the title.
+  question?: string;
   step: Editable;
   editing: Editable | null;
   onEdit: (step: Editable) => void;
@@ -258,7 +248,7 @@ type RowProps = {
 // with an Edit button, or its editor in the same place. Switching between the
 // two eases the row's height from old to new, so it opens and closes smoothly
 // instead of jumping. Skipped when the device asks for less motion.
-function Row({ title, step, editing, onEdit, edit, children }: RowProps) {
+function Row({ title, question, step, editing, onEdit, edit, children }: RowProps) {
   const open = editing === step;
   const row = useRef<HTMLElement>(null);
   const height = useRef(0);
@@ -297,7 +287,7 @@ function Row({ title, step, editing, onEdit, edit, children }: RowProps) {
       ) : (
         <div className="row-view">
           <div className="row-text">
-            <h3>{title}</h3>
+            <h3>{question ?? title}</h3>
             <div className="row-value">{children}</div>
           </div>
           <button type="button" className="secondary small" onClick={() => onEdit(step)} disabled={editing !== null}

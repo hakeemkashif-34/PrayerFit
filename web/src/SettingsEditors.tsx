@@ -8,7 +8,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { api, ApiError } from "./api";
 import { ColourPicker } from "./ColourPicker";
 import { JumuahChooser } from "./JumuahChooser";
-import { EARLY_ERROR, MAX_EARLY, wholeMinutes } from "./labels";
+import { EARLY_ERROR, MAX_EARLY, QUESTIONS, wholeMinutes } from "./labels";
 import { MinutesField } from "./MinutesField";
 import type { OptionalAnswers, SaveResponse, Settings, SlotKey } from "./types";
 
@@ -104,7 +104,7 @@ export function EarlyEditor({ settings, onSaved, onCancel, jumuah }: EditorProps
   return (
     <EditorForm title={jumuah ? "How early for Jumuah" : "How early for prayers"} onSave={save} onCancel={onCancel}>
       <MinutesField id={jumuah ? "jumuah-early" : "arrive-early"}
-        label={jumuah ? "How early do you want to arrive before Jumuah (Friday prayer)?" : "How early do you want to arrive before iqamah (daily prayers)?"}
+        label={jumuah ? QUESTIONS.jumuahEarly : QUESTIONS.early}
         value={text} onChange={setText} error={error} min={0} max={MAX_EARLY} />
     </EditorForm>
   );
