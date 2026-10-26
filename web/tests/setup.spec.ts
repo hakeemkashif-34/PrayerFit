@@ -134,7 +134,7 @@ test("the full setup: required page, optional page, then a filled calendar", asy
   await expect(page.getByRole("main").getByRole("heading", { level: 2 }).last()).toHaveText(
     "Generally speaking, which Jumuah would you like to attend?",
   );
-  await expect(page.getByRole("radio", { name: /Kanata Muslim Association 1st Jumuah 1:30 to 2:15 PM/ })).toBeChecked();
+  await expect(page.getByRole("radio", { name: /^1st Jumuah 1:30 to 2:15 PM/ })).toBeChecked();
   // Nothing about the masjid, grid, or Jumuah is saved until Next.
   expect(api.calls("PUT", "/api/settings/main-masjid")).toHaveLength(0);
   await page.getByRole("button", { name: "Next" }).click();

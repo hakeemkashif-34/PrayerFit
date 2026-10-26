@@ -1,20 +1,20 @@
 // The Jumuah chooser: "Generally speaking, which Jumuah would you like to
 // attend?" shown as a Friday in a day calendar. Times run down the side
-// from 11 AM to 4 PM. Each slot (1st, 2nd, 3rd) at the user's Jumuah
-// masjids is a block at its real time, from when to leave home to the end
-// of Jumuah. The rest of the day is greyed out. The user clicks a block to
-// pick it. The times are this week's, only as an example: the pick is saved
-// by order, not by time. Jumuah is always at the main masjid.
+// from 11 AM to 4 PM. Each slot (1st, 2nd, 3rd) at the main masjid is a
+// block covering just the Jumuah, from its start to its end. The rest of
+// the day is greyed out. The user clicks a block to pick it. The times are
+// this week's, only as an example: the pick is saved by order, not by time.
 //
 // It doesn't show the user's busy times. Every Friday, the calendar update
 // still checks the pick against their calendar.
 //
-// Blocks are placed by minute: top = minutes after the view's start, times
-// 2px. Slots whose blocks overlap go side by side.
+// Blocks are placed by minute (1.2px a minute), all in 1 column. A block is
+// never shorter than its 2 lines of text, so if that would make it reach the
+// next one, the next one moves down to keep a small gap.
 
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
-import { hourText, minutesIntoDay, spanText, timeText } from "./labels";
+import { hourText, minutesIntoDay, spanText } from "./labels";
 import type { JumuahChoices, JumuahSlot, SlotKey } from "./types";
 
 type Props = {
@@ -35,26 +35,29 @@ export const QUESTION = "Generally speaking, which Jumuah would you like to atte
 // The usual view: 11 AM to 4 PM. It grows if a block starts earlier or ends later.
 const VIEW_START = 11 * 60;
 const VIEW_END = 16 * 60;
-const PX_PER_MINUTE = 2;
+const PX_PER_MINUTE = 1.2;
+// Tall enough for "1st Jumuah ✓" and "12:45 to 1:30 PM", so nothing is cut off.
+const MIN_BLOCK_PX = 54;
+const GAP_PX = 6;
 
 export const sameSlot = (a: SlotKey | null, b: SlotKey | null) =>
   a !== null && b !== null && a.masjid_id === b.masjid_id && a.order === b.order;
 
-type Placed = { slot: JumuahSlot; leave: number; start: number; end: number; lane: number };
+type Placed = { slot: JumuahSlot; start: number; end: number; top: number; height: number };
 
-// Blocks that overlap (the 2nd leaving before the 1st ends) go side by side.
-// Each gets the first lane that's free by then.
-function place(slots: JumuahSlot[], zone: string): Placed[] {
-  const freeAt: number[] = [];
-  return slots.map((slot) => {
-    const leave = minutesIntoDay(slot.leave_at, zone);
-    const start = minutesIntoDay(slot.starts_at, zone);
-    const end = minutesIntoDay(slot.ends_at, zone);
-    let lane = freeAt.findIndex((free) => free <= leave);
-    if (lane === -1) lane = freeAt.length;
-    freeAt[lane] = end;
-    return { slot, leave, start, end, lane };
-  });
+// In time order, one above the other. Each block starts at its time, or just
+// under the block before it if that one is still there.
+function place(slots: JumuahSlot[], zone: string, y: (minutes: number) => number): Placed[] {
+  let bottom = -Infinity;
+  return slots
+    .map((slot) => ({ slot, start: minutesIntoDay(slot.starts_at, zone), end: minutesIntoDay(slot.ends_at, zone) }))
+    .sort((a, b) => a.start - b.start)
+    .map(({ slot, start, end }) => {
+      const top = Math.max(y(start), bottom + GAP_PX);
+      const height = Math.max(MIN_BLOCK_PX, (end - start) * PX_PER_MINUTE);
+      bottom = top + height;
+      return { slot, start, end, top, height };
+    });
 }
 
 export function noTimesText(name: string, where: "setup" | "settings"): string {
@@ -108,45 +111,39 @@ export function JumuahChooser({ masjidId, selected, onSelect, onLoaded, where = 
   }
 
   const zone = choices.time_zone;
-  const placed = place(choices.slots, zone);
-  const lanes = Math.max(...placed.map((p) => p.lane)) + 1;
-  const viewStart = Math.min(VIEW_START, Math.floor(Math.min(...placed.map((p) => p.leave)) / 60) * 60);
-  const viewEnd = Math.max(VIEW_END, Math.ceil(Math.max(...placed.map((p) => p.end)) / 60) * 60);
+  const starts = choices.slots.map((s) => minutesIntoDay(s.starts_at, zone));
+  const ends = choices.slots.map((s) => minutesIntoDay(s.ends_at, zone));
+  const viewStart = Math.min(VIEW_START, Math.floor(Math.min(...starts) / 60) * 60);
+  const viewEnd = Math.max(VIEW_END, Math.ceil(Math.max(...ends) / 60) * 60);
   const y = (minutes: number) => (minutes - viewStart) * PX_PER_MINUTE;
+  const placed = place(choices.slots, zone, y);
   const hours: number[] = [];
   for (let m = viewStart; m <= viewEnd; m += 60) hours.push(m);
-  const time = (iso: string) => timeText(iso, zone);
+  // A block moved down could reach past 4 PM, so the day grows to fit it.
+  const height = Math.max(y(viewEnd), ...placed.map((p) => p.top + p.height));
 
   return (
     <section className="chooser" aria-labelledby="chooser-title">
       <Heading id="chooser-title">{QUESTION}</Heading>
-      <p className="hint">
-        This week's Friday, as an example. Each block runs from when you leave home to the end of Jumuah.
-      </p>
+      <p className="hint">This week's Friday, as an example.</p>
       {notes}
 
       <div className="friday">
         <div className="friday-head" aria-hidden="true">Friday</div>
-        <div className="friday-body" style={{ height: y(viewEnd) }}>
+        <div className="friday-body" style={{ height }}>
           {hours.map((m) => (
             <div key={m} className="friday-hour" style={{ top: y(m) }} aria-hidden="true">
               <span>{hourText(m)}</span>
             </div>
           ))}
           <div className="friday-day" role="radiogroup" aria-labelledby="chooser-title">
-            {placed.map(({ slot, leave, start, end, lane }) => {
+            {placed.map(({ slot, top, height: blockHeight }) => {
               const isSelected = sameSlot(slot, selected);
-              const driving = start - leave;
               return (
                 <label
                   key={`${slot.masjid_id}-${slot.order}`}
                   className={`friday-slot${isSelected ? " selected" : ""}`}
-                  style={{
-                    top: y(leave),
-                    height: (end - leave) * PX_PER_MINUTE,
-                    left: `calc(${(lane / lanes) * 100}% + 4px)`,
-                    width: `calc(${100 / lanes}% - 8px)`,
-                  }}
+                  style={{ top, height: blockHeight }}
                 >
                   <input
                     type="radio"
@@ -155,19 +152,15 @@ export function JumuahChooser({ masjidId, selected, onSelect, onLoaded, where = 
                     checked={isSelected}
                     onChange={() => onSelect({ masjid_id: slot.masjid_id, order: slot.order })}
                   />
-                  {driving > 0 && (
-                    <span className="slot-leave" style={{ height: driving * PX_PER_MINUTE }}>
-                      Leave {time(slot.leave_at)}
-                    </span>
-                  )}
                   <span className="slot-main">
-                    <strong className="slot-name">{slot.masjid_label}</strong>
-                    <span>{slot.order_label}</span>
+                    <strong className="slot-name">
+                      {slot.order_label}
+                      {isSelected && <span className="slot-picked" aria-hidden="true"> ✓</span>}
+                    </strong>
                     <span>
                       {spanText(slot.starts_at, slot.ends_at, zone)}
                       {slot.length_estimated && <span className="visually-hidden"> (end time estimated)</span>}
                     </span>
-                    {isSelected && <span className="slot-picked">✓ Selected</span>}
                   </span>
                 </label>
               );

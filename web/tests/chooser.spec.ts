@@ -1,20 +1,20 @@
 // The Jumuah question at the bottom of the Required page, and on Settings.
-// Jumuah is always at the main masjid. It's
-// a Friday in a day calendar, each slot a block from when to leave home to
-// the end of Jumuah. The mock API has KMA's Jumuah at 1:30 (1st) and 2:30
-// (2nd), and Stittsville's at 1:15 (1st). Without a set length, each is 45
-// minutes. The drive is 14 minutes to KMA and 20 to Stittsville, and the
-// Jumuah "how early" is 5 in setup (10 on the finished Settings).
+// Jumuah is always at the main masjid. It's a Friday in a day calendar, each
+// slot a block covering just the Jumuah, all in 1 column. The mock API has
+// KMA's Jumuah at 1:30 (1st) and 2:30 (2nd), and Stittsville's at 1:15 (1st).
+// Without a set length, each is 45 minutes.
 
 import { expect, test, type Page } from "@playwright/test";
 import { finishedSettings, HOME_PLACE, KMA, MockApi, STITTSVILLE } from "./mock-api";
 
 const QUESTION = "Generally speaking, which Jumuah would you like to attend?";
-const KMA_1ST = /Kanata Muslim Association 1st Jumuah 1:30 to 2:15 PM/;
-const KMA_2ND = /Kanata Muslim Association 2nd Jumuah 2:30 to 3:15 PM/;
+const KMA_1ST = /^1st Jumuah 1:30 to 2:15 PM/;
+const KMA_2ND = /^2nd Jumuah 2:30 to 3:15 PM/;
 
 const slot = (page: Page, name: RegExp) => page.getByRole("radio", { name });
 const question = (page: Page) => page.getByRole("heading", { name: QUESTION });
+// Every block's text, together.
+const blockText = async (page: Page) => (await page.locator(".friday-slot").allTextContents()).join(" | ");
 
 // Page 1 with the location saved and a masjid picked (not saved yet).
 async function atMasjid(page: Page) {
@@ -33,7 +33,7 @@ test("the question comes last on the Required page, with the 1st Jumuah picked",
 
   const headings = page.getByRole("main").getByRole("heading", { level: 2 });
   await expect(headings.last()).toHaveText(QUESTION);
-  await expect(page.getByText("This week's Friday, as an example.")).toBeVisible();
+  await expect(page.locator(".chooser .hint")).toHaveText("This week's Friday, as an example.");
   // Each slot, from its start to its end.
   await expect(page.getByRole("radio")).toHaveCount(2);
   await expect(slot(page, KMA_1ST)).toBeChecked();
@@ -134,7 +134,7 @@ test("a different masjid asks again, about that masjid", async ({ page }) => {
   await page.getByRole("option", { name: /^Stittsville Masjid/ }).click();
 
   await expect(page.getByRole("radio")).toHaveCount(1);
-  await expect(slot(page, /Stittsville Masjid 1st Jumuah 1:15 to 2:00 PM/)).toBeChecked();
+  await expect(slot(page, /^1st Jumuah 1:15 to 2:00 PM/)).toBeChecked();
   await page.getByRole("button", { name: "Next" }).click();
   expect((await api.sent("PUT", "/api/settings/jumuah-pick", 1))[0].body).toEqual({ masjid_id: STITTSVILLE.id, order: 1 });
 });
@@ -173,8 +173,9 @@ test("on Settings, the pick is in the Required section and changed with the same
 
   await page.getByRole("button", { name: "Edit jumuah pick" }).click();
   await expect(question(page)).toBeVisible();
-  // Settings has a short name, so the blocks use it.
-  await expect(page.getByRole("radio", { name: /KMA 1st Jumuah/ })).toBeChecked();
+  // The same blocks as setup: no masjid name, just the Jumuah and its time.
+  await expect(page.getByRole("radio", { name: /^1st Jumuah 1:30 to 2:15 PM/ })).toBeChecked();
+  expect(await blockText(page)).not.toContain("KMA");
   await page.locator(".friday-slot", { hasText: "2nd Jumuah" }).click();
   await page.getByRole("button", { name: "Save" }).click();
 
@@ -185,7 +186,7 @@ test("on Settings, the pick is in the Required section and changed with the same
 
   // Editing again starts from the saved pick.
   await page.getByRole("button", { name: "Edit jumuah pick" }).click();
-  await expect(page.getByRole("radio", { name: /KMA 2nd Jumuah/ })).toBeChecked();
+  await expect(page.getByRole("radio", { name: /^2nd Jumuah/ })).toBeChecked();
 });
 
 test("Settings says when there are no Jumuah times to pick from", async ({ page }) => {
@@ -211,13 +212,14 @@ test("it looks like a Friday in a calendar: 11 AM to 4 PM, the rest greyed out",
   expect(await page.locator(".friday-day").evaluate((el) => getComputedStyle(el).backgroundImage)).toContain("gradient");
 });
 
-test("each block starts at the leave time and ends at the end of Jumuah", async ({ page }) => {
+test("each block covers only the Jumuah, with no drive and no masjid name", async ({ page }) => {
   await new MockApi().signedIn().install(page);
   await page.goto("/");
   await atMasjid(page);
-  // 1:30 Jumuah, 5 minutes early, a 14 minute drive: leave at 1:11. 45 minutes long: ends 2:15.
+  // 1:30 Jumuah, 45 minutes long: 1:30 to 2:15.
   const first = page.locator(".friday-slot", { hasText: "1st Jumuah" });
-  await expect(first.locator(".slot-leave")).toHaveText("Leave 1:11 PM");
+  await expect(first).toHaveText("1st Jumuah ✓1:30 to 2:15 PM (end time estimated)");
+  expect(await blockText(page)).not.toMatch(/Leave|Kanata/);
 
   const [block, hour1, hour2] = await Promise.all([
     first.boundingBox(),
@@ -225,21 +227,67 @@ test("each block starts at the leave time and ends at the end of Jumuah", async 
     page.locator(".friday-hour", { hasText: /^2 PM$/ }).boundingBox(),
   ]);
   const perMinute = (hour2!.y - hour1!.y) / 60;
-  // 11 minutes after 1 PM, and 64 minutes long, give or take a pixel.
-  expect(Math.abs(block!.y - (hour1!.y + 11 * perMinute))).toBeLessThan(2);
-  expect(Math.abs(block!.height - 64 * perMinute)).toBeLessThan(2);
+  // 30 minutes after 1 PM, and 45 minutes long, give or take a pixel.
+  expect(Math.abs(block!.y - (hour1!.y + 30 * perMinute))).toBeLessThan(2);
+  expect(Math.abs(block!.height - 45 * perMinute)).toBeLessThan(2);
 });
 
-test("the picked block is solid green with a tick, and only that one", async ({ page }) => {
+test("the Friday is shorter: 11 AM to 4 PM is 360px tall", async ({ page }) => {
+  await new MockApi().signedIn().install(page);
+  await page.goto("/");
+  await atMasjid(page);
+  await expect(slot(page, KMA_1ST)).toBeChecked();
+  const [eleven, four, body] = await Promise.all([
+    page.locator(".friday-hour", { hasText: /^11 AM$/ }).boundingBox(),
+    page.locator(".friday-hour", { hasText: /^4 PM$/ }).boundingBox(),
+    page.locator(".friday-body").boundingBox(),
+  ]);
+  expect(Math.round(four!.y - eleven!.y)).toBe(360);
+  expect(body!.height).toBeLessThan(380);
+});
+
+for (const where of ["setup", "settings"] as const) {
+  test(`blocks are in 1 column with a gap, and nothing in them is cut off (${where})`, async ({ page }) => {
+    const api = new MockApi().signedIn(where === "settings" ? finishedSettings() : undefined);
+    // 3 Jumuahs only 20 minutes apart, so the blocks would overlap by time.
+    api.jumuahTimes = { [KMA.id]: ["13:00", "13:20", "13:40"] };
+    await api.install(page);
+    await page.goto("/");
+    if (where === "settings") await page.getByRole("button", { name: "Edit jumuah pick" }).click();
+    else await atMasjid(page);
+    await expect(page.getByRole("radio")).toHaveCount(3);
+
+    const blocks = await page.locator(".friday-slot").evaluateAll((els) =>
+      els.map((el) => {
+        const box = el.getBoundingClientRect();
+        const inner = el.querySelector(".slot-main")!;
+        return {
+          top: box.top, bottom: box.bottom, left: box.left, width: box.width,
+          cut: inner.scrollHeight > inner.clientHeight + 1 || inner.scrollWidth > inner.clientWidth + 1
+            || el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1,
+        };
+      }),
+    );
+    // One above the other, the same width, a small gap between each.
+    expect(new Set(blocks.map((b) => Math.round(b.left))).size).toBe(1);
+    expect(new Set(blocks.map((b) => Math.round(b.width))).size).toBe(1);
+    for (let i = 1; i < blocks.length; i++) expect(blocks[i].top - blocks[i - 1].bottom).toBeGreaterThanOrEqual(4);
+    expect(blocks.map((b) => b.cut)).toEqual([false, false, false]);
+  });
+}
+
+test("the picked block is a lighter green with a small tick, and only that one", async ({ page }) => {
   await new MockApi().signedIn().install(page);
   await page.goto("/");
   await atMasjid(page);
   const picked = page.locator(".friday-slot.selected");
   await expect(picked).toHaveCount(1);
-  await expect(picked).toContainText("1st Jumuah");
-  await expect(picked).toContainText("✓ Selected");
-  await expect(page.locator(".friday-slot:not(.selected)")).not.toContainText("Selected");
+  // The tick sits right after "1st Jumuah", and the word "Selected" is gone.
+  await expect(picked.locator(".slot-name")).toHaveText("1st Jumuah ✓");
+  expect(await blockText(page)).not.toContain("Selected");
+  expect((await page.locator(".friday-slot:not(.selected)").allTextContents()).join(" ")).not.toContain("✓");
   const [background, text] = await picked.evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).color]);
-  expect(background).toBe("rgb(23, 102, 63)");
-  expect(text).toBe("rgb(255, 255, 255)");
+  // Lighter than the old solid green (23, 102, 63), with dark green text.
+  expect(background).toBe("rgb(185, 224, 196)");
+  expect(text).toBe("rgb(15, 74, 45)");
 });

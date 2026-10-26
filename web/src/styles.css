@@ -15,6 +15,10 @@
   --green-dark: #0f4a2d;
   /* A pale green for picked answers and the hovered suggestion. */
   --green-soft: #d7ecdc;
+  /* The picked Jumuah block. Dark green text on it is 7.1:1. */
+  --green-light: #b9e0c4;
+  /* The highlight behind "praying on time" on the landing page. */
+  --gold-soft: #f6e2a6;
   --on-green: #ffffff;
   /* Near-black for values and headings, grey-green for labels and hints. */
   --text: #0b1510;
@@ -258,6 +262,17 @@ strong {
   line-height: 1.45;
   color: var(--text);
   text-wrap: pretty;
+}
+
+/* "praying on time": bold, with a soft gold highlight that sits well next to the green.
+   Like a highlighter pen: a band behind the lower part of the words, not a box
+   the height of Amiri's tall line. It stays on 1 line so the phrase isn't split. */
+.hadith .on-time {
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  padding: 0 0.12em;
+  background: linear-gradient(transparent 38%, var(--gold-soft) 38%, var(--gold-soft) 88%, transparent 88%);
 }
 
 .hadith figcaption {
@@ -1073,9 +1088,12 @@ ul.colour-list li[aria-selected="true"] {
   border-radius: 8px;
 }
 
+/* All the blocks in 1 column. JumuahChooser.tsx sets each one's top and height. */
 .friday-slot {
   position: absolute;
   z-index: 1;
+  left: 4px;
+  right: 4px;
   display: flex;
   flex-direction: column;
   margin: 0;
@@ -1096,57 +1114,32 @@ ul.colour-list li[aria-selected="true"] {
   box-shadow: 0 0 0 2px var(--green);
 }
 
-/* From leaving home to Jumuah: a lighter part at the top of the block. */
-.slot-leave {
-  flex: none;
-  display: flex;
-  align-items: center;
-  padding: 0 8px;
-  font-size: 0.75rem;
-  font-weight: 650;
-  color: var(--green-dark);
-  background: var(--green-soft);
-  border-bottom: 1px dashed var(--green);
-  overflow: hidden;
-  white-space: nowrap;
-}
-
 .slot-main {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 6px 8px;
-  min-height: 0;
+  justify-content: center;
+  gap: 2px;
+  height: 100%;
+  padding: 6px 10px;
 }
 
-/* Each line keeps its own height. Without this, the name (which hides its
-   overflow) is the first line squeezed to nothing in a short block. */
+/* Each line keeps its own height, so a short block never squeezes one away. */
 .slot-main > * {
   flex: none;
 }
 
 .slot-name {
-  font-size: 0.875rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 0.9375rem;
 }
 
-/* The picked block: solid green with white text, and a tick. */
+/* The picked block: a light green with dark green text, and a tick next to its name. */
 .friday-slot.selected {
-  background: var(--green);
-  color: var(--on-green);
+  background: var(--green-light);
+  color: var(--green-dark);
   box-shadow: 0 0 0 3px var(--green-soft), 0 6px 14px -6px var(--shadow);
 }
 
-.friday-slot.selected .slot-leave {
-  background: var(--green-dark);
-  color: var(--on-green);
-  border-bottom-color: var(--on-green);
-}
-
 .slot-picked {
-  margin-top: 2px;
   font-weight: 800;
 }
 
