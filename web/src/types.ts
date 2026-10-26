@@ -146,5 +146,8 @@ export type Stats = {
   history: { day: string; signed_up: number; active: number }[];
   masjid_times: { name: string; source: string; last_success_at: string | null; error: string | null }[];
   // Masjids someone picked that aren't linked to MAWAQIT yet, most users first.
-  unlinked_masjids: { id: string; name: string; users: number }[];
+  // Linked automatically from my MAWAQIT list, so I can spot-check them.
+  auto_links: { id: string; name: string; list_name: string; mawaqit_url: string; distance_m: number | null; users: number }[];
+  // Picked by users with no MAWAQIT match, most users first, so I know which to add.
+  no_match_masjids: { id: string; name: string; users: number; reason: string }[];
 };

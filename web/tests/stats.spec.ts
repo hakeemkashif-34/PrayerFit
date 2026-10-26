@@ -36,30 +36,58 @@ test("the admin sees the 4 counts, a graph, and masjid times that need a look", 
   await expect(page.getByText(/@/)).toHaveCount(0);
 });
 
-test("masjids users picked that aren't linked to MAWAQIT are listed, most users first", async ({ page }) => {
+test("automatic links are listed for spot-checks, with the MAWAQIT page and distance", async ({ page }) => {
   const api = new MockApi().signedIn(finishedSettings());
   api.adminEmail = "hakeem@example.com";
-  api.stats.unlinked_masjids = [
-    { id: "osm-node-1", name: "Ottawa Main Mosque", users: 3 },
-    { id: "osm-node-2", name: "Barrhaven Masjid", users: 1 },
+  api.stats.auto_links = [
+    {
+      id: "a1", name: "Muslim Association of Canada", list_name: "MAC QIC",
+      mawaqit_url: "https://mawaqit.net/en/id/14718", distance_m: 42, users: 3,
+    },
+    {
+      id: "a2", name: "Kanata Muslim Association", list_name: "Kanata Muslim Association",
+      mawaqit_url: "https://mawaqit.net/en/id/9793", distance_m: 6, users: 0,
+    },
   ];
   await api.install(page);
   await page.goto("/stats");
-  const unlinked = page.getByRole("region", { name: "Masjids not linked to MAWAQIT" });
-  await expect(unlinked.locator("li")).toHaveText([
-    "Ottawa Main Mosque3 usersID: osm-node-1",
-    "Barrhaven Masjid1 userID: osm-node-2",
+  const links = page.getByRole("region", { name: "Linked automatically" });
+  await expect(links.locator("li")).toHaveText([
+    "Muslim Association of CanadaMatched to MAC QIC, 42 m awayhttps://mawaqit.net/en/id/147183 users · ID: a1",
+    "Kanata Muslim AssociationMatched to Kanata Muslim Association, 6 m awayhttps://mawaqit.net/en/id/97930 users · ID: a2",
   ]);
-  // The command to link one is right there.
-  await expect(unlinked).toContainText("python -m app.admin link-mawaqit");
+  await expect(links.getByRole("link", { name: "https://mawaqit.net/en/id/14718" })).toHaveAttribute("target", "_blank");
+  // How to undo a wrong one is right there.
+  await expect(links).toContainText("python -m app.admin unlink-mawaqit");
 });
 
-test("when every picked masjid is linked, the list says so", async ({ page }) => {
+test("masjids with no MAWAQIT match are listed, most users first, with why", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  api.adminEmail = "hakeem@example.com";
+  api.stats.no_match_masjids = [
+    { id: "m1", name: "Ottawa Islamic Centre", users: 3, reason: "No listed masjid within 200 m" },
+    { id: "m2", name: "Jamia Omar", users: 1, reason: "2 listed masjids are close, so it wasn't linked" },
+  ];
+  await api.install(page);
+  await page.goto("/stats");
+  const missing = page.getByRole("region", { name: "Masjids with no MAWAQIT match" });
+  await expect(missing.locator("li")).toHaveText([
+    "Ottawa Islamic CentreNo listed masjid within 200 m3 users · ID: m1",
+    "Jamia Omar2 listed masjids are close, so it wasn't linked1 user · ID: m2",
+  ]);
+  // The command to add one to the list is right there.
+  await expect(missing).toContainText("python -m app.admin add-mawaqit");
+});
+
+test("with no automatic links and every masjid linked, both lists say so", async ({ page }) => {
   const api = new MockApi().signedIn(finishedSettings());
   api.adminEmail = "hakeem@example.com";
   await api.install(page);
   await page.goto("/stats");
-  await expect(page.getByRole("region", { name: "Masjids not linked to MAWAQIT" })).toContainText(
+  await expect(page.getByRole("region", { name: "Linked automatically" })).toContainText(
+    "No masjids were linked from the MAWAQIT list yet.",
+  );
+  await expect(page.getByRole("region", { name: "Masjids with no MAWAQIT match" })).toContainText(
     "Every masjid someone picked is linked.",
   );
 });

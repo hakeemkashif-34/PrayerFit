@@ -17,6 +17,8 @@ const W = 640;
 const H = 260;
 const PAD = { top: 16, right: 92, bottom: 32, left: 40 };
 
+const usersText = (n: number) => (n === 1 ? "1 user" : `${n} users`);
+
 function dayText(day: string): string {
   const [y, m, d] = day.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: "UTC" });
@@ -150,21 +152,51 @@ export function StatsPage() {
         <Graph history={stats.history} />
       </section>
 
-      <section className="card stats-section" aria-labelledby="unlinked-title">
-        <h2 id="unlinked-title">Masjids not linked to MAWAQIT</h2>
-        {stats.unlinked_masjids.length === 0 ? (
+      <section className="card stats-section" aria-labelledby="auto-links-title">
+        <h2 id="auto-links-title">Linked automatically</h2>
+        {stats.auto_links.length === 0 ? (
+          <p>No masjids were linked from the MAWAQIT list yet.</p>
+        ) : (
+          <>
+            <p className="hint">
+              Newest first. Check that each pair is the same masjid. If one isn't, run{" "}
+              <code>python -m app.admin unlink-mawaqit --masjid &lt;ID&gt;</code>.
+            </p>
+            <ul className="plain masjid-problems">
+              {stats.auto_links.map((m) => (
+                <li key={m.id}>
+                  <strong>{m.name}</strong>
+                  <span className="hint detail">
+                    Matched to {m.list_name}
+                    {m.distance_m === null ? "" : `, ${m.distance_m} m away`}
+                  </span>
+                  <span className="hint detail">
+                    <a href={m.mawaqit_url} target="_blank" rel="noreferrer">{m.mawaqit_url}</a>
+                  </span>
+                  <span className="hint detail">{usersText(m.users)} · ID: <code>{m.id}</code></span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
+
+      <section className="card stats-section" aria-labelledby="no-match-title">
+        <h2 id="no-match-title">Masjids with no MAWAQIT match</h2>
+        {stats.no_match_masjids.length === 0 ? (
           <p>Every masjid someone picked is linked.</p>
         ) : (
           <>
             <p className="hint">
-              Most users first. Link one with <code>python -m app.admin link-mawaqit --masjid &lt;ID&gt; --url &lt;page&gt;</code>.
+              Most users first. If one is on MAWAQIT, add it to the list with{" "}
+              <code>python -m app.admin add-mawaqit &lt;link&gt; --name "&lt;name&gt;" --lat &lt;latitude&gt; --lon &lt;longitude&gt;</code>.
             </p>
             <ul className="plain masjid-problems">
-              {stats.unlinked_masjids.map((m) => (
+              {stats.no_match_masjids.map((m) => (
                 <li key={m.id}>
                   <strong>{m.name}</strong>
-                  <span className="hint detail">{m.users === 1 ? "1 user" : `${m.users} users`}</span>
-                  <span className="hint detail">ID: <code>{m.id}</code></span>
+                  <span className="hint detail">{m.reason}</span>
+                  <span className="hint detail">{usersText(m.users)} · ID: <code>{m.id}</code></span>
                 </li>
               ))}
             </ul>
