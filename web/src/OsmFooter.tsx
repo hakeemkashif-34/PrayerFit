@@ -8,7 +8,6 @@ export function OsmFooter() {
       <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
         © OpenStreetMap contributors
       </a>
-      <span aria-hidden="true"> · </span>
       <a href="https://openrouteservice.org/" target="_blank" rel="noreferrer">
         Drive times © openrouteservice.org by HeiGIT
       </a>

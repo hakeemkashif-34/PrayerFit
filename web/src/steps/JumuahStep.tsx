@@ -48,7 +48,7 @@ export function JumuahStep({ settings, onSaved, onCancel }: Props) {
             <li key={m.id}>
               <span>
                 <strong>{masjidName(m)}</strong>
-                {m.distance_km !== null && <span className="hint"> · {distanceText(m.distance_km)}</span>}
+                {m.distance_km !== null && <span className="hint detail">{distanceText(m.distance_km)}</span>}
               </span>
               <button
                 type="button"

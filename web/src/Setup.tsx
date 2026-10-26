@@ -102,7 +102,7 @@ export function Setup({ initial, onDone }: Props) {
             )}
             {page !== "finish" && (
               <p className="phone-progress">
-                Setup · Step {index + 1} of {PAGES.length}
+                Step {index + 1} of {PAGES.length}
               </p>
             )}
           </div>

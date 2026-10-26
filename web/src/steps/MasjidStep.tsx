@@ -52,7 +52,7 @@ export function MasjidStep({ settings, page = false, submitLabel = "Save", skipL
         <div className="current picked-masjid">
           <p>
             <strong>{masjidName(picked)}</strong>
-            {picked.distance_km !== null && <span className="hint"> · {distanceText(picked.distance_km)}</span>}
+            {picked.distance_km !== null && <span className="hint detail">{distanceText(picked.distance_km)}</span>}
           </p>
           <button type="button" className="link" onClick={() => setPicked(null)} disabled={busy}>
             Change

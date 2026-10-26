@@ -95,7 +95,7 @@ export function RequiredPage({ settings, onChange, onNext }: Props) {
           <div className="current picked-masjid">
             <p>
               <strong>{masjidName(picked)}</strong>
-              {picked.distance_km !== null && <span className="hint"> · {distanceText(picked.distance_km)}</span>}
+              {picked.distance_km !== null && <span className="hint detail">{distanceText(picked.distance_km)}</span>}
             </p>
             <button type="button" className="link" onClick={() => setChoice(null)} disabled={busy}>
               Change
