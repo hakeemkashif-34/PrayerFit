@@ -11,7 +11,8 @@ The rule:
 1. The user's pick (a masjid and a slot order), if its window fits.
 2. If it clashes, or that slot isn't on this Friday, the earliest Jumuah
    that fits, across all their Jumuah masjids.
-3. If every Jumuah clashes, keep the user's pick, and say so.
+3. If every Jumuah clashes, the 1st Jumuah of the day (the earliest one),
+   and say so.
 4. No pick yet: the earliest Jumuah that fits.
 """
 
@@ -56,6 +57,9 @@ class SlotWindow:
 class JumuahChoice:
     window: SlotWindow | None  # None when there are no slots at all
     reason: str
+    # "normal" when busy times didn't change the choice, "moved" when they
+    # did, "clash" when every Jumuah clashes. Saved with the event.
+    fit: str = "normal"
 
 
 def ordinal(order: int) -> str:
@@ -109,20 +113,21 @@ def choose_jumuah(
     picked = next(
         (w for w in windows if pick and (w.slot.masjid_id, w.slot.order) == (pick.masjid_id, pick.order)), None
     )
+    # What it would be on a free Friday, to tell whether busy times moved it.
+    free_choice = picked or windows[0]
+
+    if not fitting:
+        return JumuahChoice(
+            windows[0], "Every Jumuah clashes with your calendar, so this is the 1st Jumuah.", fit="clash"
+        )
+
+    def chose(window: SlotWindow, reason: str) -> JumuahChoice:
+        return JumuahChoice(window, reason, fit="normal" if window is free_choice else "moved")
 
     if pick is None:
-        if fitting:
-            return JumuahChoice(fitting[0], "The earliest Jumuah that fits your calendar.")
-        return JumuahChoice(windows[0], "Every Jumuah clashes with your calendar, so this is the earliest one.")
-
+        return chose(fitting[0], "The earliest Jumuah that fits your calendar.")
     yours = f"Your pick ({ordinal(pick.order)} Jumuah)"
     if picked is not None and picked.fits:
-        return JumuahChoice(picked, f"{yours}.")
-    if fitting:
-        why = "clashes with your calendar" if picked is not None else "isn't on this Friday"
-        return JumuahChoice(fitting[0], f"{yours} {why}, so this is the earliest Jumuah that fits.")
-    if picked is not None:
-        return JumuahChoice(picked, f"Every Jumuah clashes with your calendar. Kept your pick ({ordinal(pick.order)} Jumuah).")
-    return JumuahChoice(
-        windows[0], f"Every Jumuah clashes with your calendar, and {yours.lower()} isn't on this Friday, so this is the earliest one."
-    )
+        return chose(picked, f"{yours}.")
+    why = "clashes with your calendar" if picked is not None else "isn't on this Friday"
+    return chose(fitting[0], f"{yours} {why}, so this is the earliest Jumuah that fits.")

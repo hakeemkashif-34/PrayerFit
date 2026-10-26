@@ -52,10 +52,25 @@ def test_the_earliest_that_fits_is_across_all_masjids():
     assert chosen(choice) == (STITTSVILLE, 1)
 
 
-def test_every_slot_clashing_keeps_the_pick_with_a_note():
+def test_every_slot_clashing_gives_the_1st_jumuah_with_a_note():
     choice = choose(pick=JumuahPick(KMA, 2), busy=[(at(12, 0), at(16, 0))])
-    assert chosen(choice) == (KMA, 2)
-    assert choice.reason == "Every Jumuah clashes with your calendar. Kept your pick (2nd Jumuah)."
+    assert chosen(choice) == (KMA, 1)
+    assert choice.reason == "Every Jumuah clashes with your calendar, so this is the 1st Jumuah."
+    assert choice.fit == "clash"
+
+
+def test_the_1st_jumuah_is_the_earliest_across_all_masjids():
+    # Stittsville listed first, but KMA's 12:45 is the earliest of the day.
+    choice = choose(pick=JumuahPick(STITTSVILLE, 1), busy=[(at(11, 0), at(16, 0))], listed=[STITTSVILLE, KMA])
+    assert chosen(choice) == (KMA, 1)
+
+
+def test_fit_says_whether_busy_times_changed_the_choice():
+    assert choose(pick=JumuahPick(KMA, 2)).fit == "normal"
+    assert choose(pick=JumuahPick(KMA, 2), busy=[(at(12, 30), at(12, 40))]).fit == "normal"
+    assert choose(pick=JumuahPick(KMA, 1), busy=[(at(12, 30), at(13, 0))]).fit == "moved"
+    assert choose().fit == "normal"
+    assert choose(busy=[(at(12, 0), at(13, 30))]).fit == "moved"
 
 
 def test_a_pick_whose_slot_isnt_on_this_friday_is_treated_like_a_clash():
@@ -76,7 +91,7 @@ def test_no_pick_yet_gives_the_earliest_that_fits():
 def test_no_pick_and_everything_clashing_gives_the_earliest():
     choice = choose(busy=[(at(11, 0), at(16, 0))])
     assert chosen(choice) == (KMA, 1)
-    assert choice.reason == "Every Jumuah clashes with your calendar, so this is the earliest one."
+    assert choice.reason == "Every Jumuah clashes with your calendar, so this is the 1st Jumuah."
 
 
 def test_a_pick_for_a_masjid_no_longer_listed_doesnt_count():

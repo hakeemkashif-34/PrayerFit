@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.busy_times import busy_on
-from app.models import GoogleToken
+from app.models import GoogleToken, UserSettings
 from tests.calendar_helpers import clock, fetch, google_events, on, refresh, titled
 from tests.fake_google import OLD_SCOPES
 from tests.masjid_helpers import add_user, link, masjid_id, set_jumuah
@@ -147,3 +147,16 @@ def test_a_user_without_access_gets_the_earliest_jumuah(db, http, user, fake_goo
     refresh(db, http, user, NOW)
     assert clock(titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")) == "13:30"
     assert fake_google.freebusy_requests() == []
+
+
+def test_every_jumuah_clashing_gives_the_1st_jumuah_and_says_so(db, http, user, fake_google, ors_key):
+    with Session(db) as session:
+        row = session.scalars(select(UserSettings).where(UserSettings.user_id == user)).one()
+        row.jumuah_pick_masjid_id, row.jumuah_pick_order = masjid_id(db, "Kanata Muslim Association"), 2
+        session.commit()
+    fake_google.busy["user-a"] = [("2026-10-30T16:00:00Z", "2026-10-30T20:00:00Z")]
+    fetch(db, http, NOW)
+    refresh(db, http, user, NOW)
+    jumuah = titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")
+    assert clock(jumuah) == "13:30"
+    assert "Every Jumuah clashes with your calendar, so this is the 1st Jumuah." in jumuah["description"]
