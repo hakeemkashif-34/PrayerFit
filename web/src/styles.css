@@ -1429,6 +1429,12 @@ main.adding h1 {
   stroke-width: 1;
 }
 
+/* The invisible circle around each dot that catches the mouse or a tap. */
+.graph-box .dot-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
 /* A white ring keeps each dot clear of the line and the dots next to it. */
 .graph-box .dot {
   stroke: var(--card);

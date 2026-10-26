@@ -5,7 +5,7 @@
 //
 // Counts only. No emails, names, or addresses are ever sent.
 
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import type { Stats } from "./types";
 
@@ -39,6 +39,16 @@ function useWidth() {
 function Graph({ history }: { history: Stats["history"] }) {
   const [picked, setPicked] = useState<number | null>(null);
   const [ref, W] = useWidth();
+
+  // On a phone, tapping anywhere that isn't a dot hides the box.
+  useEffect(() => {
+    if (picked === null) return;
+    function hide(event: Event) {
+      if (!(event.target instanceof Element) || !event.target.closest(".dot-target")) setPicked(null);
+    }
+    document.addEventListener("pointerdown", hide);
+    return () => document.removeEventListener("pointerdown", hide);
+  }, [picked]);
   if (history.length === 0) return <p className="hint">Nobody has signed up yet.</p>;
 
   const max = Math.max(1, ...history.map((d) => d.total));
@@ -47,17 +57,6 @@ function Graph({ history }: { history: Stats["history"] }) {
   const y = (v: number) => PAD.top + (1 - v / max) * (H - PAD.top - PAD.bottom);
   const line = history.map((d, i) => `${i ? "L" : "M"}${x(i)},${y(d.total)}`).join(" ");
   const ticks = [...new Set([0, Math.round(max / 2), max])];
-
-  // Hovering or tapping anywhere picks the nearest day.
-  function nearest(event: PointerEvent<SVGSVGElement>) {
-    const box = event.currentTarget.getBoundingClientRect();
-    const px = event.clientX - box.left;
-    let best = 0;
-    history.forEach((_, i) => {
-      if (Math.abs(x(i) - px) < Math.abs(x(best) - px)) best = i;
-    });
-    setPicked(best);
-  }
 
   const point = picked === null ? null : history[picked];
   // Near an edge, the box opens inward so it never runs off the graph. It sits
@@ -68,7 +67,7 @@ function Graph({ history }: { history: Stats["history"] }) {
   const below = dotY < H / 2;
   return (
     <figure className="stats-graph">
-      <figcaption>Total users, one dot per day. Hover or tap a dot for that day.</figcaption>
+      <figcaption>Total users, one dot per day. Point at or tap a dot for that day.</figcaption>
       <div className="graph-box" ref={ref}>
         <svg
           viewBox={`0 0 ${W} ${H}`}
@@ -76,10 +75,6 @@ function Graph({ history }: { history: Stats["history"] }) {
           height={H}
           role="group"
           aria-label={`Total users over time, from ${dayText(history[0].day)} to ${dayText(history[last].day)}`}
-          onPointerMove={nearest}
-          onPointerDown={nearest}
-          // A tap also fires "leave" when the finger lifts, so only a mouse hides the box.
-          onPointerLeave={(e) => e.pointerType === "mouse" && setPicked(null)}
         >
           {ticks.map((t) => (
             <g key={t}>
@@ -95,18 +90,29 @@ function Graph({ history }: { history: Stats["history"] }) {
           {picked !== null && <line x1={x(picked)} x2={x(picked)} y1={PAD.top} y2={H - PAD.bottom} className="crosshair" />}
           <path d={line} stroke={LINE} className="series" />
           {history.map((d, i) => (
-            <circle
+            <g
               key={d.day}
-              cx={x(i)}
-              cy={y(d.total)}
-              r={picked === i ? 6 : 4}
-              fill={LINE}
-              className={picked === i ? "dot picked" : "dot"}
-              tabIndex={0}
-              aria-label={`${dayText(d.day)}: ${d.signed_up} signed up, ${d.total} in total`}
-              onFocus={() => setPicked(i)}
-              onBlur={() => setPicked(null)}
-            />
+              className="dot-target"
+              // A mouse shows the box only while it's over the dot, like YouTube.
+              onPointerEnter={(e) => e.pointerType === "mouse" && setPicked(i)}
+              onPointerLeave={(e) => e.pointerType === "mouse" && setPicked((now) => (now === i ? null : now))}
+              // A finger has no hover, so a tap shows it. Tapping anywhere else hides it (see below).
+              onPointerDown={(e) => e.pointerType !== "mouse" && setPicked(i)}
+            >
+              {/* A bigger, invisible circle around each dot, so it's easy to point at or tap. */}
+              <circle cx={x(i)} cy={y(d.total)} r={12} className="dot-hit" />
+              <circle
+                cx={x(i)}
+                cy={y(d.total)}
+                r={picked === i ? 6 : 4}
+                fill={LINE}
+                className={picked === i ? "dot picked" : "dot"}
+                tabIndex={0}
+                aria-label={`${dayText(d.day)}: ${d.signed_up} signed up, ${d.total} in total`}
+                onFocus={() => setPicked(i)}
+                onBlur={() => setPicked(null)}
+              />
+            </g>
           ))}
         </svg>
         {point && picked !== null && (

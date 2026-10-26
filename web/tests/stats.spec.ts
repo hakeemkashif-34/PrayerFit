@@ -45,19 +45,46 @@ test("the graph has one dot per day, and hovering a dot shows that day", async (
   expect(covers).toBe(false);
 });
 
-test("tapping a dot shows that day too, and it stays up", async ({ page }) => {
+test("moving the mouse off the dot hides the box, and the rest of the graph shows nothing", async ({ page }) => {
   await openStats(page);
-  await page.locator(".graph-box .dot").first().dispatchEvent("pointerdown", { pointerType: "touch" });
-  await page.locator(".graph-box svg").dispatchEvent("pointerleave", { pointerType: "touch" });
+  const dots = page.locator(".graph-box .dot");
+  await dots.nth(2).hover();
+  await expect(tip(page)).toContainText("Oct 22");
+  // A spot in the graph away from every dot: the middle of the empty area under the line.
+  const graph = (await page.locator(".graph-box svg").boundingBox())!;
+  await page.mouse.move(graph.x + graph.width * 0.5, graph.y + graph.height * 0.85);
+  await expect(tip(page)).toHaveCount(0);
+  // Moving around the empty area never shows it either.
+  await page.mouse.move(graph.x + graph.width * 0.3, graph.y + graph.height * 0.8);
+  await expect(tip(page)).toHaveCount(0);
+});
+
+test("tapping a dot shows the box, and tapping anywhere else hides it", async ({ page }) => {
+  await openStats(page);
+  const first = page.locator(".graph-box .dot").first();
+  await first.dispatchEvent("pointerdown", { pointerType: "touch" });
+  // Lifting the finger fires "leave", which must not hide it.
+  await first.dispatchEvent("pointerleave", { pointerType: "touch" });
   await expect(tip(page)).toContainText("Oct 20");
   await expect(tip(page)).toContainText("30 signed up that day");
   await expect(tip(page)).toContainText("30 in total");
+  // A tap on another dot moves the box there.
+  await page.locator(".graph-box .dot").nth(3).dispatchEvent("pointerdown", { pointerType: "touch" });
+  await expect(tip(page)).toContainText("Oct 23");
+  // A tap anywhere else hides it.
+  await page.getByRole("heading", { level: 1 }).dispatchEvent("pointerdown", { pointerType: "touch" });
+  await expect(tip(page)).toHaveCount(0);
 });
 
 test("the dots work with the keyboard", async ({ page }) => {
   await openStats(page);
   await page.locator(".graph-box .dot").nth(2).focus();
   await expect(tip(page)).toContainText("Oct 22");
+  // Tab moves to the next day, and leaving the graph hides it.
+  await page.keyboard.press("Tab");
+  await expect(tip(page)).toContainText("Oct 23");
+  await page.locator(".graph-box .dot").nth(3).blur();
+  await expect(tip(page)).toHaveCount(0);
   await expect(page.locator(".graph-box .dot").nth(2)).toHaveAttribute("aria-label", "Oct 22: 2 signed up, 35 in total");
 });
 
