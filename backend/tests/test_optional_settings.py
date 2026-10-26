@@ -141,16 +141,6 @@ def test_changing_the_short_name_renames_the_events(set_up, fake_google):
     assert "Isha at Kanata" in titles and "Isha at KMA" not in titles
 
 
-def test_jumuah_masjids_keep_the_order_they_were_listed_in(set_up):
-    stittsville = pick_masjid(set_up, "Stittsville", "Stittsville Masjid")
-    jamia = pick_masjid(set_up, "Jamia Omar", "Jamia Omar")
-    kma = set_up.get("/settings").json()["main_masjid"]
-    order = [jamia["id"], kma["id"], stittsville["id"]]
-    response = set_up.put("/settings/jumuah", json={"masjid_ids": order})
-    assert [m["id"] for m in response.json()["settings"]["jumuah_masjids"]] == order
-    assert [m["id"] for m in set_up.get("/settings").json()["jumuah_masjids"]] == order
-
-
 def test_a_save_while_an_update_runs_says_its_waiting(set_up, db):
     with Session(db) as session:
         job = session.get(UpdateJob, f"update:{user_id(db, 'user-a')}")

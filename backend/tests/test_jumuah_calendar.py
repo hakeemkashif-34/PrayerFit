@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Masjid, UpdateJob, UserSettings
 from tests.calendar_helpers import clock, fetch, google_events, on, refresh, source, titled
-from tests.masjid_helpers import add_masjid, add_user, link, masjid_id, set_jumuah
+from tests.masjid_helpers import add_masjid, add_user, link, masjid_id
 from tests.mawaqit_pages import conf, page
 
 TORONTO = ZoneInfo("America/Toronto")
@@ -47,16 +47,20 @@ def friday(fake_google, day: date = FRIDAY) -> list[str]:
     return [e["summary"] for e in on(google_events(fake_google), day)]
 
 
-def test_no_jumuah_masjids_means_a_normal_friday(db, http, user, fake_google):
+def test_praying_at_home_means_a_normal_friday(db, http, fake_google, fake_mawaqit):
+    # Jumuah is always at the main masjid, so someone who prays at home has no Jumuah.
+    uid = add_user(fake_google, db, "user-a", masjid_name=None)
+    kma = add_masjid(db, "Kanata Muslim Association")
+    link(db, kma, "kma-kanata", fake_mawaqit)
     fetch(db, http, NOW)
-    refresh(db, http, user, NOW)
-    assert "Dhuhr at KMA" in friday(fake_google)
+    refresh(db, http, uid, NOW)
+    assert "Dhuhr" in friday(fake_google)
     assert not [s for s in friday(fake_google) if "Jumuah" in s]
-    assert "description" not in titled(google_events(fake_google), FRIDAY, "Dhuhr at KMA")
+    fajr = titled(google_events(fake_google), FRIDAY, "Fajr")
+    assert source(db, fajr).startswith("Calculated (ISNA, standard Asr)")
 
 
 def test_jumuah_replaces_friday_dhuhr_at_the_earliest_slot(db, http, user, fake_google, ors_key):
-    set_jumuah(db, "user-a", ["Kanata Muslim Association"])
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
     assert friday(fake_google) == [
@@ -74,7 +78,6 @@ def test_jumuah_replaces_friday_dhuhr_at_the_earliest_slot(db, http, user, fake_
 
 
 def test_a_set_jumuah_length_is_used(db, http, user, fake_google):
-    set_jumuah(db, "user-a", ["Kanata Muslim Association"])
     set_length(db, "Kanata Muslim Association", 40)
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
@@ -83,7 +86,6 @@ def test_a_set_jumuah_length_is_used(db, http, user, fake_google):
 
 
 def test_the_jumuah_how_early_is_separate_from_prayers(db, http, user, fake_google, ors_key):
-    set_jumuah(db, "user-a", ["Kanata Muslim Association"])
     set_settings(db, user, arrive_early_minutes=0, jumuah_arrive_early_minutes=20)
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
@@ -93,7 +95,6 @@ def test_the_jumuah_how_early_is_separate_from_prayers(db, http, user, fake_goog
 
 
 def test_the_users_pick_is_used(db, http, user, fake_google):
-    set_jumuah(db, "user-a", ["Kanata Muslim Association"])
     set_settings(db, user, jumuah_pick_masjid_id=masjid_id(db, "Kanata Muslim Association"), jumuah_pick_order=2)
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
@@ -103,7 +104,6 @@ def test_the_users_pick_is_used(db, http, user, fake_google):
 
 
 def test_only_the_coming_friday_uses_mawaqits_jumuah_times(db, http, user, fake_google):
-    set_jumuah(db, "user-a", ["Kanata Muslim Association"])
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
     assert "Jumuah at KMA" in friday(fake_google, FRIDAY)
@@ -113,7 +113,6 @@ def test_only_the_coming_friday_uses_mawaqits_jumuah_times(db, http, user, fake_
 
 
 def test_a_read_after_friday_covers_the_next_one(db, http, user, fake_google, fake_mawaqit):
-    set_jumuah(db, "user-a", ["Kanata Muslim Association"])
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
     with Session(db) as session:
@@ -133,9 +132,8 @@ def test_a_read_after_friday_covers_the_next_one(db, http, user, fake_google, fa
 
 
 def test_no_usable_jumuah_times_follows_the_weekly_grid(db, http, fake_google):
+    # KMA isn't linked to MAWAQIT, so it has no Jumuah times.
     uid = add_user(fake_google, db, "user-a", masjid_name="Kanata Muslim Association", short_name="KMA", at_masjid=WEEKDAYS)
-    add_masjid(db, "Jamia Omar")  # not linked to MAWAQIT, so no Jumuah times
-    set_jumuah(db, "user-a", ["Jamia Omar"])
     refresh(db, http, uid, NOW)
     dhuhr = titled(google_events(fake_google), FRIDAY, "Dhuhr at KMA")
     assert "description" not in dhuhr
@@ -144,27 +142,13 @@ def test_no_usable_jumuah_times_follows_the_weekly_grid(db, http, fake_google):
 def test_a_masjid_with_no_jumuah_on_its_page(db, http, fake_google, fake_mawaqit):
     uid = add_user(fake_google, db, "user-a", masjid_name="Kanata Muslim Association", short_name="KMA", at_masjid=WEEKDAYS)
     link(db, masjid_id(db, "Kanata Muslim Association"), "kma-kanata", fake_mawaqit, conf(jumua=None, jumua2=None))
-    set_jumuah(db, "user-a", ["Kanata Muslim Association"])
     fetch(db, http, NOW)
     refresh(db, http, uid, NOW)
     dhuhr = titled(google_events(fake_google), FRIDAY, "Dhuhr at KMA")
     assert clock(dhuhr) == "13:00"  # KMA's Dhuhr iqamah
 
 
-def test_someone_who_prays_at_home_still_gets_jumuah(db, http, fake_google, fake_mawaqit):
-    uid = add_user(fake_google, db, "user-a", masjid_name=None)
-    kma = add_masjid(db, "Kanata Muslim Association")
-    link(db, kma, "kma-kanata", fake_mawaqit)
-    set_jumuah(db, "user-a", ["Kanata Muslim Association"])
-    fetch(db, http, NOW)
-    refresh(db, http, uid, NOW)
-    assert "Jumuah at Kanata Muslim Association" in friday(fake_google)
-    fajr = titled(google_events(fake_google), FRIDAY, "Fajr")
-    assert source(db, fajr).startswith("Calculated (ISNA, standard Asr)")
-
-
 def test_jumuah_stays_put_when_nothing_changes(db, http, user, fake_google, ors_key):
-    set_jumuah(db, "user-a", ["Kanata Muslim Association"])
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
     writes = len(fake_google.writes())
@@ -173,7 +157,6 @@ def test_jumuah_stays_put_when_nothing_changes(db, http, user, fake_google, ors_
 
 
 def test_each_prayer_block_has_its_length_and_jumuah_uses_the_masjids(db, http, user, fake_google):
-    set_jumuah(db, "user-a", ["Kanata Muslim Association"])
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
 

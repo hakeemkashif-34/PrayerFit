@@ -161,8 +161,6 @@ class UserSettings(Base):
     )
     # Like "KMA". Used in event titles instead of the full name.
     main_masjid_short_name: Mapped[str | None] = mapped_column(String(40))
-    # True once Jumuah masjids are saved on the settings page. Not part of setup for now.
-    jumuah_saved: Mapped[bool] = mapped_column(default=False)
     # The optional setup step. True once it's saved or skipped.
     optional_saved: Mapped[bool] = mapped_column(default=False, server_default="false")
     # How many minutes before iqamah the user wants to arrive, 0 to 60.
@@ -234,22 +232,6 @@ class WeeklyMasjidPrayers(Base):
     asr: Mapped[bool] = mapped_column(default=False)
     maghrib: Mapped[bool] = mapped_column(default=False)
     isha: Mapped[bool] = mapped_column(default=False)
-
-
-class UserJumuahMasjid(Base):
-    """A masjid the user can go to for Jumuah. A user can have several."""
-
-    __tablename__ = "user_jumuah_masjids"
-
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-    )
-    masjid_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("masjids.id", ondelete="CASCADE"), primary_key=True
-    )
-    # The order the user listed them in, 0 first. The Jumuah picker uses
-    # it when drive times are unknown.
-    position: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
 
 
 class MasjidSource(Base):

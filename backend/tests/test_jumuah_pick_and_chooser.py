@@ -52,8 +52,8 @@ def with_times(set_up, db, http, fake_mawaqit, kma):
     return set_up
 
 
-def choices(client, masjid_ids: list[str] | None = None) -> dict:
-    response = client.post("/jumuah/slots", json={"masjid_ids": masjid_ids or []})
+def choices(client, masjid_id: str | None = None) -> dict:
+    response = client.post("/jumuah/slots", json={"masjid_id": masjid_id})
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -92,22 +92,28 @@ def test_a_pick_needs_both_a_masjid_and_a_slot(set_up, kma):
     assert set_up.put("/settings/jumuah-pick", json={"masjid_id": kma}).status_code == 422
 
 
-def test_removing_the_picked_masjid_clears_the_pick(with_times, kma):
-    other = pick_masjid(with_times, "Stittsville", "Stittsville Masjid")
-    with_times.put("/settings/jumuah", json={"masjid_ids": [kma, other["id"]]})
-    with_times.put("/settings/jumuah-pick", json={"masjid_id": other["id"], "order": 1})
-    response = with_times.put("/settings/jumuah", json={"masjid_ids": [kma]})
-    assert response.json()["settings"]["jumuah_pick"] is None
-    # Keeping the picked masjid keeps the pick.
+def test_a_new_main_masjid_resets_the_pick_to_its_1st_jumuah(with_times, kma):
     with_times.put("/settings/jumuah-pick", json={"masjid_id": kma, "order": 2})
-    other = pick_masjid(with_times, "Jamia Omar", "Jamia Omar")
-    response = with_times.put("/settings/jumuah", json={"masjid_ids": [other["id"], kma]})
+    # Saving the same main masjid again keeps the pick.
+    response = with_times.put("/settings/main-masjid", json={"choice": "masjid", "masjid_id": kma})
     assert response.json()["settings"]["jumuah_pick"] == {"masjid_id": kma, "order": 2}
+    # Jumuah is always at the main masjid, so a new one starts at its 1st Jumuah.
+    other = pick_masjid(with_times, "Stittsville", "Stittsville Masjid")
+    response = with_times.put("/settings/main-masjid", json={"choice": "masjid", "masjid_id": other["id"]})
+    assert response.json()["settings"]["jumuah_pick"] == {"masjid_id": other["id"], "order": 1}
+    # Praying at home means no Jumuah, so no pick.
+    response = with_times.put("/settings/main-masjid", json={"choice": "home"})
+    assert response.json()["settings"]["jumuah_pick"] is None
 
 
-def test_the_pick_must_be_a_jumuah_masjid(set_up):
+def test_the_pick_must_be_at_the_main_masjid(set_up):
     other = pick_masjid(set_up, "Jamia Omar", "Jamia Omar")
     assert set_up.put("/settings/jumuah-pick", json={"masjid_id": other["id"], "order": 1}).status_code == 404
+
+
+def test_there_is_no_jumuah_masjids_setting(set_up, kma):
+    assert set_up.put("/settings/jumuah", json={"masjid_ids": [kma]}).status_code in (404, 405)
+    assert "jumuah_masjids" not in set_up.get("/settings").json()
 
 
 # ---- The chooser ----
@@ -167,26 +173,24 @@ def test_setup_can_ask_about_a_masjid_it_hasnt_saved_yet(with_times, db, http, f
     with Session(db) as session:
         run_fetch(session, http, uuid.UUID(other["id"]), NOW, force=True)
 
-    data = choices(with_times, [other["id"]])
+    data = choices(with_times, other["id"])
     assert [(s["masjid_label"], s["order_label"], local(s["starts_at"])) for s in data["slots"]] == [
         ("Stittsville Masjid", "1st Jumuah", "13:15"),
     ]
     assert data["selected"] == {"masjid_id": other["id"], "order": 1}
-    # Nothing was saved: KMA is still the main masjid and the only Jumuah masjid.
-    settings = with_times.get("/settings").json()
-    assert [m["id"] for m in settings["jumuah_masjids"]] == [kma]
+    # Nothing was saved: KMA is still the main masjid.
+    assert with_times.get("/settings").json()["main_masjid"]["id"] == kma
 
 
 def test_a_masjid_that_cant_be_picked_is_refused(set_up):
-    assert set_up.post("/jumuah/slots", json={"masjid_ids": [str(uuid.uuid4())]}).status_code == 404
+    assert set_up.post("/jumuah/slots", json={"masjid_id": str(uuid.uuid4())}).status_code == 404
 
 
 def test_the_chooser_needs_sign_in(client):
     assert client.post("/jumuah/slots", json={}).status_code == 401
 
 
-def test_a_masjid_without_times_is_named_next_to_one_with_times(with_times, db, kma):
-    other = pick_masjid(with_times, "Jamia Omar", "Jamia Omar")
-    data = choices(with_times, [kma, other["id"]])
-    assert [s["masjid_label"] for s in data["slots"]] == ["KMA", "KMA"]
-    assert data["no_times"] == ["Jamia Omar"]
+def test_someone_who_prays_at_home_has_no_jumuah_question(set_up):
+    set_up.put("/settings/main-masjid", json={"choice": "home"})
+    data = choices(set_up)
+    assert (data["slots"], data["selected"], data["no_times"]) == ([], None, [])

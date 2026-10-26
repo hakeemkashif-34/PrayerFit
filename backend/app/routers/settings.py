@@ -12,7 +12,7 @@ from typing import Annotated, Literal
 import httpx2
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -28,7 +28,7 @@ from app.http_client import get_http
 from app.event_plan import date_text
 from app.masjid_times.freshness import FRESH_FOR, Freshness, freshness
 from app.jumuah_choices import JumuahChoices, jumuah_choices
-from app.models import Masjid, MasjidSource, PrayerEvent, User, UserJumuahMasjid, WeeklyMasjidPrayers
+from app.models import Masjid, MasjidSource, PrayerEvent, User, WeeklyMasjidPrayers
 from app.prayer_sync import SyncIncomplete
 from app.prayer_times import DEFAULT_TIMEZONE
 from app.update_jobs import queue_update, run_update
@@ -38,9 +38,7 @@ from app.user_settings import (
     DEFAULT_COLOR_ID,
     DEFAULT_JUMUAH_ARRIVE_EARLY_MINUTES,
     find_settings,
-    follow_main_masjid,
     get_settings,
-    jumuah_masjids,
     masjid_label,
     missing_steps,
     read_address,
@@ -106,9 +104,6 @@ class SettingsOut(BaseModel):
     main_masjid: MasjidOut | None
     main_masjid_short_name: str | None
     weekly: list[WeekdayPrayers]
-    jumuah_saved: bool
-    # In the order the user listed them.
-    jumuah_masjids: list[MasjidOut]
     # The optional step: minutes to arrive before iqamah, and Google colour IDs.
     arrive_early_minutes: int
     jumuah_arrive_early_minutes: int
@@ -185,11 +180,9 @@ def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
     home = read_location(row)
     main = db.get(Masjid, row.main_masjid_id) if row.main_masjid_id else None
     missing = missing_steps(db, row)
-    listed = jumuah_masjids(db, user_id)
-    # Each masjid the user uses, once, with the name they see: the short name for the main masjid.
+    # The only masjid the user uses (Jumuah is there too), by the name they see.
     used_main = main if row.main_masjid_choice == "masjid" else None
     labelled = [(used_main, masjid_label(used_main, row.main_masjid_short_name))] if used_main else []
-    labelled += [(m, masjid_label(m, None)) for m in listed if not used_main or m.id != used_main.id]
     return SettingsOut(
         setup_complete=row.setup_completed_at is not None and not missing,
         missing=missing,
@@ -203,8 +196,6 @@ def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
             WeekdayPrayers(weekday=d.weekday, **{p: getattr(d, p) for p in PRAYERS})
             for d in weekly_rows(db, user_id)
         ],
-        jumuah_saved=row.jumuah_saved,
-        jumuah_masjids=[_masjid_out(db, m, home, now, zone) for m in listed],
         arrive_early_minutes=row.arrive_early_minutes or 0,
         jumuah_arrive_early_minutes=row.jumuah_arrive_early_minutes,
         jumuah_pick=(
@@ -491,21 +482,23 @@ class MainMasjidRequest(BaseModel):
 @router.put("/settings/main-masjid", response_model=SaveResponse)
 def save_main_masjid(request: MainMasjidRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> SaveResponse:
     row = get_settings(db, user.id)
-    old_main_id = row.main_masjid_id if row.main_masjid_choice == "masjid" else None
     if request.choice == "home":
-        follow_main_masjid(db, row, old_main_id, None)
+        # Praying at home means no Jumuah, so no Jumuah pick either.
         row.main_masjid_choice = "home"
         row.main_masjid_id = None
         row.main_masjid_short_name = None
+        row.jumuah_pick_masjid_id = row.jumuah_pick_order = None
         return _saved(db, http, user, now)
 
     masjid = usable_masjid(db, user.id, request.masjid_id) if request.masjid_id else None
     if masjid is None:
         raise HTTPException(status_code=404, detail={"message": "Pick a masjid from the suggestions."})
-    if row.main_masjid_id != masjid.id:
-        # A short name belongs to one masjid. Picking the same one again keeps it.
-        row.main_masjid_short_name = None
-    follow_main_masjid(db, row, old_main_id, masjid.id)
+    if row.main_masjid_id != masjid.id or row.jumuah_pick_masjid_id != masjid.id:
+        # A short name and a Jumuah pick belong to one masjid. Jumuah is always at the
+        # main masjid, so a new one starts at its 1st Jumuah. Picking the same one again keeps both.
+        if row.main_masjid_id != masjid.id:
+            row.main_masjid_short_name = None
+        row.jumuah_pick_masjid_id, row.jumuah_pick_order = masjid.id, 1
     row.main_masjid_choice = "masjid"
     row.main_masjid_id = masjid.id
     return _saved(db, http, user, now)
@@ -535,34 +528,6 @@ def save_weekly(request: WeeklyRequest, user: UserDep, db: DbDep, http: HttpDep,
             db.add(row)
         for prayer in PRAYERS:
             setattr(row, prayer, getattr(day, prayer))
-    return _saved(db, http, user, now)
-
-
-# ---- Jumuah masjids (settings page only, for now) ----
-
-
-class JumuahRequest(BaseModel):
-    # Empty is allowed: Jumuah isn't required of everyone.
-    masjid_ids: list[uuid.UUID] = Field(max_length=10)
-
-
-@router.put("/settings/jumuah", response_model=SaveResponse)
-def save_jumuah(request: JumuahRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> SaveResponse:
-    ids = list(dict.fromkeys(request.masjid_ids))  # drop repeats, keep order
-    for masjid_id in ids:
-        if usable_masjid(db, user.id, masjid_id) is None:
-            raise HTTPException(status_code=404, detail={"message": "Pick Jumuah masjids from the suggestions."})
-    db.execute(delete(UserJumuahMasjid).where(UserJumuahMasjid.user_id == user.id))
-    # The order matters: when 2 slots start at the same time, the Jumuah picker uses the one listed first.
-    db.add_all(
-        UserJumuahMasjid(user_id=user.id, masjid_id=masjid_id, position=position)
-        for position, masjid_id in enumerate(ids)
-    )
-    row = get_settings(db, user.id)
-    row.jumuah_saved = True
-    if row.jumuah_pick_masjid_id is not None and row.jumuah_pick_masjid_id not in ids:
-        # A pick at a masjid that's no longer listed can't be used, so don't keep showing it.
-        row.jumuah_pick_masjid_id = row.jumuah_pick_order = None
     return _saved(db, http, user, now)
 
 
@@ -610,8 +575,10 @@ def save_jumuah_pick(request: JumuahPickRequest, user: UserDep, db: DbDep, http:
     row = get_settings(db, user.id)
     if (request.masjid_id is None) != (request.order is None):
         raise HTTPException(status_code=422, detail={"message": "Send both a masjid and a slot, or neither."})
-    if request.masjid_id is not None and request.masjid_id not in {m.id for m in jumuah_masjids(db, user.id)}:
-        raise HTTPException(status_code=404, detail={"message": "Pick one of your Jumuah masjids."})
+    main_id = row.main_masjid_id if row.main_masjid_choice == "masjid" else None
+    if request.masjid_id is not None and request.masjid_id != main_id:
+        # Jumuah is always at the main masjid.
+        raise HTTPException(status_code=404, detail={"message": "Pick a Jumuah at your main masjid."})
     row.jumuah_pick_masjid_id = request.masjid_id
     row.jumuah_pick_order = request.order
     return _saved(db, http, user, now)
@@ -621,27 +588,24 @@ def save_jumuah_pick(request: JumuahPickRequest, user: UserDep, db: DbDep, http:
 
 
 class SlotsRequest(BaseModel):
-    # The masjids setup is about to save. Empty means the saved Jumuah masjids.
-    masjid_ids: list[uuid.UUID] = Field(default=[], max_length=11)
+    # The main masjid setup is about to save. Left out, the saved main masjid is used.
+    masjid_id: uuid.UUID | None = None
 
 
 @router.post("/jumuah/slots", response_model=JumuahChoices)
 def jumuah_slots_for_user(request: SlotsRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> JumuahChoices:
-    """Each Jumuah slot at the user's Jumuah masjids, with this week's times as an example.
+    """Each Jumuah slot at the user's main masjid, with this week's times as an example.
 
-    masjid_ids lists the masjids setup is about to save, so the question can be
-    answered on the same page as the masjid. Without it, the saved Jumuah masjids are used.
+    masjid_id is the masjid setup is about to save, so the question can be
+    answered on the same page as the masjid. Jumuah is always at the main masjid.
     A POST because it may ask OpenRouteService for a drive time and save it.
     """
-    masjids = None
-    if request.masjid_ids:
-        masjids = []
-        for one in dict.fromkeys(request.masjid_ids):
-            masjid = usable_masjid(db, user.id, one)
-            if masjid is None:
-                raise HTTPException(status_code=404, detail={"message": "Pick masjids from the suggestions."})
-            masjids.append(masjid)
-    return jumuah_choices(db, http, user.id, now, masjids)
+    masjid = None
+    if request.masjid_id is not None:
+        masjid = usable_masjid(db, user.id, request.masjid_id)
+        if masjid is None:
+            raise HTTPException(status_code=404, detail={"message": "Pick a masjid from the suggestions."})
+    return jumuah_choices(db, http, user.id, now, masjid)
 
 
 class PreviewEvent(BaseModel):

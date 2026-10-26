@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.calendar_window import RefreshResult, SetupIncomplete, refresh_calendar
 from app.google_errors import CalendarAccessMissing, GoogleError, ReauthRequired
-from app.models import UpdateJob, UserJumuahMasjid, UserSettings
+from app.models import UpdateJob, UserSettings
 from app.prayer_sync import SyncIncomplete
 
 logger = logging.getLogger("app.update_jobs")
@@ -63,12 +63,14 @@ def queue_update(db: Session, user_id: uuid.UUID, reason: str, now: datetime) ->
 
 
 def users_of_masjid(db: Session, masjid_id: uuid.UUID) -> list[uuid.UUID]:
-    """Everyone with this masjid as their main masjid or a Jumuah masjid."""
-    main = select(UserSettings.user_id).where(
-        UserSettings.main_masjid_choice == "masjid", UserSettings.main_masjid_id == masjid_id
+    """Everyone with this masjid as their main masjid. Jumuah is at the main masjid too."""
+    return list(
+        db.scalars(
+            select(UserSettings.user_id).where(
+                UserSettings.main_masjid_choice == "masjid", UserSettings.main_masjid_id == masjid_id
+            )
+        )
     )
-    jumuah = select(UserJumuahMasjid.user_id).where(UserJumuahMasjid.masjid_id == masjid_id)
-    return list(db.scalars(main.union(jumuah)))
 
 
 def claim(db: Session, user_id: uuid.UUID, now: datetime) -> bool:

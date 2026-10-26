@@ -141,7 +141,9 @@ def test_changing_how_early_updates_only_drive_blocks(db, http, fetched, fake_go
     set_settings(db, fetched, arrive_early_minutes=10)
     refresh(db, http, fetched, NOW)
     changed = fake_google.writes()[before:]
-    assert len(changed) == 20
+    # 2 masjid prayers a weekday for 2 weeks, but the coming Friday's Dhuhr is
+    # Jumuah, which has its own "how early": 19 drive blocks.
+    assert len(changed) == 19
     assert {w.body["summary"] for w in changed} == {"Drive to KMA"}
 
 

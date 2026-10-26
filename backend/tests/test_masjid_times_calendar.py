@@ -15,7 +15,7 @@ from app.models import MasjidSource
 from app.nightly import run_now
 from app.update_jobs import run_due_updates
 from tests.calendar_helpers import clock, fetch, google_events, on, refresh, source, titled
-from tests.masjid_helpers import add_user, link, masjid_id, set_jumuah
+from tests.masjid_helpers import add_user, link, masjid_id
 from tests.mawaqit_pages import conf, page, set_day
 
 TORONTO = ZoneInfo("America/Toronto")
@@ -93,7 +93,6 @@ def test_times_confirmed_under_24_hours_ago_are_used(db, http, user, fake_google
 
 
 def test_events_have_no_description(db, http, user, fake_google, ors_key):
-    set_jumuah(db, "user-a", ["Kanata Muslim Association"])
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
     events = google_events(fake_google)

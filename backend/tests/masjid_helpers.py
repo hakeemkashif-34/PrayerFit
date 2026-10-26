@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Masjid, MasjidSource, User, UserJumuahMasjid
+from app.models import Masjid, MasjidSource, User
 from tests.conftest import new_client, sign_in
 from tests.mawaqit_pages import conf, page
 from tests.setup_helpers import save_setup
@@ -48,16 +48,3 @@ def link(engine, masjid: uuid.UUID, slug: str, fake_mawaqit=None, data: dict | N
         db.commit()
     if fake_mawaqit is not None:
         fake_mawaqit.pages[slug] = page(data if data is not None else conf())
-
-
-def set_jumuah(engine, sub: str, names: list[str]) -> None:
-    """The user's Jumuah masjids, in this order."""
-    with Session(engine) as db:
-        uid = db.scalars(select(User.id).where(User.google_sub == sub)).one()
-        for old in db.scalars(select(UserJumuahMasjid).where(UserJumuahMasjid.user_id == uid)):
-            db.delete(old)
-        db.flush()
-        for position, name in enumerate(names):
-            mid = db.scalars(select(Masjid.id).where(Masjid.name == name)).one()
-            db.add(UserJumuahMasjid(user_id=uid, masjid_id=mid, position=position))
-        db.commit()

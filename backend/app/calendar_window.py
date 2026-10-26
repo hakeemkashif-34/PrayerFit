@@ -69,10 +69,8 @@ class MasjidInputs:
 
 
 def masjid_inputs(db: Session, http: httpx2.Client, setup: Setup, dates: list[date], now: datetime) -> MasjidInputs:
-    masjids: list[Masjid] = []
-    for masjid in ([setup.masjid] if setup.masjid else []) + list(setup.jumuah_masjids):
-        if all(m.id != masjid.id for m in masjids):
-            masjids.append(masjid)
+    # Jumuah is at the main masjid too, so it's the only one.
+    masjids: list[Masjid] = [setup.masjid] if setup.masjid else []
     times = load_masjid_times(db, [m.id for m in masjids], dates, now)
     drives = drive_seconds(db, http, setup.user_id, (setup.latitude, setup.longitude), masjids, now)
 
@@ -88,7 +86,7 @@ def masjid_inputs(db: Session, http: httpx2.Client, setup: Setup, dates: list[da
 
     return MasjidInputs(
         main=context(setup.masjid) if setup.masjid else None,
-        jumuah=[context(m) for m in setup.jumuah_masjids],
+        jumuah=[context(setup.jumuah_masjid)] if setup.jumuah_masjid else [],
     )
 
 

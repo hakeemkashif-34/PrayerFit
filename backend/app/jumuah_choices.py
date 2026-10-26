@@ -1,4 +1,6 @@
-"""What the Jumuah chooser shows: each Jumuah slot (1st, 2nd, 3rd) at the user's Jumuah masjids.
+"""What the Jumuah chooser shows: each Jumuah slot (1st, 2nd, 3rd) at the user's main masjid.
+
+Jumuah is always at the main masjid. Someone who prays at home has no Jumuah.
 
 The question is "Generally speaking, which Jumuah would you like to attend?",
 so it isn't about one Friday and doesn't look at the user's calendar. This
@@ -28,7 +30,7 @@ from app.masjid_times.source import next_friday
 from app.masjid_times.store import load_masjid_times
 from app.models import Masjid
 from app.prayer_times import DEFAULT_TIMEZONE
-from app.user_settings import find_settings, jumuah_masjids, masjid_label, read_location
+from app.user_settings import find_settings, masjid_label, read_location
 
 
 class SlotOut(BaseModel):
@@ -58,21 +60,22 @@ class JumuahChoices(BaseModel):
     slots: list[SlotOut] = []
     # The saved pick if it's one of the slots, otherwise the 1st Jumuah.
     selected: SlotKey | None = None
-    # Jumuah masjids with no Jumuah times yet, by the name the user sees.
+    # The main masjid's name (as the user sees it) when it has no Jumuah times yet.
     # The website says so instead of skipping the question silently.
     no_times: list[str] = []
 
 
 def jumuah_choices(
-    db: Session, http: httpx2.Client, user_id: uuid.UUID, now: datetime, masjids: list[Masjid] | None = None
+    db: Session, http: httpx2.Client, user_id: uuid.UUID, now: datetime, masjid: Masjid | None = None
 ) -> JumuahChoices:
-    """masjids: the ones setup is about to save, before they're saved. None means the user's Jumuah masjids."""
+    """masjid: the main masjid setup is about to save, before it's saved. None means the saved main masjid."""
     row = find_settings(db, user_id)
     zone = row.time_zone or DEFAULT_TIMEZONE
-    if masjids is None:
-        masjids = jumuah_masjids(db, user_id)
-    if not masjids:
+    if masjid is None and row.main_masjid_choice == "masjid" and row.main_masjid_id is not None:
+        masjid = db.get(Masjid, row.main_masjid_id)
+    if masjid is None:
         return JumuahChoices(time_zone=zone)
+    masjids = [masjid]
 
     friday = next_friday(now.astimezone(ZoneInfo(zone)).date())
     times = load_masjid_times(db, [m.id for m in masjids], [friday], now)
