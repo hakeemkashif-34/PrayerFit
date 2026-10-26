@@ -356,11 +356,15 @@ Masjids:
 1. **Total users**: everyone who ever signed in.
 2. **Masjids**: each masjid at least 1 user picked as their main masjid, most users first. A masjid picked by its address shows as "(picked by address)", never the address. "(no MAWAQIT times)" means it isn't linked, so it's one to add to the MAWAQIT list.
 
-**The private page**: put your own Google email in `.env` as `ADMIN_EMAIL=you@gmail.com` and restart. Sign in, then open http://localhost:8000/stats. It has 3 parts:
+**The private page**: put your own Google email in `.env` as `ADMIN_EMAIL=you@gmail.com` and restart. Sign in, then open http://localhost:8000/stats. It has 2 cards:
 
-1. "Total users: 42" at the top.
-2. A graph of total users over time, one dot per day, from the first sign-up to today. Point at a dot to see that day's date, how many signed up that day, and the total so far. Moving off the dot hides it. On a phone, tap a dot to show it and tap anywhere else to hide it. Tabbing to a dot shows it too. It's worked out from each user's sign-up date, so nothing is saved each day.
-3. A table of each masjid and how many users picked it, with a small "No MAWAQIT times" tag on masjids that aren't linked.
+1. **Total users over time**: a line graph with a dropdown above it: 1 day, 2 days, 3 days, 5 days, 7 days (the default), 30 days, or All time.
+   a) 1 to 3 days have one point per hour. 5 days and up have one point per day.
+   b) Each point is the total users at the end of that hour or day, or right now for the current one.
+   c) Point at the graph to see the closest point's date, the hour when it's hourly, and the total. Moving off the graph hides it. On a phone, tap the graph, and tap anywhere else to hide it. With the keyboard, tab to the graph and use the arrow keys, Home, and End.
+   d) All times are Toronto time.
+   e) The line goes down when someone deletes their account. It's built from `user_count_changes`: how many people signed up and how many deleted their account in each hour. That table has no user ID, no email, and nothing else that leads back to a person.
+2. **Masajid**: each masjid and how many users picked it, with a small "No MAWAQIT times" tag on masjids that aren't linked.
 
 Anyone else, signed in or not, gets "Page not found". Nothing links to it. With `ADMIN_EMAIL` empty, nobody can open it.
 
@@ -390,7 +394,8 @@ Through nginx, every endpoint below is under `/api` (like `/api/me`), except the
 | `PUT /settings/jumuah-pick` | Saves your Jumuah pick as your main masjid and a slot (1st, 2nd, or 3rd), or clears it |
 | `POST /jumuah/slots` | Each Jumuah slot at your main masjid (or the `masjid_id` given, for setup), with this week's times as an example, its leave time, which one is picked, and the masjid's name if it has no Jumuah times yet. No busy times. A POST because it may ask OpenRouteService for a drive time |
 | `POST /calendar/preview` | This week's prayers and drive blocks at their real times, for the "Adding your prayers" page. Nothing goes to Google |
-| `GET /admin/stats` | Total users, total users per day for the graph, and each masjid's users with whether it has MAWAQIT times. 404 for everyone but `ADMIN_EMAIL` |
+| `GET /admin/stats` | Each masjid's users, with whether it has MAWAQIT times. 404 for everyone but `ADMIN_EMAIL` |
+| `GET /admin/stats/users?range=7d` | Total users over time for the graph. `range` is `1d`, `2d`, `3d` (one point per hour), `5d`, `7d`, `30d`, or `all` (one point per day). 404 for everyone but `ADMIN_EMAIL` |
 | `POST /setup/finish` | Finishes setup and fills the next 14 days. The website calls it after the last question |
 | `POST /calendar/sync` | Sends anything still waiting. Safe to run again |
 | `POST /prayers/today` | Updates today's prayers and drive blocks from your saved settings. Safe to run again |
@@ -597,11 +602,11 @@ export DATABASE_URL=postgresql://prayerfit:change-me@localhost:5432/prayerfit
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `841 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `857 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`437 passed, 404 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`438 passed, 419 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
@@ -614,4 +619,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `264 passed`: 132 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `276 passed`: 138 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
