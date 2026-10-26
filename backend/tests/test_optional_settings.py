@@ -157,11 +157,17 @@ def test_the_masjid_shows_where_its_times_come_from(set_up, db, http, fake_mawaq
     assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == "Linked to MAWAQIT. Its times haven't been read yet"
     fetch(db, http, NOW - timedelta(days=2))
     assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == (
-        "MAWAQIT times couldn't be confirmed since Oct 22, 2026, so calculated times are used"
+        "MAWAQIT times couldn't be confirmed since Oct 22, 2026, so the last times read are used"
     )
     # Read again 2 days later, the page now covers Friday Oct 30's Jumuah, which is a change.
     fetch(db, http, NOW)
     assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == "Times from MAWAQIT, updated Oct 24, 2026"
+    with Session(db) as session:
+        session.get(MasjidSource, kma).last_success_at = NOW - timedelta(days=8)
+        session.commit()
+    assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == (
+        "MAWAQIT times couldn't be confirmed since Oct 16, 2026, so calculated times are used"
+    )
 
 
 def test_a_notice_shows_when_masjid_times_cant_be_confirmed(set_up, db, http, fake_mawaqit, set_today):
@@ -176,11 +182,21 @@ def test_a_notice_shows_when_masjid_times_cant_be_confirmed(set_up, db, http, fa
     fetch(db, http, NOW - timedelta(hours=23))
     assert set_up.get("/settings").json()["masjid_notices"] == []
 
+    # 2 days: the last times read are still used, and the notice says when that stops.
     with Session(db) as session:
         session.get(MasjidSource, kma).last_success_at = NOW - timedelta(days=2)
         session.commit()
     assert set_up.get("/settings").json()["masjid_notices"] == [
-        "KMA's times couldn't be confirmed since Oct 22, 2026. Your calendar is using calculated times until they're back."
+        "KMA's times couldn't be confirmed since Oct 22, 2026. Your calendar is still using the last times read "
+        "from MAWAQIT, and switches to calculated times on Oct 29, 2026 if they still can't be read."
+    ]
+
+    # Over 7 days: calculated times.
+    with Session(db) as session:
+        session.get(MasjidSource, kma).last_success_at = NOW - timedelta(days=8)
+        session.commit()
+    assert set_up.get("/settings").json()["masjid_notices"] == [
+        "KMA's times couldn't be confirmed since Oct 16, 2026. Your calendar is using calculated times until they're back."
     ]
 
 

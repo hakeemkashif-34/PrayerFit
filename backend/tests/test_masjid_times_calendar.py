@@ -73,9 +73,17 @@ def test_a_missing_iqamah_uses_the_calculated_time_and_says_so(db, http, user, f
     assert clock(isha) != "20:15" and clock(isha) != "19:30"  # not the iqamah, and not KMA's adhan
 
 
-def test_times_not_confirmed_for_24_hours_are_not_used(db, http, user, fake_google, fake_mawaqit):
-    # The last good read was 24 hours ago. MAWAQIT blocks us after that.
-    fetch(db, http, NOW - timedelta(hours=24))
+def test_times_read_7_days_ago_are_still_used(db, http, user, fake_google, fake_mawaqit):
+    # The last good read was exactly 7 days ago, and MAWAQIT blocks us after that.
+    # That read saved 30 days, so Monday's iqamah is still there and still used.
+    fetch(db, http, NOW - timedelta(days=7))
+    fake_mawaqit.failure = 403
+    refresh(db, http, user, NOW)
+    assert clock(titled(google_events(fake_google), MONDAY, "Isha at KMA")) == "20:15"
+
+
+def test_times_over_7_days_old_are_not_used(db, http, user, fake_google, fake_mawaqit):
+    fetch(db, http, NOW - timedelta(days=7, minutes=1))
     fake_mawaqit.failure = 403
     refresh(db, http, user, NOW)
     isha = titled(google_events(fake_google), MONDAY, "Isha at KMA")

@@ -27,7 +27,7 @@ from app.google_errors import CalendarAccessMissing, GoogleError, ReauthRequired
 from app.http_client import get_http
 from app.event_plan import date_text
 from app.masjid_times.auto_link import link_and_fetch
-from app.masjid_times.freshness import FRESH_FOR, Freshness, freshness
+from app.masjid_times.freshness import FRESH_FOR, USABLE_FOR, Freshness, freshness
 from app.jumuah_choices import JumuahChoices, jumuah_choices
 from app.models import Masjid, MasjidSource, PrayerEvent, User, WeeklyMasjidPrayers
 from app.prayer_sync import SyncIncomplete
@@ -138,6 +138,8 @@ def times_status(db: Session, masjid: Masjid, now: datetime, time_zone: str) -> 
     if age is Freshness.NEVER:
         return "Linked to MAWAQIT. Its times haven't been read yet"
     if age is Freshness.STALE:
+        return f"MAWAQIT times couldn't be confirmed since {date_text(source.last_success_at, time_zone)}, so the last times read are used"
+    if age is Freshness.TOO_OLD:
         return f"MAWAQIT times couldn't be confirmed since {date_text(source.last_success_at, time_zone)}, so calculated times are used"
     changed = source.last_changed_at or source.last_success_at
     return f"Times from MAWAQIT, updated {date_text(changed, time_zone)}"
@@ -148,19 +150,31 @@ def masjid_notices(db: Session, masjids: list[tuple[Masjid, str]], now: datetime
 
     masjids: each masjid with the label the user sees, like "KMA".
     A masjid linked less than 24 hours ago that hasn't been read yet gets no notice.
+    For up to 7 days the last times read are still used, so the notice says
+    when the calendar switches to calculated times.
     """
     notices = []
     for masjid, label in masjids:
         source = db.get(MasjidSource, masjid.id)
-        if source is None or freshness(source.last_success_at, now) is Freshness.FRESH:
+        if source is None:
+            continue
+        age = freshness(source.last_success_at, now)
+        if age is Freshness.FRESH:
             continue
         since = source.last_success_at or source.linked_at
         if now - since < FRESH_FOR:
             continue
-        notices.append(
-            f"{label}'s times couldn't be confirmed since {date_text(since, time_zone)}. "
-            "Your calendar is using calculated times until they're back."
-        )
+        if age is Freshness.STALE:
+            notices.append(
+                f"{label}'s times couldn't be confirmed since {date_text(since, time_zone)}. "
+                "Your calendar is still using the last times read from MAWAQIT, and switches to calculated times on "
+                f"{date_text(since + USABLE_FOR, time_zone)} if they still can't be read."
+            )
+        else:
+            notices.append(
+                f"{label}'s times couldn't be confirmed since {date_text(since, time_zone)}. "
+                "Your calendar is using calculated times until they're back."
+            )
     return notices
 
 
