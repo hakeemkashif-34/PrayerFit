@@ -32,7 +32,7 @@ Docker Compose starts 4 services:
 |---|---|
 | `web` | nginx. Serves the website and passes `/api/...` and `/auth/...` to the backend. The only service the browser talks to. |
 | `backend` | FastAPI. Runs the database migrations (`alembic upgrade head`) before it starts. |
-| `worker` | Background jobs, checked every minute: the nightly job, reading MAWAQIT, the 15-minute busy check, and queued calendar updates. |
+| `worker` | Background jobs, checked every minute: the nightly job, reading MAWAQIT, the 15-minute busy check, queued calendar updates, and saving the day's usage counts. |
 | `db` | Postgres. |
 
 The website and the API share one address (`http://localhost:8000`), so the browser treats them as the same site. That's what lets the session cookie and the Origin check work.
@@ -120,16 +120,16 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 3. Pick your test account. Google warns that the app isn't verified. Click **Continue**. Leave the calendar box ticked and allow.
 4. You land back on the website, on page 1 of 2. The 2 pages are listed on the left (on a phone, "Step 1 of 2" is at the top).
 5. **Required** (page 1) has 4 questions on one page, all shown at once:
-   a) **What's your location?** Start typing your address. Suggestions show up in a dropdown once you stop typing. Pick yours. It's saved right away, and the time zone comes from it. Postal codes aren't shown or saved, since OpenStreetMap's are often wrong in Canada.
-   b) **Which masjid do you usually go to?** Start typing its name. Suggestions show the masjid's name and its distance from home, closest first. If yours doesn't come up, type its address instead and pick that. Press **I pray at home** if you do: every prayer is at home and there's no weekly grid.
+   a) **What's your location?** Start typing your address. Suggestions show up in a dropdown once you stop typing. Pick yours. It's saved right away, the box shows the address you picked (not what you typed), and the time zone comes from it. The list pushes the page down while it's open, so it never covers the next question. Postal codes aren't shown or saved, since OpenStreetMap's are often wrong in Canada.
+   b) **Which masjid do you usually go to?** Start typing its name. Suggestions are masjids within 100 km of home, closest first, each with its distance. If nothing nearby matches, it says "No masjid found near you. Check the spelling, or type the masjid's address instead." Typing an address (with its number) finds a masjid that isn't on the map. Press **I pray at home** if you do: every prayer is at home and there's no weekly grid.
    c) **Which prayers do you usually pray at the masjid?** Tick them in the grid: prayers down the side, Monday to Sunday across the top. Anything left unticked is at home.
-   d) **Generally speaking, which Jumuah would you like to attend?** Each Jumuah slot (1st, 2nd, 3rd) at your masjid is a block on a simple midday calendar, from its start to its end (the masjid's Jumuah length, or 45 minutes when it isn't set). The times are this week's, only as an example: the pick is saved as "the 2nd Jumuah", not a clock time. It doesn't show a date or your busy times. Click a block to pick it. The 1st Jumuah is picked for you. If you pray at home, or your masjid has no Jumuah times yet, this question is skipped and the 1st Jumuah is saved (when there's a Jumuah masjid to save it for).
+   d) **Generally speaking, which Jumuah would you like to attend?** It shows up as soon as you pick a masjid. It's a Friday in a day calendar, with times down the side from 11 AM to 4 PM. Each Jumuah slot (1st, 2nd, 3rd) at your masjid is a block at its real time, from when to leave home to the end of Jumuah (the masjid's Jumuah length, or 45 minutes when it isn't set). The rest of the day is greyed out. Click a block to pick it: it turns solid green with "✓ Selected". The 1st Jumuah is picked for you. The times are this week's, only as an example: the pick is saved as "the 2nd Jumuah", not a clock time. It doesn't show your busy times. If your masjid has no Jumuah times yet, it says "Jumuah times for <masjid> aren't available yet. We'll use the 1st Jumuah, and you can change it in Settings later." If you pray at home, there's no Jumuah masjid, so there's no question.
    Press **Next** to save the masjid, the grid, and the Jumuah pick.
 6. **Optional** (page 2): a short name like `KMA`, how many minutes before iqamah and before Jumuah you want to arrive (whole numbers from 0 to 60, 5 by default), and a colour for prayer blocks and for drive blocks (Basil by default). **Back** goes to page 1 without losing anything typed here. **Skip** (top right) saves the defaults.
-7. Press **Finish** (or **Skip**). Nothing is written to Google Calendar before this. A new tab opens and says "Adding your prayers to Google Calendar..." and "This can take up to a minute.", with a little week calendar filling up with prayer blocks in your prayer colour (or a spinner, if motion is turned off on your device). Once the calendar is filled, it shows Google Calendar for the account you signed in with. The first tab goes to the Settings page. If the update fails, the new tab shows the error with a link back to Settings, and Settings shows it too, with **Try again**. If your browser blocks the new tab, Settings says so, and **Open Google Calendar** is right there.
+7. Press **Finish** (or **Skip**). Nothing is written to Google Calendar before this. A new tab opens and fills the screen: "Adding your prayers to Google Calendar..." in big text, "This can take up to a minute.", and a week calendar with times down the side. Each day fills in from Fajr to Isha at your real prayer times, about one block a second, in your prayer colour. Drive blocks slide in just before masjid prayers in your drive colour, and a caption says what's being added, like "Adding Thursday's Asr". With motion turned off on your device, it's a spinner instead. Once the calendar is filled, it shows Google Calendar for the account you signed in with. The first tab goes to the Settings page. If the update fails, the new tab shows the error with a link back to Settings, and Settings shows it too, with **Try again**. If your browser blocks the new tab, Settings says so, and **Open Google Calendar** is right there.
 8. Calculated times always use ISNA with standard Asr. Your main masjid becomes your Jumuah masjid. On the Settings page you can remove it or add others. Praying at home means no Jumuah masjids.
 9. Every event the app makes is private, so people you share your calendar with only see "busy".
-10. In Google Calendar, the **Prayers** calendar has today and the next 13 days, like `Fajr` and `Dhuhr at KMA`. Prayers at the masjid say where. Every other prayer is just its name. Each description says where the time came from. Until your masjid is linked to MAWAQIT (below), masjid prayers use the calculated time and say the iqamah isn't available.
+10. In Google Calendar, the **Prayers** calendar has today and the next 13 days, like `Fajr` and `Dhuhr at KMA`. Prayers at the masjid say where. Every other prayer is just its name. Events have no description, except a prayer that was moved or clashes with your calendar (see "Moving prayers around your calendar"). Where your times come from is on the Settings page instead. Until your masjid is linked to MAWAQIT (below), masjid prayers use the calculated time.
 
 ### 4. Change a setting
 
@@ -177,18 +177,18 @@ Masjid times come from each masjid's public page on [MAWAQIT](https://mawaqit.ne
 
 What it changes in the calendar:
 
-1. **Masjid prayers** use the masjid's iqamah, like `KMA iqamah (MAWAQIT, updated Oct 25, 2026)`. A day with no iqamah uses the calculated start time and says so. An iqamah is never made up. `+0` on a MAWAQIT page means the iqamah is at the adhan time: KMA uses it for Asr and Isha on days when its set time would come before the adhan. If a page sets `fajrFixationComparedToShuruq`, Fajr's iqamah isn't used and the worker logs it, since that setting's format isn't known.
-2. **Home prayers** use the main masjid's adhan time, like `KMA adhan time (MAWAQIT)`.
-3. **Jumuah**: on the coming Friday (today, if it's Friday), if you have Jumuah masjids, Dhuhr becomes `Jumuah at <masjid>`. This is where your busy times come in, not in the setup question. It uses your pick (a masjid and its 1st, 2nd, or 3rd Jumuah) if that slot fits your calendar. If it clashes, or that slot isn't on this Friday, it uses the earliest Jumuah that fits across all your Jumuah masjids. If every one clashes, it uses the 1st Jumuah of the day (the earliest across all your Jumuah masjids) and says so. With no pick, it's the earliest that fits. The description says which, like `Your pick (2nd Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits.`
+1. **Masjid prayers** use the masjid's iqamah. Settings shows where it came from, like `Times from MAWAQIT, updated Oct 25, 2026`. A day with no iqamah uses the calculated start time. An iqamah is never made up. `+0` on a MAWAQIT page means the iqamah is at the adhan time: KMA uses it for Asr and Isha on days when its set time would come before the adhan. If a page sets `fajrFixationComparedToShuruq`, Fajr's iqamah isn't used and the worker logs it, since that setting's format isn't known.
+2. **Home prayers** use the main masjid's adhan time.
+3. **Jumuah**: on the coming Friday (today, if it's Friday), if you have Jumuah masjids, Dhuhr becomes `Jumuah at <masjid>`. This is where your busy times come in, not in the setup question. It uses your pick (a masjid and its 1st, 2nd, or 3rd Jumuah) if that slot fits your calendar. If it clashes, or that slot isn't on this Friday, it uses the earliest Jumuah that fits across all your Jumuah masjids. If every one clashes, it uses the 1st Jumuah of the day (the earliest across all your Jumuah masjids), and the description says `Your event covers all of Jumuah's time today, so figure out a way to fit it in.` With no pick, it's the earliest that fits. A Jumuah moved to a later slot says how far after the 1st Jumuah it is, like `Moved because of an event in your calendar (1 hour after Jumuah's start time).`
 4. **Only the coming Friday** uses MAWAQIT's Jumuah times, since a MAWAQIT page only shows this week's. Later Fridays follow your weekly grid for Dhuhr, and say `This Friday's Jumuah times aren't published yet, so this follows your weekly prayers.` They change to Jumuah once a later read covers that Friday.
-5. **Jumuah length**: each masjid can have its own, set on the server (below). Without one, the block is 45 minutes and the description says the end time is estimated. The other prayer blocks are Fajr 10 minutes, Dhuhr 15, Asr 10, Maghrib 10, and Isha 15.
-6. **Freshness**: times read in the last 24 hours are fresh. Up to 7 days old, they're still used, and the description says they may be out of date. Older than that, calculated times are used.
+5. **Jumuah length**: each masjid can have its own, set on the server (below). Without one, the block is 45 minutes. The other prayer blocks are Fajr 10 minutes, Dhuhr 15, Asr 10, Maghrib 10, and Isha 15.
+6. **Freshness**: times read in the last 24 hours are used. If a masjid's times couldn't be confirmed for 24 hours, your calendar uses calculated times until they're back, and Settings shows a notice at the top: `KMA's times couldn't be confirmed since Oct 24, 2026. Your calendar is using calculated times until they're back.` A calculated start is never later than the iqamah, so you're early, never late.
 
 MAWAQIT can block this at any time. After a 403, a 429, or 3 failed reads in a row, the app waits 24 hours before trying that masjid again, and keeps the last good times in the meantime.
 
 ## Drive times
 
-Each masjid prayer gets a **Drive to <masjid>** block before it, from when to leave until you arrive, with a popup reminder when it starts. Drive times come from [OpenRouteService](https://openrouteservice.org), which has a free plan. They're typical drive times with no live traffic, and the description says so: `14 min drive (OpenRouteService, no live traffic).` The app calls `https://api.heigit.org/openrouteservice/v2/directions/driving-car`. HeiGIT shut off the old address, `api.openrouteservice.org`, on September 28, 2026.
+Each masjid prayer gets a **Drive to <masjid>** block before it, from when to leave until you arrive, with a popup reminder when it starts. Drive times come from [OpenRouteService](https://openrouteservice.org), which has a free plan. They're typical drive times with no live traffic. The app calls `https://api.heigit.org/openrouteservice/v2/directions/driving-car`. HeiGIT shut off the old address, `api.openrouteservice.org`, on September 28, 2026.
 
 1. Sign up at https://account.heigit.org/signup and copy your API key.
 2. Put it in `.env` as `ORS_API_KEY=...` and restart: `docker compose up -d`.
@@ -201,8 +201,10 @@ Anything in my primary Google Calendar comes first, and each prayer works around
 
 1. **At the masjid**: a masjid prayer stays at the masjid only if the drive, the "how early" minutes, and the prayer block are all free. Otherwise it's prayed at home that day, and its drive block is deleted.
 2. **At the normal time** if that's free. The normal time is the iqamah for a masjid prayer that can't go to the masjid, and the adhan for every other prayer.
-3. **Otherwise, the earliest free time** of at least 10 minutes, from the start of the prayer's time to its end. A gap shorter than the prayer's usual length shrinks it to fit, down to 10 minutes. For example, a 12-minute gap fits Isha as a 12-minute block. The description says `Moved because of an event in your calendar.` and the prayer's time, like `Isha's time is 7:23 pm to 11:45 pm.`
-4. **No free time at all**: it stays at the normal time, titled `Asr (clash)`, and the description says `Your event covers all of Asr's time today, so there's no earlier or later time to pray it.`
+3. **Otherwise, the earliest free time** of at least 10 minutes, from the start of the prayer's time to its end. A gap shorter than the prayer's usual length shrinks it to fit, down to 10 minutes. For example, a 12-minute gap fits Isha as a 12-minute block. The description says how far after the prayer's start time (the adhan) it went, like `Moved because of an event in your calendar (42 minutes after Dhuhr's start time).` Over an hour it says `1 hour 12 minutes`, and right at the adhan it says `(at Dhuhr's start time)`.
+4. **No free time at all**: it stays at the normal time, titled `Asr (clash)`, and the description says `Your event covers all of Asr's time today, so figure out a way to fit it in.`
+
+Those are the only descriptions. The app only knows when I'm busy, never what my events are, so a description never names the event.
 
 Each prayer's time ends at: Fajr, sunrise. Dhuhr, Asr. Asr, Maghrib. Maghrib, Isha. Isha, midnight, which is halfway between Maghrib and the next day's Fajr, so it never suggests 2 am.
 
@@ -229,7 +231,7 @@ docker compose exec db psql -U muslim_calendar -c "SELECT id, status, events_sen
 To try it with the test account:
 1. Make sure the worker is running (`docker compose up -d`).
 2. Add an event to the test account's main calendar that covers one of today's or tomorrow's prayers.
-3. Within 15 minutes, that prayer moves in the Prayers calendar, with `Moved because of an event in your calendar.`
+3. Within 15 minutes, that prayer moves in the Prayers calendar, with a description like `Moved because of an event in your calendar (42 minutes after Dhuhr's start time).`
 4. Delete the event. Within 15 minutes, the prayer is back at its normal time.
 
 ## Nightly job
@@ -252,6 +254,36 @@ See the jobs with:
 docker compose exec db psql -U muslim_calendar -c "SELECT id, status, attempts, events_sent FROM nightly_jobs ORDER BY created_at"
 ```
 
+## Usage stats
+
+Counts only. Never emails, names, or anything else about a user.
+
+```bash
+docker compose exec backend python -m app.admin stats
+```
+
+It prints:
+
+```
+Signed up: 42
+Finished setup: 30
+Active (calendar updated in the last 2 days): 25
+New this week: 6
+```
+
+1. **Signed up**: everyone who ever signed in.
+2. **Finished setup**: everyone who finished setup.
+3. **Active**: the calendar was updated in the last 2 days (the nightly job, a settings change, or a 15-minute check finished).
+4. **New this week**: signed in for the first time in the last 7 days.
+
+The worker saves these 4 numbers once a day, after 4:00 am, so there's a history.
+
+**The private page**: put your own Google email in `.env` as `ADMIN_EMAIL=you@gmail.com` and restart. Sign in, then open http://localhost:8000/stats. It shows the 4 numbers, a graph of sign-ups and active users over time (hover for a day's numbers, or open the table), and a "Masjid times" list of any linked masjid whose MAWAQIT read is failing or over 24 hours old, with its last good read and the error. Anyone else, signed in or not, gets "Page not found". Nothing links to it. With `ADMIN_EMAIL` empty, nobody can open it.
+
+## Look
+
+Light only: white, black, and green, on a light green page. It looks the same whatever your device's dark mode setting is. The grey-green text for labels and hints is at least 5.6:1 against the light green, so it's easy to read.
+
 ## Endpoints
 
 Through nginx, every endpoint below is under `/api` (like `/api/me`), except the `/auth/...` ones.
@@ -271,7 +303,9 @@ Through nginx, every endpoint below is under `/api` (like `/api/me`), except the
 | `PUT /settings/weekly` | Saves the weekly grid (7 days) |
 | `PUT /settings/optional` | Saves both "how early" times, the short name, and the 2 colours. Skip sends the defaults |
 | `PUT /settings/jumuah-pick` | Saves your Jumuah pick as a masjid and a slot (1st, 2nd, or 3rd), or clears it |
-| `GET /jumuah/slots` | Each Jumuah slot at your Jumuah masjids (or the `masjid_id`s given, for setup), with this week's times as an example, and which one is picked. No busy times. Saves nothing |
+| `POST /jumuah/slots` | Each Jumuah slot at your Jumuah masjids (or the `masjid_ids` given, for setup), with this week's times as an example, its leave time, which one is picked, and which masjids have no Jumuah times yet. No busy times. A POST because it may ask OpenRouteService for a drive time |
+| `POST /calendar/preview` | This week's prayers and drive blocks at their real times, for the "Adding your prayers" page. Nothing goes to Google |
+| `GET /admin/stats` | The usage counts, their history, and masjid times that need a look. 404 for everyone but `ADMIN_EMAIL` |
 | `PUT /settings/jumuah` | Saves the Jumuah masjids, in order (settings page only) |
 | `POST /setup/finish` | Finishes setup and fills the next 14 days. The website calls it after the last question |
 | `POST /calendar/sync` | Sends anything still waiting. Safe to run again |
@@ -300,7 +334,7 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `733 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `753 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
@@ -317,4 +351,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `180 passed`: 90 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `222 passed`: 111 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
