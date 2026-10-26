@@ -32,7 +32,7 @@ Docker Compose starts 4 services:
 |---|---|
 | `web` | nginx. Serves the website and passes `/api/...` and `/auth/...` to the backend. The only service the browser talks to. |
 | `backend` | FastAPI. Runs the database migrations (`alembic upgrade head`) before it starts. |
-| `worker` | Background jobs, checked every minute: the nightly job, reading MAWAQIT, and queued calendar updates. |
+| `worker` | Background jobs, checked every minute: the nightly job, reading MAWAQIT, the 15-minute busy check, and queued calendar updates. |
 | `db` | Postgres. |
 
 The website and the API share one address (`http://localhost:8000`), so the browser treats them as the same site. That's what lets the session cookie and the Origin check work.
@@ -60,9 +60,9 @@ Every time comes back with where it came from (`"source": "calculated"`, the met
 
 ## Google Calendar
 
-I sign in with Google and the app keeps the next 14 days of prayers in a calendar called "Prayers" that it creates in my Google account. It only asks for `openid`, `email`, `calendar.app.created`, and `calendar.freebusy`. `calendar.app.created` lets it manage calendars it made itself and nothing else. `calendar.freebusy` lets it see when I'm busy on Friday, so it can pick a Jumuah that fits, but never what my events are. No Gmail, and it can't read my other calendars.
+I sign in with Google and the app keeps the next 14 days of prayers in a calendar called "Prayers" that it creates in my Google account. It only asks for `openid`, `email`, `calendar.app.created`, and `calendar.freebusy`. `calendar.app.created` lets it manage calendars it made itself and nothing else. `calendar.freebusy` lets it see when I'm busy, so my prayers can fit around my day, but never what my events are. No Gmail, and it can't read my other calendars.
 
-The app only checks my primary calendar for busy times. Checking my other calendars would need one more scope (`calendar.calendarlist.readonly`, to find them), so it doesn't. Busy times are never saved. If Google doesn't answer, Jumuah is picked as if Friday were free, and the calendar update carries on.
+The app only checks my primary calendar for busy times. Checking my other calendars would need one more scope (`calendar.calendarlist.readonly`, to find them), so it doesn't. Busy times are never saved. If Google doesn't answer, the calendar update carries on, and any prayer that was already moved stays where it is (see "Moving prayers around your calendar" below).
 
 ### 1. Set up Google Cloud (once)
 
@@ -79,7 +79,7 @@ The app only checks my primary calendar for busy times. Checking my other calend
    c) `https://www.googleapis.com/auth/calendar.app.created` (paste it under "Manually add scopes" if it's not in the list)
    d) `https://www.googleapis.com/auth/calendar.freebusy` (same)
 
-If your project was set up before milestone 5, go to **Google Auth Platform > Data Access** and add d). Then everyone who signed in before sees a **Sign in again** banner on Settings. Until they sign in again, Jumuah is picked as if their Friday were free.
+If your project was set up before milestone 5, go to **Google Auth Platform > Data Access** and add d). Then everyone who signed in before sees a **Sign in again** banner on Settings. Until they sign in again, their prayers don't move around their calendar.
 6. In **Clients**, click **Create client**.
    a) Application type: **Web application**.
    b) Authorized redirect URIs: `http://localhost:8000/auth/google/callback`
@@ -179,7 +179,7 @@ What it changes in the calendar:
 
 1. **Masjid prayers** use the masjid's iqamah, like `KMA iqamah (MAWAQIT, updated Oct 25, 2026)`. A day with no iqamah uses the calculated start time and says so. An iqamah is never made up. `+0` on a MAWAQIT page means the iqamah is at the adhan time: KMA uses it for Asr and Isha on days when its set time would come before the adhan. If a page sets `fajrFixationComparedToShuruq`, Fajr's iqamah isn't used and the worker logs it, since that setting's format isn't known.
 2. **Home prayers** use the main masjid's adhan time, like `KMA adhan time (MAWAQIT)`.
-3. **Jumuah**: on the coming Friday (today, if it's Friday), if you have Jumuah masjids, Dhuhr becomes `Jumuah at <masjid>`. This is where your busy times come in, not in the setup question. It uses your pick (a masjid and its 1st, 2nd, or 3rd Jumuah) if that slot fits your calendar. If it clashes, or that slot isn't on this Friday, it uses the earliest Jumuah that fits across all your Jumuah masjids. If every one clashes, it keeps your pick and says so. With no pick, it's the earliest that fits. The description says which, like `Your pick (2nd Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits.`
+3. **Jumuah**: on the coming Friday (today, if it's Friday), if you have Jumuah masjids, Dhuhr becomes `Jumuah at <masjid>`. This is where your busy times come in, not in the setup question. It uses your pick (a masjid and its 1st, 2nd, or 3rd Jumuah) if that slot fits your calendar. If it clashes, or that slot isn't on this Friday, it uses the earliest Jumuah that fits across all your Jumuah masjids. If every one clashes, it uses the 1st Jumuah of the day (the earliest across all your Jumuah masjids) and says so. With no pick, it's the earliest that fits. The description says which, like `Your pick (2nd Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits.`
 4. **Only the coming Friday** uses MAWAQIT's Jumuah times, since a MAWAQIT page only shows this week's. Later Fridays follow your weekly grid for Dhuhr, and say `This Friday's Jumuah times aren't published yet, so this follows your weekly prayers.` They change to Jumuah once a later read covers that Friday.
 5. **Jumuah length**: each masjid can have its own, set on the server (below). Without one, the block is 45 minutes and the description says the end time is estimated. The other prayer blocks are Fajr 10 minutes, Dhuhr 15, Asr 10, Maghrib 10, and Isha 15.
 6. **Freshness**: times read in the last 24 hours are fresh. Up to 7 days old, they're still used, and the description says they may be out of date. Older than that, calculated times are used.
@@ -194,6 +194,43 @@ Each masjid prayer gets a **Drive to <masjid>** block before it, from when to le
 2. Put it in `.env` as `ORS_API_KEY=...` and restart: `docker compose up -d`.
 
 With no key, there are no drive blocks, and everything else works as before. Only the rounded coordinates of your home and your masjids are sent (about 100 m), never an address. Each drive time is saved for 30 days, or until your address or masjids change.
+
+## Moving prayers around your calendar
+
+Anything in my primary Google Calendar comes first, and each prayer works around it. The app only sees when I'm busy, never what the event is.
+
+1. **At the masjid**: a masjid prayer stays at the masjid only if the drive, the "how early" minutes, and the prayer block are all free. Otherwise it's prayed at home that day, and its drive block is deleted.
+2. **At the normal time** if that's free. The normal time is the iqamah for a masjid prayer that can't go to the masjid, and the adhan for every other prayer.
+3. **Otherwise, the earliest free time** of at least 10 minutes, from the start of the prayer's time to its end. A gap shorter than the prayer's usual length shrinks it to fit, down to 10 minutes. For example, a 12-minute gap fits Isha as a 12-minute block. The description says `Moved because of an event in your calendar.` and the prayer's time, like `Isha's time is 7:23 pm to 11:45 pm.`
+4. **No free time at all**: it stays at the normal time, titled `Asr (clash)`, and the description says `Your event covers all of Asr's time today, so there's no earlier or later time to pray it.`
+
+Each prayer's time ends at: Fajr, sunrise. Dhuhr, Asr. Asr, Maghrib. Maghrib, Isha. Isha, midnight, which is halfway between Maghrib and the next day's Fajr, so it never suggests 2 am.
+
+Examples, with Isha at KMA (adhan 7:23 pm, iqamah 7:40 pm, a 10 minute drive):
+1. A class until 7:35 pm: `Isha` at 7:40 pm, at home.
+2. A class from 7:00 to 8:30 pm: `Isha` at 8:30 pm.
+3. A meeting from 7:45 to 9:00 pm: `Isha` at 7:23 pm, before the meeting.
+
+**Every 15 minutes**, the worker checks each user's busy times for today and tomorrow, and sends only the events that changed. So a new event moves the right prayer within 15 minutes, and deleting it puts the prayer back within 15 minutes. The nightly job still covers all 14 days. Each check is saved with an ID like `busy:<user id>:2026-10-26T19:45` before it runs, so it runs once per 15 minutes even with 2 workers.
+
+Things that never happen:
+1. Events that already started are never moved. That includes a masjid prayer once its drive has started.
+2. A moved prayer is never put in the past.
+3. The Prayers calendar never counts as busy.
+4. If free/busy doesn't answer, nothing that was moved is put back. The 15-minute check changes nothing at all and tries again next time.
+5. Users who didn't allow free/busy get no moving. Everything works as before for them.
+
+See the checks with:
+
+```bash
+docker compose exec db psql -U muslim_calendar -c "SELECT id, status, events_sent, error FROM busy_check_jobs ORDER BY block_start DESC LIMIT 10"
+```
+
+To try it with the test account:
+1. Make sure the worker is running (`docker compose up -d`).
+2. Add an event to the test account's main calendar that covers one of today's or tomorrow's prayers.
+3. Within 15 minutes, that prayer moves in the Prayers calendar, with `Moved because of an event in your calendar.`
+4. Delete the event. Within 15 minutes, the prayer is back at its normal time.
 
 ## Nightly job
 
@@ -263,11 +300,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `683 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `733 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`357 passed, 326 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`379 passed, 354 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 

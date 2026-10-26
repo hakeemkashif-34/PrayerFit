@@ -450,7 +450,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    a) Row already sent to this calendar: update (PUT). If Google says 404, insert it again.
    b) Otherwise insert. On 409, update.
 5. **`status: confirmed`** in every update. A user-deleted event stays in Google as "cancelled" with its ID still taken. Updating it with `confirmed` brings it back, so it reappears once, not twice. I couldn't test this against the real Google, so it's in the manual checks. (Since milestone 4, unchanged events aren't sent again, so a deleted event only comes back when it changes. See milestone 4, section 6.)
-6. **`extendedProperties.private.appEventId`**: the app's UUID on each Google event. Private properties are only visible to this app. Milestone 6 uses it to match Google events back to rows.
+6. **`extendedProperties.private.appEventId`**: the app's UUID on each Google event. Private properties are only visible to this app. Two-way sync (now a stretch goal) would use it to match Google events back to rows.
 7. **Partway failures**: a timeout, 429, or 5xx stops the run. Rows sent so far stay `synced`, the rest stay `pending`, and the answer is 503 with `saved` and `waiting` lists. Running again finishes the job.
 8. **Event times**:
    a) Start is the rounded prayer time from the calculator.
@@ -607,7 +607,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    a) **Fill my calendar** fills all 14 days, while the user waits (about 10 to 20 seconds with real Google).
    b) Each Edit after setup updates the calendar straight away.
    c) If Google fails partway, the settings are still saved. The website shows "Some prayers haven't reached Google Calendar yet" with **Try again** (`POST /calendar/sync`), and the nightly job retries too.
-10. **A trade-off**: in milestone 3, running `POST /prayers/today` again sent all 5 events every time, which also brought back an event the user deleted in Google. Now unchanged events aren't sent, so a deleted event only comes back when its details change. Noticing edits and deletions made in Google is milestone 6 (two-way sync).
+10. **A trade-off**: in milestone 3, running `POST /prayers/today` again sent all 5 events every time, which also brought back an event the user deleted in Google. Now unchanged events aren't sent, so a deleted event only comes back when its details change. Noticing edits and deletions made in Google is two-way sync, which is now a stretch goal.
 11. **`POST /prayers/today`** no longer takes a location. It uses the saved settings and answers 409 "Finish setup first" before setup is done.
 
 ### 7. The nightly job
@@ -866,7 +866,7 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
    a) The pick, if it fits: "Your pick (1st Jumuah)."
    b) If it clashes, the earliest Jumuah that fits, across all Jumuah masjids: "Your pick (2nd Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits."
    c) If that slot isn't on this Friday (KMA only has 2 this week), that counts as a clash, with "isn't on this Friday" instead.
-   d) If every slot clashes, keep the pick: "Every Jumuah clashes with your calendar. Kept your pick (1st Jumuah)."
+   d) If every slot clashes, keep the pick: "Every Jumuah clashes with your calendar. Kept your pick (1st Jumuah)." Milestone 6 changed this to the 1st Jumuah of the day (milestone 6, section 6).
    e) With no pick, the earliest that fits.
 4. Ties (2 slots at the same time) go to the masjid the user listed first.
 5. **Removing the picked masjid** from the Jumuah list clears the pick, so Settings never shows a pick that can't be used.
@@ -963,3 +963,182 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 7. **Opening and closing an item**: `Row` in `SettingsPage.tsx` remembers the row's height, and when it switches between showing and editing, it animates from the old height to the new one with the Web Animations API (`el.animate`, 0.22 seconds). The new content fades in with CSS. Only rows the user opened or closed get the fade, so nothing moves on page load. With motion turned off, there's no animation at all, and button transitions are off too.
 8. **Colours as swatches**: the saved prayer and drive colours on Settings show their Google colour as a small circle next to the name.
 9. **Checked with screenshots** of every page on a computer and a phone, in light and dark mode.
+
+## Milestone 6: Moving prayers around commitments
+
+### 1. Where things are
+
+1. **`backend/app/fit_prayers.py`**: the algorithm. Pure functions, no database and no network, like `plan_day` and `choose_jumuah`.
+   a) `prayer_windows`: when each prayer's time starts and ends.
+   b) `fit_prayer`: where one prayer goes, given the busy times.
+   c) `masjid_is_free`: whether the whole trip to the masjid is free.
+2. **`backend/app/event_plan.py`**: `plan_day` now works in 2 passes and uses `fit_prayers.py`.
+3. **`backend/app/busy_times.py`**: `busy_between` reads busy times for the whole window in one call.
+4. **`backend/app/calendar_window.py`**: keeps moved prayers when free/busy fails, and leaves a masjid prayer alone once its drive has started.
+5. **`backend/app/busy_checks.py`**: the 15-minute check for today and tomorrow.
+6. **`backend/alembic/versions/0007_prayer_event_fit.py`** adds `prayer_events.fit`. **`0008_busy_check_jobs.py`** adds the `busy_check_jobs` table.
+
+### 2. The main rule: events come first
+
+1. Commitments are the busy times in the user's primary Google Calendar. There's no new screen for typing them in.
+2. Anything in the calendar has priority. The prayer works around it.
+3. A moved prayer goes in the earliest free time once the prayer's time has started, before or after the event.
+   a) Class from 4:00 to 5:00 pm: Asr goes at 5:00.
+   b) Isha starts at 7:23 pm and a meeting runs 7:45 to 9:00: Isha goes at 7:23, before the meeting.
+
+### 3. When each prayer's time ends
+
+1. Fajr ends at sunrise. Dhuhr at Asr, Asr at Maghrib, Maghrib at Isha.
+2. Isha ends at **midnight**: halfway between Maghrib and the next day's Fajr. Not 12:00 am on the clock, and never the 2 am a "before Fajr" rule would allow.
+3. The start times are the same ones home prayers use: the main masjid's MAWAQIT adhan when it's usable, calculated otherwise. That's `_home_time` in `event_plan.py`, which both the events and the windows use, so they can't disagree.
+4. **Sunrise** is the calculated one. The MAWAQIT parser reads sunrise but doesn't save it, since it isn't a prayer. The calculated sunrise is rounded down, which is the safe side for an end time.
+5. **Midnight is worked out in UTC**, then rounded down to the minute. On October 31, 2026, Maghrib is 6:00 pm (EDT) and the next Fajr is 5:30 am (EST). That's 12.5 real hours, so midnight is 12:15 am. A wall clock would say 11.5 hours and 11:45 pm. `test_isha_midnight_counts_real_hours_on_the_night_the_clocks_go_back` checks this.
+6. The last day in the window needs the next day's Fajr, so `plan_window` calculates one extra day, and the masjid times are loaded for it too.
+
+### 4. Prayer lengths
+
+1. The lengths from milestone 5 are now the maximums: Fajr 10, Dhuhr 15, Asr 10, Maghrib 10, Isha 15 (`PRAYER_LENGTHS`).
+2. Every prayer needs at least 10 minutes (`MIN_LENGTH`). A shorter gap is skipped.
+3. In a gap shorter than the maximum, the prayer shrinks to fit. A 12-minute gap fits Isha as a 12-minute block.
+4. A moved prayer has to end by the time its window ends.
+
+### 5. The algorithm
+
+"Normal time" means the iqamah for a masjid prayer and the adhan for every other prayer. A masjid prayer with no iqamah uses its start time.
+
+```
+for each prayer, each day:
+    if it's a masjid prayer:
+        if the drive, the "how early" minutes, and the prayer block are all free:
+            pray at the masjid at iqamah, with its drive block
+            stop
+        else:
+            it can't be at the masjid today
+    if the normal time is free:
+        pray at the normal time
+    else if there's a free gap of at least 10 minutes before the prayer's time ends:
+        pray in the earliest one, starting no earlier than the prayer's start time
+    else:
+        keep it at the normal time, flagged as a clash
+```
+
+1. **Finding the gap** (`earliest_gap`):
+   a) Sort the busy times and join any that overlap.
+   b) Start a cursor at the prayer's start.
+   c) Walk the busy times in order. The space between the cursor and the next busy start is a gap. If it's at least 10 minutes, use it. If not, move the cursor to the end of that busy time.
+   d) After the last busy time, the gap runs to the window's end.
+   e) Each prayer only has a handful of busy times, so this is quick: sorting is O(n log n) and the walk is O(n).
+2. **Touching isn't overlapping**: a block that ends exactly when an event starts still fits, the same rule Jumuah uses.
+3. **2 passes in `plan_day`**:
+   a) Pass 1 decides the masjid prayers, using only the user's busy times.
+   b) Pass 2 places every other prayer. The normal time check only looks at the user's events. The gap search also avoids the app's own events from pass 1 (drive blocks and masjid prayers) and the prayers already placed. Without that, a moved Asr could land on Maghrib's drive block. `test_a_moved_prayer_never_lands_on_the_apps_own_drive_block` checks it.
+   c) Why the app's own events don't count for the normal time: then a home prayer could move just because a masjid drive block touched it, even with an empty calendar.
+4. **Never in the past**: the gap search starts at the later of the prayer's start and now, rounded up to the minute. At 7:46 pm, if a meeting turns out to end at 7:45, Isha goes at 7:46, not 7:45.
+5. **All the maths is in UTC.** Python compares 2 times in the same `ZoneInfo` by their wall clocks, which is wrong on a daylight saving day. The tests move prayers on November 1 (1:00 am happens twice) and March 8 (2:00 am is skipped).
+
+### 6. Jumuah
+
+1. The user's pick is used if it fits.
+2. If it clashes, the earliest Jumuah that fits is used, across all Jumuah masjids.
+3. **Changed**: if every Jumuah clashes, the 1st Jumuah of the day is used: the earliest across all Jumuah masjids, with ties going to the masjid listed first. The description says "Every Jumuah clashes with your calendar, so this is the 1st Jumuah." Before, it kept the pick.
+4. A Friday without Jumuah times goes through the normal algorithm for Dhuhr.
+
+### 7. Titles and descriptions
+
+1. At the masjid: `Asr at KMA`, as before.
+2. Everywhere else: `Asr`, as before.
+3. Moved, or a masjid prayer prayed at home because of an event: the description starts with "Moved because of an event in your calendar.", then where the time came from, then the window, like "Isha's time is 7:23 pm to 11:45 pm."
+4. No free time at all: the title is `Asr (clash)`, and the description starts with "Your event covers all of Asr's time today, so there's no earlier or later time to pray it."
+5. Drive blocks only exist for prayers actually at the masjid. When a masjid prayer moves, its future drive block is deleted, the same way as when a prayer moves home in the weekly grid.
+6. **A prayer that busy times didn't touch keeps exactly the same title and description as before.** That matters for 2 reasons: existing users' events aren't all sent again because the code changed, and a check with nothing new sends nothing.
+
+### 8. Saving `fit`
+
+1. Each prayer event now saves `fit`: `normal`, `moved`, or `clash`.
+2. It isn't part of what's sent to Google, so it isn't in `event_hash` and never causes a write.
+3. It's there for the next section.
+
+### 9. When free/busy fails
+
+1. `BusyTimes.status` is `checked`, `no_access`, or `failed`.
+2. **No access** (the user didn't tick free/busy): busy times are empty, so nothing moves. Everything works as it did before.
+3. **Failed** (a Google error, a timeout, a bad answer): the busy times are unknown, not empty. If the update treated that as "free", every moved prayer would jump back to its normal time, right into the user's class. So:
+   a) The nightly job and settings updates still run, since a new day or a changed setting still needs to go out. But `save_window(keep_moved=True)` leaves every future row with `fit` of `moved` or `clash` exactly as it is, drive block and all.
+   b) The 15-minute check stops before saving anything. The next block tries again.
+4. A move is never undone because busy times are unknown. `test_a_free_busy_failure_never_undoes_a_move` checks it.
+
+### 10. Events that already started
+
+1. A row that already started is never changed, the same as before.
+2. New: a masjid prayer whose drive block has started is left alone too, even though the prayer itself hasn't started. The user is already on the road. Without this, an event added at 7:31 pm would move Isha home while the user is driving to KMA.
+
+### 11. The 15-minute check
+
+1. **Why**: the nightly job runs at 3:00 am. An event added at noon should move that evening's Isha before Isha, not the next night.
+2. **What**: every 15 minutes, for each user with setup done, the free/busy scope, and a working sign-in, update today and tomorrow (`refresh_calendar(days=2, busy_check=True)`). Only changed events go to Google.
+3. **Stable IDs**: `busy:<user id>:<15-minute block in UTC>`, like `busy:...:2026-10-26T13:00`. The worker runs every minute, but each block's check is saved before it runs (`INSERT ... ON CONFLICT DO NOTHING`) and claimed with one `UPDATE ... WHERE status = 'pending'`, the same pattern as the nightly job. A test starts 2 workers at once and checks free/busy was called once.
+4. **Quiet checks are cheap**: when nothing changed, the check returns before even looking up the Prayers calendar. So most checks are 1 free/busy call. 1,000 users would be about 100,000 calls a day, well under Google Calendar's free daily quota. It stays $0.
+5. **Cleanup**: check rows older than 2 days are deleted on each run, so the table stays small (96 rows per user per day before cleanup).
+6. The worker now runs 4 steps every minute: nightly jobs, MAWAQIT reads, busy checks, then queued updates.
+7. The nightly job still covers all 14 days, and asks free/busy for the whole window in one call (from the first day's midnight to the end of the day after the last day, so the last day's Isha is covered).
+
+### 12. The Prayers calendar is never busy
+
+1. Free/busy only asks for `primary`, and only `primary` is read from the answer, the same as milestone 5.
+2. The fake Google still answers that the Prayers calendar is busy all day. A test checks nothing moves because of it. Otherwise every prayer would clash with itself.
+
+### 13. Tests
+
+1. **`test_fit_prayers.py`** (pure, no database):
+   a) A free normal time stays.
+   b) Touching ends don't clash.
+   c) Praying before and after an event.
+   d) Gaps under 10 minutes skipped.
+   e) Shrinking to fit.
+   f) Exactly 10 minutes is enough.
+   g) A moved prayer fits fully before its time ends.
+   h) Clashes.
+   i) Joined events.
+   j) Avoiding the app's own events.
+   k) Never in the past.
+   l) Fajr ending at sunrise.
+   m) The other windows.
+   n) Isha ending at midnight.
+   o) Midnight and moving on both daylight saving days.
+   p) The masjid trip check.
+2. **`test_moving_calendar.py`** (the real calendar update with the fakes):
+   a) Scenario 1, Isha at KMA (adhan 7:23 pm, iqamah 7:40 pm, 10 minute drive): a class until 7:35 gives `Isha` at 7:40, and a class from 7:00 to 8:30 gives `Isha` at 8:30.
+   b) Scenario 2, Asr at KMA (adhan 3:36 pm, iqamah 4:15 pm, Maghrib 6:01 pm): a class from 3:00 to 6:30 gives `Asr (clash)` at 4:15, and a class from 3:00 to 4:21 gives `Asr` at 4:21.
+   c) Isha before a meeting.
+   d) The drive block being deleted.
+   e) The app's own drive block.
+   f) Nothing moving without busy times.
+   g) Daylight saving.
+   h) Free/busy failing never undoing a move but still applying other changes.
+   i) Users without access.
+3. **`test_busy_checks.py`**:
+   a) A new event moves the prayer, and removing it puts it back on the next check.
+   b) Only today and tomorrow.
+   c) Nothing changed means zero writes and only a free/busy call.
+   d) The Prayers calendar never counts.
+   e) A failure changes nothing and the next block retries.
+   f) Started events and a started drive aren't moved.
+   g) Never in the past.
+   h) Who gets checked.
+   i) One check per 15 minutes.
+   j) 2 workers at once.
+   k) Old checks deleted.
+4. **Jumuah**: `test_jumuah_picker.py` covers the pick fitting, the pick clashing, and every slot clashing (now the 1st Jumuah). `test_busy_times.py` checks the same through the calendar.
+5. I broke the code on purpose to check the new tests fail. I removed the app's own events from the gap search, used wall clock hours for midnight, ignored the drive in the masjid check, turned off `keep_moved`, dropped the started-drive rule, and dropped "never in the past". Each one made at least one test fail.
+6. Every old test still passes without changing what it expects, except the Jumuah "every slot clashes" rule, the free/busy call now covering the whole window, and the worker's step list.
+
+### 14. How to check it works
+
+1. **Tests**: `pytest` in `backend` (`733 passed`) and `npx playwright test` in `web` (`180 passed`).
+2. **For real**, with the test Google account:
+   a) Start everything with `docker compose up -d`, so the worker runs.
+   b) Add an event to the test account's main calendar that covers one of today's or tomorrow's prayers.
+   c) Within 15 minutes, that prayer moves in the Prayers calendar, and its description says "Moved because of an event in your calendar."
+   d) Delete the event. Within 15 minutes, the prayer is back at its normal time.
+   e) `SELECT id, status, events_sent FROM busy_check_jobs ORDER BY block_start DESC LIMIT 5` shows the checks.
+3. **Checks I couldn't do here**: real free/busy answers from Google. The cloud environment I built this in can't reach Google, so the steps above are the real test.
