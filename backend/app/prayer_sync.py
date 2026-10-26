@@ -29,7 +29,15 @@ from app.prayer_times import AsrMethod, CalculationMethod, DailyPrayerTimes, Pra
 # Sunrise isn't a prayer. It's when Fajr ends, so it doesn't get an event.
 PRAYERS = ("fajr", "dhuhr", "asr", "maghrib", "isha")
 PRAYER_TITLES = {"fajr": "Fajr", "dhuhr": "Dhuhr", "asr": "Asr", "maghrib": "Maghrib", "isha": "Isha"}
-EVENT_LENGTH = timedelta(minutes=15)
+# How long each prayer block is. Dhuhr and Isha have longer prayers, so they
+# get more time. Jumuah uses each masjid's own length instead (event_plan.py).
+PRAYER_LENGTHS = {
+    "fajr": timedelta(minutes=10),
+    "dhuhr": timedelta(minutes=15),
+    "asr": timedelta(minutes=10),
+    "maghrib": timedelta(minutes=10),
+    "isha": timedelta(minutes=15),
+}
 
 METHOD_NAMES = {
     CalculationMethod.ISNA: "ISNA",
@@ -49,8 +57,8 @@ def source_description(prayer: PrayerTime) -> str:
     return f"{prayer.source.capitalize()} ({', '.join(parts)})"
 
 
-def event_end(start: datetime, length: timedelta = EVENT_LENGTH) -> datetime:
-    """15 minutes after start (or length), counted in UTC so a clock change can't stretch it."""
+def event_end(start: datetime, length: timedelta) -> datetime:
+    """length after start, counted in UTC so a clock change can't stretch it."""
     return (start.astimezone(UTC) + length).astimezone(start.tzinfo)
 
 
@@ -64,7 +72,7 @@ def save_day(db: Session, user_id: uuid.UUID, day: DailyPrayerTimes) -> list[Pra
         prayer: PrayerTime = getattr(day, name)
         values = {
             "starts_at": prayer.time,
-            "ends_at": event_end(prayer.time),
+            "ends_at": event_end(prayer.time, PRAYER_LENGTHS[name]),
             "time_zone": day.timezone,
             "source_description": source_description(prayer),
             "sync_status": "pending",

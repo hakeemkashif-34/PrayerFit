@@ -183,7 +183,7 @@ def test_jumuah_stays_put_when_nothing_changes(db, http, user, fake_google, ors_
     assert len(fake_google.writes()) == writes
 
 
-def test_only_jumuah_is_longer_than_15_minutes(db, http, user, fake_google):
+def test_each_prayer_block_has_its_length_and_jumuah_uses_the_masjids(db, http, user, fake_google):
     set_jumuah(db, "user-a", ["Kanata Muslim Association"])
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
@@ -194,6 +194,10 @@ def test_only_jumuah_is_longer_than_15_minutes(db, http, user, fake_google):
 
     prayers = [e for e in google_events(fake_google) if not e["summary"].startswith("Drive")]
     assert {minutes(e) for e in prayers if e["summary"].startswith("Jumuah")} == {45}
-    assert {minutes(e) for e in prayers if not e["summary"].startswith("Jumuah")} == {15}
+    by_prayer = {
+        name: {minutes(e) for e in prayers if e["summary"].startswith(name)}
+        for name in ("Fajr", "Dhuhr", "Asr", "Maghrib", "Isha")
+    }
+    assert by_prayer == {"Fajr": {10}, "Dhuhr": {15}, "Asr": {10}, "Maghrib": {10}, "Isha": {15}}
     # Only the coming Friday has Jumuah.
     assert len([e for e in prayers if e["summary"].startswith("Jumuah")]) == 1

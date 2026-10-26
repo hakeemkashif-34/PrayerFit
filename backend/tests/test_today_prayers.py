@@ -12,6 +12,8 @@ from tests.conftest import sign_in
 from tests.setup_helpers import save_setup
 
 OTTAWA = {"latitude": 45.4215, "longitude": -75.6972, "timezone": "America/Toronto"}
+# Fajr, Asr, and Maghrib blocks are 10 minutes. Dhuhr and Isha are 15.
+MINUTES = {"fajr": 10, "dhuhr": 15, "asr": 10, "maghrib": 10, "isha": 15}
 DAY = date(2026, 10, 24)
 
 # Further east than Ottawa, so every prayer time moves.
@@ -52,7 +54,7 @@ def test_adds_the_five_prayers(signed_in, fake_google):
     ]
 
 
-def test_event_times_match_the_calculator_and_last_15_minutes(signed_in, fake_google):
+def test_event_times_match_the_calculator_and_each_prayer_has_its_length(signed_in, fake_google):
     signed_in.post("/prayers/today")
     expected = calculate_prayer_times(OTTAWA["latitude"], OTTAWA["longitude"], DAY, OTTAWA["timezone"])
 
@@ -61,7 +63,7 @@ def test_event_times_match_the_calculator_and_last_15_minutes(signed_in, fake_go
         start = datetime.fromisoformat(event["start"]["dateTime"])
         end = datetime.fromisoformat(event["end"]["dateTime"])
         assert start == getattr(expected, name).time
-        assert end - start == timedelta(minutes=15)
+        assert end - start == timedelta(minutes=MINUTES[name])
         assert event["start"]["timeZone"] == "America/Toronto"
 
 

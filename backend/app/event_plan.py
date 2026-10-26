@@ -14,8 +14,9 @@ Which time each prayer uses:
    Jumuah picker chose. If no slot is picked, Dhuhr follows the weekly grid.
 
 Every masjid prayer gets 2 events: a drive block from the leave time to
-the arrival time, then the prayer block at the target time: 15 minutes,
-or 60 for Jumuah.
+the arrival time, then the prayer block at the target time. Fajr, Asr, and
+Maghrib blocks are 10 minutes, Dhuhr and Isha 15, and Jumuah uses the
+masjid's own length (45 minutes when it isn't set).
 No drive time means no drive block.
 """
 
@@ -31,8 +32,8 @@ from app.masjid_times.store import MasjidTimes
 from app.models import Masjid
 from app.prayer_sync import (
     ASR_NAMES,
-    EVENT_LENGTH,
     METHOD_NAMES,
+    PRAYER_LENGTHS,
     PRAYER_TITLES,
     PRAYERS,
     event_end,
@@ -168,7 +169,7 @@ def _masjid_events(
     lines: list[str],
     aim: str,
     user_zone: str,
-    length: timedelta = EVENT_LENGTH,
+    length: timedelta | None = None,
     early: int | None = None,
 ) -> list[PlannedEvent]:
     """The drive block (when the drive time is known) and the prayer block."""
@@ -202,7 +203,7 @@ def _masjid_events(
             local_date=local_date,
             prayer=prayer,
             starts_at=target,
-            ends_at=event_end(target, length),
+            ends_at=event_end(target, length or PRAYER_LENGTHS[prayer]),
             time_zone=user_zone,
             source_description=lines[0],
             place="masjid",
@@ -337,7 +338,7 @@ def plan_day(
                 local_date=local_date,
                 prayer=name,
                 starts_at=target,
-                ends_at=event_end(target),
+                ends_at=event_end(target, PRAYER_LENGTHS[name]),
                 time_zone=user_zone,
                 source_description=lines[0],
                 place="home",

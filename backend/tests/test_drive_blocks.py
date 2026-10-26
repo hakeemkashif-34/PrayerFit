@@ -278,3 +278,27 @@ def test_commute_blocks_are_renamed_and_made_private_in_place(db, http, fetched,
     past = [e for e in new.values() if datetime.fromisoformat(e["start"]["dateTime"]) <= later]
     assert past and all("visibility" not in e for e in past)
     assert len(changed) == len(future)
+
+
+def test_old_15_minute_blocks_are_shortened_in_place(db, http, fetched, fake_google, monkeypatch):
+    from app.prayer_sync import PRAYER_LENGTHS
+
+    # Before this change, every prayer block was 15 minutes.
+    for name in PRAYER_LENGTHS:
+        monkeypatch.setitem(PRAYER_LENGTHS, name, timedelta(minutes=15))
+    refresh(db, http, fetched, NOW)
+    old = {e["id"]: e for e in google_events(fake_google)}
+    monkeypatch.undo()
+    before = len(fake_google.writes())
+
+    later = datetime(2026, 10, 25, 13, 30, tzinfo=TORONTO)  # the same Sunday, after Dhuhr
+    refresh(db, http, fetched, later)
+    changed = fake_google.writes()[before:]
+
+    # Updated in place, and only future Fajr, Asr, and Maghrib blocks changed.
+    assert {e["id"] for e in google_events(fake_google)} == set(old)
+    assert {w.method for w in changed} == {"PUT"}
+    assert {w.body["summary"].split()[0] for w in changed} == {"Fajr", "Asr", "Maghrib"}
+    assert all(datetime.fromisoformat(w.body["start"]["dateTime"]) > later for w in changed)
+    asr = titled(google_events(fake_google), MONDAY, "Asr at home")
+    assert (datetime.fromisoformat(asr["end"]["dateTime"]) - datetime.fromisoformat(asr["start"]["dateTime"])) == timedelta(minutes=10)
