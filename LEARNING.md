@@ -713,11 +713,11 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 3. **`backend/app/geo/ors.py`** and **`backend/app/drive_times.py`**: drive times from OpenRouteService, saved per user and masjid.
 4. **`backend/app/event_plan.py`**: decides which time each prayer uses, writes the descriptions, and adds drive blocks. It's a pure function.
 5. **`backend/app/event_times.py`**: the leave and arrival time maths.
-6. **`backend/app/jumuah.py`**: the Jumuah picker, also a pure function. **`backend/app/busy_times.py`** reads busy times from Google, and **`backend/app/jumuah_choices.py`** builds what the chooser shows.
+6. **`backend/app/jumuah.py`**: the Jumuah picker, also a pure function. **`backend/app/busy_times.py`** reads busy times from Google, and **`backend/app/jumuah_choices.py`** lists the slots the Jumuah question shows.
 7. **`backend/app/update_jobs.py`**: calendar updates queued by a settings change or a masjid time change.
 8. **`backend/alembic/versions/0004_masjid_times_drive_optional.py`**: the new tables and columns. `0005_main_masjid_for_jumuah.py` adds each existing user's main masjid as their Jumuah masjid (see section 10). It's a separate migration because my laptop had already run 0004, and Alembic never runs a migration twice.
 9. **`backend/alembic/versions/0006_jumuah_pick_and_length.py`**: the Jumuah pick, the Jumuah "how early", and each masjid's Jumuah length. It also drops the method columns (see section 16).
-10. **`web/src/steps/RequiredPage.tsx`** and **`web/src/steps/OptionalPage.tsx`**: setup's 2 pages. **`web/src/JumuahChooser.tsx`**: the chooser. **`web/src/ColourPicker.tsx`**: the colour dropdown. **`web/src/SettingsEditors.tsx`**: the small editors on Settings.
+10. **`web/src/steps/RequiredPage.tsx`** and **`web/src/steps/OptionalPage.tsx`**: setup's 2 pages. **`web/src/JumuahChooser.tsx`**: the Jumuah question. **`web/src/ColourPicker.tsx`**: the colour dropdown. **`web/src/SettingsEditors.tsx`**: the small editors on Settings.
 
 ### 2. Shared masjids
 
@@ -839,17 +839,17 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 6. **`test_drive_blocks.py`**: the 7:56 to 8:10 example, 0 and 30 minutes early, without iqamah, no drive block at home or without a drive time, stable IDs, popups only on drive blocks, colours on the right blocks, "how early" changing only drive blocks, switching a prayer home deleting only its future drive block, leave times across daylight saving, every event private, and "Commute to" blocks from an earlier version of this branch renamed back in place.
 7. **`test_jumuah_picker.py`** and **`test_jumuah_calendar.py`**: the pick, a clashing pick, a pick not on this Friday, every slot clashing, no pick, ties, the window's edges, an unknown drive time, the Jumuah length, the Jumuah "how early", and only the coming Friday getting Jumuah.
 8. **`test_busy_times.py`**: free/busy read from the primary calendar only, midnight to midnight on a clock change day, a Google error meaning no busy times, no request without the scope, a busy time moving Jumuah and sending only the Jumuah and its drive block, and zero writes when nothing changed.
-9. **`test_jumuah_pick_and_chooser.py`**: the Jumuah pick endpoint, the chooser's data with and without busy times and with an unsaved Jumuah "how early", and that there's no commute time setting.
+9. **`test_jumuah_pick_and_chooser.py`**: the Jumuah pick endpoint, the slots the question shows (start to end with the Jumuah length, the 1st Jumuah pre-selected, a masjid setup hasn't saved yet, no Google or ORS calls), and that there's no commute time setting.
 10. **`test_ors.py`**, **`test_optional_settings.py`**, **`test_update_jobs.py`**, **`test_admin.py`**, and **`test_worker.py`** cover the rest.
 11. **`test_migrations.py`**: goes back to milestone 4's tables, adds a user with a masjid, a short name, and Jumuah masjids, upgrades, and checks it all survived. Another test does the same from 0005 to 0006 and checks the Jumuah "how early" was copied.
-12. **Playwright**: the 2 setup pages with Back, the chooser (green and grey slots, picking a grey one, the keyboard, skipped with no Jumuah times, windows following unsaved answers, a phone screen), Settings as one card with each item edited on its own, the sign-in-again banner and Not now, the optional page filled in and skipped, the colour dropdown with a mouse and with the keyboard (with the tick moving), the Settings page editing how early, the short name, colours, and Jumuah masjids in order, the "Adding your prayers..." message, the new tab that opens Google Calendar (faked), a blocked new tab, both tabs showing the error when the update or the finish fails, and returning users landing on Settings with no redirect.
+12. **Playwright**: the 2 setup pages with Back, the Jumuah question (last on the Required page, the 1st Jumuah pre-selected, clicking a block, the keyboard, the Jumuah length, skipped at home or with no Jumuah times, a different masjid, a phone screen, and on Settings), Settings as one card with each item edited on its own, the sign-in-again banner and Not now, the optional page filled in and skipped, the colour dropdown with a mouse and with the keyboard (with the tick moving), the Settings page editing how early, the short name, colours, and Jumuah masjids in order, the "Adding your prayers..." message, the new tab that opens Google Calendar (faked), a blocked new tab, both tabs showing the error when the update or the finish fails, and returning users landing on Settings with no redirect.
 
 ### 15. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`684 passed`) and `npx playwright test` in `web` (`140 passed`).
+1. **Tests**: `pytest` in `backend` (`681 passed`) and `npx playwright test` in `web` (`142 passed`).
 2. **Google Cloud Console**: in **Google Auth Platform > Data Access**, add `https://www.googleapis.com/auth/calendar.freebusy`. Then sign out and in again, and the banner on Settings goes away.
 3. **For real**: get a free ORS key and put it in `.env`. Then follow "Masjid times from MAWAQIT" in the README to link KMA, and run `run-now --force`. In Google Calendar: masjid prayers at KMA's iqamah, home prayers at KMA's adhan, each with its source, a drive block with a reminder before each masjid prayer, Jumuah on the coming Friday if KMA is a Jumuah masjid, every event private, and the colours I picked.
-4. **Jumuah and busy times**: put a test event in my main calendar over KMA's 1st Jumuah, press Edit on Jumuah pick in Settings, and check the 1st slot is grey and the 2nd is picked. Then `run-now --force` and check Jumuah moved in Google Calendar.
+4. **Jumuah and busy times**: pick KMA's 1st Jumuah, then put a test event in my main calendar over it on the coming Friday. Run `run-now --force` and check Jumuah moved to the 2nd in Google Calendar, with "Your pick (1st Jumuah) clashes with your calendar" in its description.
 5. **Checks I couldn't do here**: reading KMA's live MAWAQIT page (only the saved copy), a real ORS key, real free/busy answers, and `authuser` with an email on the real Google Calendar. All of those hosts were blocked where I built this.
 
 ### 16. Removing the prayer time method
@@ -871,6 +871,7 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 4. Ties (2 slots at the same time) go to the masjid the user listed first.
 5. **Removing the picked masjid** from the Jumuah list clears the pick, so Settings never shows a pick that can't be used.
 6. **Why only the coming Friday**: a MAWAQIT page only shows this week's Jumuah times. So only the coming Friday (today, if it's Friday) gets them. Later Fridays follow the weekly grid for Dhuhr and say "This Friday's Jumuah times aren't published yet, so this follows your weekly prayers." The next read after Friday covers the next one, which counts as a change and queues an update.
+7. **The question and the rule are separate.** Setup asks "Generally speaking, which Jumuah would you like to attend?" without a date or busy times (section 22). Busy times only come in every Friday, when the calendar update applies the rule above.
 
 ### 18. Busy times from Google (free/busy)
 
@@ -886,7 +887,7 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 
 1. Each masjid's Jumuah is a different length (khutbah plus prayer), and MAWAQIT doesn't say. So it's set on the server: `python -m app.admin set-jumuah-length --masjid <id> --minutes 40`. Whole minutes from 15 to 90.
 2. Without one, it's 45 minutes (`DEFAULT_JUMUAH_MINUTES` in `jumuah.py`), and the description adds "End time is estimated (45 minutes)."
-3. The Jumuah block and the chooser's window both use it. Setting it queues an update for everyone who uses that masjid.
+3. The Jumuah block, the Friday rule's window, and the blocks in the Jumuah question all use it. Setting it queues an update for everyone who uses that masjid.
 
 ### 20. Drive blocks and private events
 
@@ -896,18 +897,19 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 
 ### 21. Setup on 2 pages
 
-1. **Page 1, Required**: location, main masjid (or **I pray at home**), and the weekly grid, all on one page. Picking a location saves it right away, since the masjid search sorts by distance from home. **Next** saves the masjid and the grid.
-2. **Page 2, Optional**: short name, both "how early" times, the prayer and drive colours, and the Jumuah chooser. **Skip** (top right) saves the defaults. **Finish** saves the pick, then the other answers, then finishes setup.
+1. **Page 1, Required**: location, main masjid (or **I pray at home**), the weekly grid, and which Jumuah, all on one page and all shown at once. Picking a location saves it right away, since the masjid search sorts by distance from home. **Next** saves the masjid, the grid, and the Jumuah pick.
+2. **Page 2, Optional**: short name, both "how early" times, and the prayer and drive colours. **Skip** (top right) saves the defaults. **Finish** saves the answers, then finishes setup.
 3. **Back keeps everything**: page 2 stays mounted (just hidden) after the first visit, so its unsaved answers survive going Back. Page 1's answers are already saved by then. If page 1 changes the main masjid, page 2 resets the short name, since it belongs to the old masjid.
 4. **Still nothing reaches Google** before Finish or Skip.
 
-### 22. The Jumuah chooser and Settings
+### 22. The Jumuah question and Settings
 
-1. **The day view**: the coming Friday from the half hour before the first window to the half hour after the last one. Grey **Busy** blocks are in their own column, with a faint band across the slots so a clash is easy to see. Each slot is a card covering its whole window: masjid, slot and time, drive time, leave and end times, and "Fits" or "Clashes with your calendar".
-2. **Green fits, grey clashes**, and grey can still be picked. The colour is never the only signal: the card says it in words too.
-3. **How it's laid out**: a CSS grid with one row per minute. Cards and busy blocks are placed by their start and end rows, so they line up by time. Rows can grow, so when a card's text needs more height (on a phone), every row it covers grows, and everything still lines up. Slots that overlap in time go side by side.
-4. **The backend works out every window** (`POST /jumuah/choices`), using the same code as the calendar update, so what the chooser shows is what the calendar gets. It's a POST because working out drive times can save ORS estimates, and a GET must never change data. It sends the Jumuah "how early" typed on page 2 before it's saved, waiting 400 ms after typing stops.
-5. **The pre-selected slot** is the saved pick if it's on this Friday, otherwise the earliest that fits. Once the user picks a card, a new answer from the server doesn't move it.
-6. Each card is a real radio button (hidden, with the card as its label), so arrow keys and screen readers work.
-7. **Settings is one card** with **Required** (location, main masjid, weekly prayers) and **Optional** (Jumuah masjids, Jumuah pick, short name, both "how early" times, both colours). Each has its own Edit and saves on its own. `PUT /settings/optional` takes every optional answer, so the small editors send the saved answers with just their one change.
+1. **The question**: "Generally speaking, which Jumuah would you like to attend?" It's last on the Required page, after the weekly grid. It's about Fridays in general, so it shows no date and none of the user's busy times.
+2. **The view**: a simple midday calendar, from the half hour before the first Jumuah to the half hour after the last one ends. Each slot (1st, 2nd, 3rd) at the user's Jumuah masjids is a block from its start to its end, using the masjid's Jumuah length (45 minutes when it isn't set). This week's times are only the example: the pick is saved by order.
+3. **How it's laid out**: a CSS grid with one row per minute, so blocks line up by time. Rows can grow, so when a block's text needs more height (on a phone), every row it covers grows, and everything still lines up. Slots that overlap in time go side by side.
+4. **The 1st Jumuah is pre-selected**: the saved pick if there is one, otherwise the 1st slot at the first Jumuah masjid. Clicking a block picks it.
+5. **Skipped** when the user prays at home or their masjid has no Jumuah times yet. Then Next saves the 1st Jumuah at their first Jumuah masjid. Someone at home has no Jumuah masjid, so there's nothing to save, and the rule uses the earliest Jumuah that fits if they add one later.
+6. **Asking before saving**: on page 1 the masjid isn't saved until Next, so the website sends the masjid IDs it's about to save (`GET /jumuah/slots?masjid_id=...`), following the same "main masjid is the first Jumuah masjid" rule as the backend. It's a GET because it only reads saved MAWAQIT times: no Google, no OpenRouteService.
+7. Each block is a real radio button (hidden, with the block as its label), so arrow keys and screen readers work.
+8. **Settings is one card** with **Required** (location, main masjid, weekly prayers, Jumuah pick, with the same view as setup) and **Optional** (Jumuah masjids, short name, both "how early" times, both colours). Each has its own Edit and saves on its own. `PUT /settings/optional` takes every optional answer, so the small editors send the saved answers with just their one change.
 

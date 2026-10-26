@@ -119,21 +119,21 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 2. Open http://localhost:8000 and click **Sign in with Google**.
 3. Pick your test account. Google warns that the app isn't verified. Click **Continue**. Leave the calendar box ticked and allow.
 4. You land back on the website, on page 1 of 2. The 2 pages are listed on the left (on a phone, "Setup · Step 1 of 2" is at the top).
-5. **Required** (page 1) has 3 questions on one page:
+5. **Required** (page 1) has 4 questions on one page, all shown at once:
    a) **What's your location?** Start typing your address. Suggestions show up in a dropdown once you stop typing. Pick yours. It's saved right away, and the time zone comes from it. Postal codes aren't shown or saved, since OpenStreetMap's are often wrong in Canada.
    b) **Which masjid do you usually go to?** Start typing its name. Suggestions show the masjid's name and its distance from home, closest first. If yours doesn't come up, type its address instead and pick that. Press **I pray at home** if you do: every prayer is at home and there's no weekly grid.
    c) **Which prayers do you usually pray at the masjid?** Tick them in the grid: prayers down the side, Monday to Sunday across the top. Anything left unticked is at home.
-   Press **Next** to save the masjid and the grid.
-6. **Optional** (page 2): a short name like `KMA`, how many minutes before iqamah and before Jumuah you want to arrive (whole numbers from 0 to 60, 5 by default), a colour for prayer blocks and for drive blocks (Basil by default), and the Jumuah chooser. **Back** goes to page 1 without losing anything typed here. **Skip** (top right) saves the defaults.
-7. The **Jumuah chooser** shows the coming Friday as a day view. Grey **Busy** blocks are when your Google Calendar is busy. Each Jumuah slot is a card that covers the whole trip, from leaving home to the end of Jumuah. Green fits your calendar. Grey clashes, but you can still pick it. The earliest one that fits is picked for you. If none of your Jumuah masjids have Jumuah times for that Friday, the chooser isn't shown.
-8. Press **Finish** (or **Skip**). Nothing is written to Google Calendar before this. A new tab opens and says "Adding your prayers to Google Calendar..." while the calendar fills, in about 10 to 20 seconds, then shows Google Calendar for the account you signed in with. The first tab goes to the Settings page. If the update fails, the new tab shows the error with a link back to Settings, and Settings shows it too, with **Try again**. If your browser blocks the new tab, Settings says so, and **Open Google Calendar** is right there.
-9. Calculated times always use ISNA with standard Asr. Your main masjid becomes your Jumuah masjid. On the Settings page you can remove it or add others. Praying at home means no Jumuah masjids.
-10. Every event the app makes is private, so people you share your calendar with only see "busy".
-11. In Google Calendar, the **Prayers** calendar has today and the next 13 days, like `Fajr at home` and `Dhuhr at KMA`. Each description says where the time came from. Until your masjid is linked to MAWAQIT (below), masjid prayers use the calculated time and say the iqamah isn't available.
+   d) **Generally speaking, which Jumuah would you like to attend?** Each Jumuah slot (1st, 2nd, 3rd) at your masjid is a block on a simple midday calendar, from its start to its end (the masjid's Jumuah length, or 45 minutes when it isn't set). The times are this week's, only as an example: the pick is saved as "the 2nd Jumuah", not a clock time. It doesn't show a date or your busy times. Click a block to pick it. The 1st Jumuah is picked for you. If you pray at home, or your masjid has no Jumuah times yet, this question is skipped and the 1st Jumuah is saved (when there's a Jumuah masjid to save it for).
+   Press **Next** to save the masjid, the grid, and the Jumuah pick.
+6. **Optional** (page 2): a short name like `KMA`, how many minutes before iqamah and before Jumuah you want to arrive (whole numbers from 0 to 60, 5 by default), and a colour for prayer blocks and for drive blocks (Basil by default). **Back** goes to page 1 without losing anything typed here. **Skip** (top right) saves the defaults.
+7. Press **Finish** (or **Skip**). Nothing is written to Google Calendar before this. A new tab opens and says "Adding your prayers to Google Calendar..." while the calendar fills, in about 10 to 20 seconds, then shows Google Calendar for the account you signed in with. The first tab goes to the Settings page. If the update fails, the new tab shows the error with a link back to Settings, and Settings shows it too, with **Try again**. If your browser blocks the new tab, Settings says so, and **Open Google Calendar** is right there.
+8. Calculated times always use ISNA with standard Asr. Your main masjid becomes your Jumuah masjid. On the Settings page you can remove it or add others. Praying at home means no Jumuah masjids.
+9. Every event the app makes is private, so people you share your calendar with only see "busy".
+10. In Google Calendar, the **Prayers** calendar has today and the next 13 days, like `Fajr at home` and `Dhuhr at KMA`. Each description says where the time came from. Until your masjid is linked to MAWAQIT (below), masjid prayers use the calculated time and say the iqamah isn't available.
 
 ### 4. Change a setting
 
-Coming back to the website later opens the **Settings** page. It never sends you to Google Calendar on its own. Press **Open Google Calendar** to go there. Settings is one card with 2 sections. **Required** has your location, main masjid, and weekly prayers. **Optional** has your Jumuah masjids, your Jumuah pick, the short name, both "how early" times, and both colours. Press **Edit** next to any one of them, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
+Coming back to the website later opens the **Settings** page. It never sends you to Google Calendar on its own. Press **Open Google Calendar** to go there. Settings is one card with 2 sections. **Required** has your location, main masjid, weekly prayers, and your Jumuah pick (the same calendar view as setup). **Optional** has your Jumuah masjids, the short name, both "how early" times, and both colours. Press **Edit** next to any one of them, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
 
 If you move to another time zone, the Prayers calendar's time zone changes too.
 
@@ -179,7 +179,7 @@ What it changes in the calendar:
 
 1. **Masjid prayers** use the masjid's iqamah, like `KMA iqamah (MAWAQIT, updated Oct 25, 2026)`. A day with no iqamah uses the calculated start time and says so. An iqamah is never made up. `+0` on a MAWAQIT page means the iqamah is at the adhan time: KMA uses it for Asr and Isha on days when its set time would come before the adhan. If a page sets `fajrFixationComparedToShuruq`, Fajr's iqamah isn't used and the worker logs it, since that setting's format isn't known.
 2. **Home prayers** use the main masjid's adhan time, like `KMA adhan time (MAWAQIT)`.
-3. **Jumuah**: on the coming Friday (today, if it's Friday), if you have Jumuah masjids, Dhuhr becomes `Jumuah at <masjid>`. It uses your pick (a masjid and its 1st, 2nd, or 3rd Jumuah) if that slot fits your calendar. If it clashes, or that slot isn't on this Friday, it uses the earliest Jumuah that fits across all your Jumuah masjids. If every one clashes, it keeps your pick and says so. With no pick, it's the earliest that fits. The description says which, like `Your pick (2nd Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits.`
+3. **Jumuah**: on the coming Friday (today, if it's Friday), if you have Jumuah masjids, Dhuhr becomes `Jumuah at <masjid>`. This is where your busy times come in, not in the setup question. It uses your pick (a masjid and its 1st, 2nd, or 3rd Jumuah) if that slot fits your calendar. If it clashes, or that slot isn't on this Friday, it uses the earliest Jumuah that fits across all your Jumuah masjids. If every one clashes, it keeps your pick and says so. With no pick, it's the earliest that fits. The description says which, like `Your pick (2nd Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits.`
 4. **Only the coming Friday** uses MAWAQIT's Jumuah times, since a MAWAQIT page only shows this week's. Later Fridays follow your weekly grid for Dhuhr, and say `This Friday's Jumuah times aren't published yet, so this follows your weekly prayers.` They change to Jumuah once a later read covers that Friday.
 5. **Jumuah length**: each masjid can have its own, set on the server (below). Without one, the block is 45 minutes and the description says the end time is estimated. Every other prayer block is 15 minutes.
 6. **Freshness**: times read in the last 24 hours are fresh. Up to 7 days old, they're still used, and the description says they may be out of date. Older than that, calculated times are used.
@@ -234,7 +234,7 @@ Through nginx, every endpoint below is under `/api` (like `/api/me`), except the
 | `PUT /settings/weekly` | Saves the weekly grid (7 days) |
 | `PUT /settings/optional` | Saves both "how early" times, the short name, and the 2 colours. Skip sends the defaults |
 | `PUT /settings/jumuah-pick` | Saves your Jumuah pick as a masjid and a slot (1st, 2nd, or 3rd), or clears it |
-| `POST /jumuah/choices` | The coming Friday's Jumuah slots, your busy times, and which slot fits, for the chooser. Saves nothing |
+| `GET /jumuah/slots` | Each Jumuah slot at your Jumuah masjids (or the `masjid_id`s given, for setup), with this week's times as an example, and which one is picked. No busy times. Saves nothing |
 | `PUT /settings/jumuah` | Saves the Jumuah masjids, in order (settings page only) |
 | `POST /setup/finish` | Finishes setup and fills the next 14 days. The website calls it after the last question |
 | `POST /calendar/sync` | Sends anything still waiting. Safe to run again |
@@ -263,11 +263,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `684 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `681 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`357 passed, 327 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`357 passed, 324 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
@@ -280,4 +280,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `140 passed`: 70 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `142 passed`: 71 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
