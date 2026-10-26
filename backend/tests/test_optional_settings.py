@@ -167,17 +167,38 @@ def test_the_masjid_shows_where_its_times_come_from(set_up, db, http, fake_mawaq
     assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == "Linked to MAWAQIT. Its times haven't been read yet"
     fetch(db, http, NOW - timedelta(days=2))
     assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == (
-        "MAWAQIT times may be out of date (last updated Oct 22, 2026)"
+        "MAWAQIT times couldn't be confirmed since Oct 22, 2026, so calculated times are used"
     )
     # Read again 2 days later, the page now covers Friday Oct 30's Jumuah, which is a change.
     fetch(db, http, NOW)
     assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == "Times from MAWAQIT, updated Oct 24, 2026"
+
+
+def test_a_notice_shows_when_masjid_times_cant_be_confirmed(set_up, db, http, fake_mawaqit, set_today):
+    kma = masjid_id(db, "Kanata Muslim Association")
+    link(db, kma, "kma-kanata", fake_mawaqit, at=NOW - timedelta(days=3))
+    # Linked, never read, but under 24 hours since nothing could be read: no notice yet.
     with Session(db) as session:
-        session.get(MasjidSource, kma).last_success_at = NOW - timedelta(days=8)
+        session.get(MasjidSource, kma).linked_at = NOW - timedelta(hours=2)
         session.commit()
-    assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == (
-        "MAWAQIT times are more than 7 days old, so calculated times are used"
-    )
+    assert set_up.get("/settings").json()["masjid_notices"] == []
+
+    fetch(db, http, NOW - timedelta(hours=23))
+    assert set_up.get("/settings").json()["masjid_notices"] == []
+
+    with Session(db) as session:
+        session.get(MasjidSource, kma).last_success_at = NOW - timedelta(days=2)
+        session.commit()
+    assert set_up.get("/settings").json()["masjid_notices"] == [
+        "KMA's times couldn't be confirmed since Oct 22, 2026. Your calendar is using calculated times until they're back."
+    ]
+
+
+def test_a_masjid_never_read_for_a_day_gets_a_notice_from_when_it_was_linked(set_up, db, fake_mawaqit, set_today):
+    link(db, masjid_id(db, "Kanata Muslim Association"), "kma-kanata", fake_mawaqit, at=NOW - timedelta(days=3))
+    assert set_up.get("/settings").json()["masjid_notices"] == [
+        "KMA's times couldn't be confirmed since Oct 21, 2026. Your calendar is using calculated times until they're back."
+    ]
 
 
 def test_nothing_reaches_google_until_setup_finishes(signed_in, fake_photon, fake_google):

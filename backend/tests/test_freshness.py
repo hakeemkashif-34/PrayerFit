@@ -1,4 +1,4 @@
-"""Masjid times are fresh for 24 hours, stale (still used) up to 7 days, then not used."""
+"""Masjid times are used for 24 hours after a good fetch. After that, calculated times are used."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -12,14 +12,9 @@ def test_fresh_under_24_hours():
     assert freshness(NOW, NOW).usable
 
 
-def test_stale_from_24_hours_to_7_days():
+def test_not_used_from_24_hours():
     assert freshness(NOW - timedelta(hours=24), NOW) is Freshness.STALE
-    assert freshness(NOW - timedelta(days=7), NOW) is Freshness.STALE
-    assert freshness(NOW - timedelta(days=7), NOW).usable
-
-
-def test_too_old_after_7_days():
-    assert freshness(NOW - timedelta(days=7, seconds=1), NOW) is Freshness.TOO_OLD
+    assert not freshness(NOW - timedelta(hours=24), NOW).usable
     assert not freshness(NOW - timedelta(days=30), NOW).usable
 
 

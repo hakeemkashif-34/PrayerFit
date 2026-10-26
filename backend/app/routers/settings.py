@@ -26,7 +26,7 @@ from app.geo.timezones import timezone_for
 from app.google_errors import CalendarAccessMissing, GoogleError, ReauthRequired
 from app.http_client import get_http
 from app.event_plan import date_text
-from app.masjid_times.freshness import Freshness, freshness
+from app.masjid_times.freshness import FRESH_FOR, Freshness, freshness
 from app.jumuah_choices import JumuahChoices, jumuah_choices
 from app.models import Masjid, MasjidSource, PrayerEvent, User, UserJumuahMasjid, WeeklyMasjidPrayers
 from app.prayer_sync import SyncIncomplete
@@ -41,6 +41,7 @@ from app.user_settings import (
     follow_main_masjid,
     get_settings,
     jumuah_masjids,
+    masjid_label,
     missing_steps,
     read_address,
     read_location,
@@ -115,6 +116,8 @@ class SettingsOut(BaseModel):
     jumuah_pick: JumuahPickOut | None
     prayer_color_id: ColorId | None
     drive_color_id: ColorId | None
+    # "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
+    masjid_notices: list[str] = []
 
 
 class CalendarUpdate(BaseModel):
@@ -138,12 +141,31 @@ def times_status(db: Session, masjid: Masjid, now: datetime, time_zone: str) -> 
     age = freshness(source.last_success_at, now)
     if age is Freshness.NEVER:
         return "Linked to MAWAQIT. Its times haven't been read yet"
-    if age is Freshness.TOO_OLD:
-        return "MAWAQIT times are more than 7 days old, so calculated times are used"
     if age is Freshness.STALE:
-        return f"MAWAQIT times may be out of date (last updated {date_text(source.last_success_at, time_zone)})"
+        return f"MAWAQIT times couldn't be confirmed since {date_text(source.last_success_at, time_zone)}, so calculated times are used"
     changed = source.last_changed_at or source.last_success_at
     return f"Times from MAWAQIT, updated {date_text(changed, time_zone)}"
+
+
+def masjid_notices(db: Session, masjids: list[tuple[Masjid, str]], now: datetime, time_zone: str) -> list[str]:
+    """A notice for each linked masjid whose times couldn't be confirmed in the last 24 hours.
+
+    masjids: each masjid with the label the user sees, like "KMA".
+    A masjid linked less than 24 hours ago that hasn't been read yet gets no notice.
+    """
+    notices = []
+    for masjid, label in masjids:
+        source = db.get(MasjidSource, masjid.id)
+        if source is None or freshness(source.last_success_at, now) is Freshness.FRESH:
+            continue
+        since = source.last_success_at or source.linked_at
+        if now - since < FRESH_FOR:
+            continue
+        notices.append(
+            f"{label}'s times couldn't be confirmed since {date_text(since, time_zone)}. "
+            "Your calendar is using calculated times until they're back."
+        )
+    return notices
 
 
 def _masjid_out(db: Session, masjid: Masjid, home: tuple[float, float] | None, now: datetime, time_zone: str) -> MasjidOut:
@@ -163,6 +185,11 @@ def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
     home = read_location(row)
     main = db.get(Masjid, row.main_masjid_id) if row.main_masjid_id else None
     missing = missing_steps(db, row)
+    listed = jumuah_masjids(db, user_id)
+    # Each masjid the user uses, once, with the name they see: the short name for the main masjid.
+    used_main = main if row.main_masjid_choice == "masjid" else None
+    labelled = [(used_main, masjid_label(used_main, row.main_masjid_short_name))] if used_main else []
+    labelled += [(m, masjid_label(m, None)) for m in listed if not used_main or m.id != used_main.id]
     return SettingsOut(
         setup_complete=row.setup_completed_at is not None and not missing,
         missing=missing,
@@ -177,7 +204,7 @@ def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
             for d in weekly_rows(db, user_id)
         ],
         jumuah_saved=row.jumuah_saved,
-        jumuah_masjids=[_masjid_out(db, m, home, now, zone) for m in jumuah_masjids(db, user_id)],
+        jumuah_masjids=[_masjid_out(db, m, home, now, zone) for m in listed],
         arrive_early_minutes=row.arrive_early_minutes or 0,
         jumuah_arrive_early_minutes=row.jumuah_arrive_early_minutes,
         jumuah_pick=(
@@ -187,6 +214,7 @@ def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
         ),
         prayer_color_id=row.prayer_color_id,
         drive_color_id=row.drive_color_id,
+        masjid_notices=masjid_notices(db, labelled, now, zone),
     )
 
 
