@@ -156,8 +156,20 @@ def _drop_drive_block(row: PrayerEvent) -> None:
     row.sync_status = "delete_pending" if row.google_calendar_id is not None else "deleted"
 
 
-def save_window(db: Session, user_id: uuid.UUID, planned: list[PlannedEvent], dates: list[date], now: datetime) -> None:
-    """Save the planned events. Only changed future rows become pending. Commits."""
+def save_window(
+    db: Session,
+    user_id: uuid.UUID,
+    planned: list[PlannedEvent],
+    dates: list[date],
+    now: datetime,
+    keep_moved: bool = False,
+) -> None:
+    """Save the planned events. Only changed future rows become pending. Commits.
+
+    keep_moved: free/busy failed, so the plan treats the day as free. Rows
+    that busy times moved (or flagged as a clash) stay exactly as they
+    are, with their drive blocks, so a move is never undone by not knowing.
+    """
     existing = {(r.local_date, r.prayer, r.kind): r for r in rows_for_dates(db, user_id, dates)}
 
     def trip_started(key: tuple[date, str]) -> bool:
@@ -166,10 +178,13 @@ def save_window(db: Session, user_id: uuid.UUID, planned: list[PlannedEvent], da
         return drive is not None and drive.sync_status != "deleted" and drive.starts_at <= now
 
     # 1. Prayer blocks.
+    kept: set[tuple[date, str]] = set()
     for event in (p for p in planned if p.kind == "prayer"):
         key = (event.local_date, event.prayer)
         row = existing.get((*key, "prayer"))
-        if row is None:
+        if keep_moved and row is not None and row.fit in ("moved", "clash"):
+            kept.add(key)
+        elif row is None:
             _insert(db, user_id, event, uuid.uuid4())
         elif row.starts_at > now and not trip_started(key):  # started means it's the past. Leave it alone.
             _update(row, event)
@@ -179,7 +194,7 @@ def save_window(db: Session, user_id: uuid.UUID, planned: list[PlannedEvent], da
     prayer_ids = {
         (r.local_date, r.prayer): r.id for r in rows_for_dates(db, user_id, dates) if r.kind == "prayer"
     }
-    wanted = {(p.local_date, p.prayer): p for p in planned if p.kind == "drive"}
+    wanted = {(p.local_date, p.prayer): p for p in planned if p.kind == "drive" and (p.local_date, p.prayer) not in kept}
     for key, event in wanted.items():
         row = existing.get((*key, "drive"))
         if row is None:
@@ -188,7 +203,8 @@ def save_window(db: Session, user_id: uuid.UUID, planned: list[PlannedEvent], da
         elif row.starts_at > now:
             _update(row, event)
     for (local_date, prayer, kind), row in existing.items():
-        if kind == "drive" and (local_date, prayer) not in wanted and row.starts_at > now:
+        key = (local_date, prayer)
+        if kind == "drive" and key not in wanted and key not in kept and row.starts_at > now:
             _drop_drive_block(row)
     db.commit()
 
@@ -231,7 +247,8 @@ def refresh_calendar(
         inputs = masjid_inputs(db, http, setup, with_next_day(dates), now)
         # One free/busy call for the whole window. Nothing is saved.
         busy = busy_between(db, http, user_id, dates[0], dates[-1], setup.time_zone)
-        save_window(db, user_id, plan_window(setup, dates, inputs, busy.busy, now), dates, now)
+        planned = plan_window(setup, dates, inputs, busy.busy, now)
+        save_window(db, user_id, planned, dates, now, keep_moved=busy.status == "failed")
 
         # Get (or refresh) the token first, so a dead sign-in is reported
         # before any Google call. The rows above stay saved either way.

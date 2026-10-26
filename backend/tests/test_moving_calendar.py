@@ -174,3 +174,49 @@ def test_isha_midnight_counts_real_hours_on_the_night_the_clocks_go_back(db, htt
     isha = titled(google_events(fake_google), date(2026, 10, 31), "Isha")
     assert (clock(isha), clock(isha, end=True)) == ("23:55", "00:10")
     assert "Isha's time is 7:30 pm to 12:15 am." in isha["description"]
+
+
+# ---- When busy times are unknown ----
+
+
+def test_a_free_busy_failure_never_undoes_a_move(db, http, user, fake_google):
+    busy(fake_google, ("19:00", "20:30"), ("15:00", "18:30"))
+    run(db, http, user)
+    writes = len(fake_google.writes())
+
+    # The next update can't read busy times. Isha stays moved and Asr stays a clash.
+    fake_google.freebusy_failure = 500
+    refresh(db, http, user, NOW.replace(hour=9))
+    assert len(fake_google.writes()) == writes
+    events = google_events(fake_google)
+    assert clock(titled(events, TUESDAY, "Isha")) == "20:30"
+    assert clock(titled(events, TUESDAY, "Asr (clash)")) == "16:15"
+    assert "Drive to KMA" not in titles(fake_google)
+
+
+def test_a_free_busy_failure_still_applies_other_changes(db, http, user, fake_google):
+    busy(fake_google, ("19:00", "20:30"))
+    run(db, http, user)
+    fake_google.freebusy_failure = 500
+    # Asr moves home on Tuesdays. That still goes through, and Isha stays moved.
+    with Session(db) as session:
+        session.query(WeeklyMasjidPrayers).filter_by(user_id=user, weekday=1).one().asr = False
+        session.commit()
+    refresh(db, http, user, NOW.replace(hour=9))
+    assert titles(fake_google) == ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"]
+    assert clock(titled(google_events(fake_google), TUESDAY, "Isha")) == "20:30"
+
+
+def test_without_free_busy_access_nothing_moves(db, http, user, fake_google):
+    from app.models import GoogleToken
+    from tests.fake_google import OLD_SCOPES
+
+    with Session(db) as session:
+        session.query(GoogleToken).filter_by(user_id=user).one().scopes = OLD_SCOPES
+        session.commit()
+    busy(fake_google, ("19:00", "20:30"), ("15:00", "18:30"))
+    run(db, http, user)
+    assert fake_google.freebusy_requests() == []
+    assert titles(fake_google) == [
+        "Fajr", "Dhuhr", "Drive to KMA", "Asr at KMA", "Maghrib", "Drive to KMA", "Isha at KMA",
+    ]
