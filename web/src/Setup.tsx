@@ -62,8 +62,8 @@ export function Setup({ initial, onDone }: Props) {
     window.scrollTo(0, 0);
   }
 
-  function openTab() {
-    tab.current = openFinishTab();
+  function openTab(colourId: string | null) {
+    tab.current = openFinishTab(colourId);
   }
 
   function closeTab() {

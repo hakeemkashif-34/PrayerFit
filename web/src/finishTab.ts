@@ -22,9 +22,10 @@ const nothing = () => {};
 
 export const NO_TAB: FinishTab = { state: "none", succeed: nothing, fail: nothing, close: nothing };
 
-// Call this inside the click handler, before any await.
-export function openFinishTab(): FinishTab {
-  const tab = window.open("/adding", "_blank");
+// Call this inside the click handler, before any await. colourId is the
+// prayer colour the user picked, so the page's little calendar uses it.
+export function openFinishTab(colourId: string | null): FinishTab {
+  const tab = window.open(colourId ? `/adding?colour=${encodeURIComponent(colourId)}` : "/adding", "_blank");
   if (!tab) return { ...NO_TAB, state: "blocked" };
 
   let result: { type: "open"; url: string } | { type: "failed"; message: string } | null = null;

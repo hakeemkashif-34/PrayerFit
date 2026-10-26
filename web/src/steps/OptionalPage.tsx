@@ -20,7 +20,8 @@ type Props = {
   settings: Settings;
   // Setup opens the Google Calendar tab here, inside the click, so the
   // browser allows it. onSaveFailed closes it again.
-  onFinishClick: () => void;
+  // colourId: the prayer colour picked, for the new tab's little calendar.
+  onFinishClick: (colourId: string | null) => void;
   onSaveFailed: () => void;
   onSaved: (settings: Settings) => void;
 };
@@ -66,7 +67,7 @@ export function OptionalPage({ settings, onFinishClick, onSaveFailed, onSaved }:
   }
 
   function skip() {
-    onFinishClick();
+    onFinishClick(DEFAULTS.prayer_color_id);
     void run(async () => (await api.saveOptional(DEFAULTS)).settings);
   }
 
@@ -81,7 +82,7 @@ export function OptionalPage({ settings, onFinishClick, onSaveFailed, onSaved }:
     setErrors(found);
     if (minutes === null || jumuahMinutes === null) return;
 
-    onFinishClick();
+    onFinishClick(prayerColour);
     void run(async () => {
       const saved = await api.saveOptional({
         arrive_early_minutes: minutes,

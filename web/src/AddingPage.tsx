@@ -1,9 +1,47 @@
 // The new tab that opens on Finish (see finishTab.ts). It shows a message
 // until the setup tab says the first calendar update is done, then opens
 // Google Calendar here. It never calls the API itself.
+//
+// While it waits, a little week calendar fills up with prayer blocks, one
+// by one, in the user's prayer colour, then starts again. It's all CSS
+// (see .mini-week in styles.css). Users who turn off motion get a spinner.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { GOOGLE_CALENDAR_PREFIX } from "./googleCalendar";
+import { GOOGLE_COLOURS } from "./labels";
+
+const DAYS = ["M", "T", "W", "T", "F", "S", "S"];
+const PRAYERS_PER_DAY = 5;
+
+// Only one of Google's 11 colour IDs counts. Anything else uses the app's green.
+function prayerColour(): string | null {
+  const id = new URLSearchParams(window.location.search).get("colour");
+  return GOOGLE_COLOURS.find((c) => c.id === id)?.hex ?? null;
+}
+
+function MiniWeek() {
+  const colour = prayerColour();
+  return (
+    <div aria-hidden="true">
+      <div className="mini-week" style={colour ? ({ "--prayer": colour } as CSSProperties) : undefined}>
+        {DAYS.map((day, d) => (
+          <span key={`day-${d}`} className="mini-day">
+            {day}
+          </span>
+        ))}
+        {/* Row by row in the grid, but each block's turn (--i) goes day by day. */}
+        {Array.from({ length: PRAYERS_PER_DAY }, (_, p) =>
+          DAYS.map((_, d) => (
+            <span key={`${d}-${p}`} className="mini-cell">
+              <span className="mini-block" style={{ "--i": d * PRAYERS_PER_DAY + p } as CSSProperties} />
+            </span>
+          )),
+        )}
+      </div>
+      <div className="spinner" />
+    </div>
+  );
+}
 
 export function AddingPage() {
   const [failed, setFailed] = useState<string | null>(null);
@@ -39,7 +77,7 @@ export function AddingPage() {
   }, []);
 
   return (
-    <main className="page narrow">
+    <main className="page narrow adding">
       {failed !== null ? (
         <>
           <h1>Something went wrong</h1>
@@ -59,8 +97,9 @@ export function AddingPage() {
         </>
       ) : (
         <>
-          <h1>Adding your prayers to Google Calendar...</h1>
-          <p className="hint">Adding today and the next 13 days. This can take up to 20 seconds.</p>
+          <h1 className="one-line">Adding your prayers to Google Calendar...</h1>
+          <p className="hint one-line">This can take up to a minute.</p>
+          <MiniWeek />
         </>
       )}
     </main>

@@ -593,7 +593,8 @@ test("Finish opens a new tab that shows a message, then Google Calendar, while t
 
   // The new tab opened inside the click, before the calendar was filled.
   const tab = await popup;
-  await expect(tab).toHaveURL(/localhost:4173\/adding$/);
+  // With the prayer colour picked (Basil, the default), for the page's little calendar.
+  await expect(tab).toHaveURL(/localhost:4173\/adding\?colour=10$/);
   await expect(tab.getByRole("heading", { level: 1, name: "Adding your prayers to Google Calendar..." })).toBeVisible();
   // This tab is on Settings already, saying the same.
   await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
