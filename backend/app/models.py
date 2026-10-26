@@ -380,6 +380,27 @@ class UpdateJob(Base):
     error: Mapped[str | None] = mapped_column(Text)
 
 
+class BusyCheckJob(Base):
+    """One 15-minute check of a user's busy times for today and tomorrow.
+
+    Saved before it runs. The ID is "busy:{user_id}:{block}", where the
+    block is the 15 minutes in UTC it belongs to, so a second worker or a
+    retry in the same block finds the same row and does nothing.
+    """
+
+    __tablename__ = "busy_check_jobs"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    block_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    # pending, running, done, failed, skipped, or needs_sign_in
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    events_sent: Mapped[int] = mapped_column(Integer, default=0)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+
+
 class GeocodeCache(Base):
     """Photon answers, so the same search is never sent twice.
 

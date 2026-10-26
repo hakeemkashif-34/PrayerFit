@@ -222,6 +222,8 @@ def user_lock(db: Session, user_id: uuid.UUID):
 class RefreshResult:
     rows: list[PrayerEvent]  # every row in the window, except deleted drive blocks
     sent: int  # how many went to Google
+    # A busy check stopped because free/busy didn't answer. Nothing was changed.
+    busy_unknown: bool = False
 
 
 def refresh_calendar(
@@ -231,8 +233,13 @@ def refresh_calendar(
     now: datetime,
     days: int = WINDOW_DAYS,
     first_day: date | None = None,
+    busy_check: bool = False,
 ) -> RefreshResult:
     """Bring the user's calendar up to date for today plus days - 1.
+
+    busy_check: the 15-minute check (busy_checks.py). It stops without
+    changing anything if free/busy doesn't answer, and skips every other
+    Google call when nothing changed.
 
     Raises SetupIncomplete, ReauthRequired, CalendarAccessMissing, or
     SyncIncomplete (Google failed partway; the rest stay pending).
@@ -247,8 +254,15 @@ def refresh_calendar(
         inputs = masjid_inputs(db, http, setup, with_next_day(dates), now)
         # One free/busy call for the whole window. Nothing is saved.
         busy = busy_between(db, http, user_id, dates[0], dates[-1], setup.time_zone)
+        if busy_check and not busy.checked:
+            return RefreshResult(rows=[], sent=0, busy_unknown=True)
         planned = plan_window(setup, dates, inputs, busy.busy, now)
         save_window(db, user_id, planned, dates, now, keep_moved=busy.status == "failed")
+        if busy_check:
+            saved = rows_for_dates(db, user_id, dates)
+            if not any(r.sync_status in ("pending", "delete_pending") for r in saved):
+                # Nothing changed, so a quiet check costs Google one free/busy call.
+                return RefreshResult(rows=[r for r in saved if r.sync_status != "deleted"], sent=0)
 
         # Get (or refresh) the token first, so a dead sign-in is reported
         # before any Google call. The rows above stay saved either way.

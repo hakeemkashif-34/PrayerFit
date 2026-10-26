@@ -3,7 +3,8 @@
 Every minute it runs, in order:
 1. Nightly jobs that are due (3:00 am in each user's time zone).
 2. MAWAQIT fetches that are due (each linked masjid, once every 6 hours).
-3. Queued calendar updates, like the ones a masjid time change adds.
+3. Busy time checks that are due (each user, once every 15 minutes).
+4. Queued calendar updates, like the ones a masjid time change adds.
 Each step has its own try, so one failing doesn't stop the others.
 
     python -m app.worker                 checks every minute for due jobs (the service)
@@ -16,6 +17,7 @@ import logging
 import time
 from datetime import UTC, datetime
 
+from app.busy_checks import run_due_checks
 from app.db import get_engine
 from app.http_client import new_http_client
 from app.masjid_times.scheduler import run_due_fetches
@@ -30,6 +32,7 @@ CHECK_EVERY_SECONDS = 60
 STEPS = (
     ("nightly jobs", run_due_jobs),
     ("masjid times", run_due_fetches),
+    ("busy checks", run_due_checks),
     ("calendar updates", run_due_updates),
 )
 
