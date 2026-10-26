@@ -92,17 +92,32 @@ def masjid_inputs(db: Session, http: httpx2.Client, setup: Setup, dates: list[da
     )
 
 
+def with_next_day(dates: list[date]) -> list[date]:
+    """The dates plus the one after, since the last day's Isha ends at the next day's midnight."""
+    return [*dates, dates[-1] + timedelta(days=1)]
+
+
 def plan_window(
-    setup: Setup, dates: list[date], inputs: MasjidInputs, busy: list[tuple[datetime, datetime]] | None = None
+    setup: Setup,
+    dates: list[date],
+    inputs: MasjidInputs,
+    busy: list[tuple[datetime, datetime]] | None = None,
+    now: datetime | None = None,
 ) -> list[PlannedEvent]:
     # MAWAQIT's Jumuah times are only for this one Friday (today, if it's Friday).
     upcoming_friday = next_friday(dates[0])
-    planned = []
-    for local_date in dates:
-        day = calculate_prayer_times(
+    days = {
+        local_date: calculate_prayer_times(
             setup.latitude, setup.longitude, local_date, setup.time_zone, setup.method, setup.asr_method
         )
-        planned.extend(plan_day(setup, local_date, day, inputs.main, inputs.jumuah, busy, upcoming_friday))
+        for local_date in with_next_day(dates)
+    }
+    planned = []
+    for local_date in dates:
+        next_day = days[local_date + timedelta(days=1)]
+        planned.extend(
+            plan_day(setup, local_date, days[local_date], inputs.main, inputs.jumuah, busy, upcoming_friday, next_day, now)
+        )
     return planned
 
 
@@ -145,12 +160,18 @@ def save_window(db: Session, user_id: uuid.UUID, planned: list[PlannedEvent], da
     """Save the planned events. Only changed future rows become pending. Commits."""
     existing = {(r.local_date, r.prayer, r.kind): r for r in rows_for_dates(db, user_id, dates)}
 
+    def trip_started(key: tuple[date, str]) -> bool:
+        """The drive to the masjid has started, so the prayer is underway too."""
+        drive = existing.get((*key, "drive"))
+        return drive is not None and drive.sync_status != "deleted" and drive.starts_at <= now
+
     # 1. Prayer blocks.
     for event in (p for p in planned if p.kind == "prayer"):
-        row = existing.get((event.local_date, event.prayer, "prayer"))
+        key = (event.local_date, event.prayer)
+        row = existing.get((*key, "prayer"))
         if row is None:
             _insert(db, user_id, event, uuid.uuid4())
-        elif row.starts_at > now:  # already started means it's the past. Leave it alone.
+        elif row.starts_at > now and not trip_started(key):  # started means it's the past. Leave it alone.
             _update(row, event)
     db.flush()
 
@@ -207,10 +228,10 @@ def refresh_calendar(
         if first_day is None:
             first_day = now.astimezone(ZoneInfo(setup.time_zone)).date()
         dates = window_dates(first_day, days)
-        inputs = masjid_inputs(db, http, setup, dates, now)
+        inputs = masjid_inputs(db, http, setup, with_next_day(dates), now)
         # One free/busy call for the whole window. Nothing is saved.
         busy = busy_between(db, http, user_id, dates[0], dates[-1], setup.time_zone)
-        save_window(db, user_id, plan_window(setup, dates, inputs, busy.busy), dates, now)
+        save_window(db, user_id, plan_window(setup, dates, inputs, busy.busy, now), dates, now)
 
         # Get (or refresh) the token first, so a dead sign-in is reported
         # before any Google call. The rows above stay saved either way.

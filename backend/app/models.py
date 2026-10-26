@@ -130,6 +130,9 @@ class PrayerEvent(Base):
     color_id: Mapped[str | None] = mapped_column(String(2))
     # A popup this many minutes before the start. Empty sends no reminder settings.
     reminder_minutes: Mapped[int | None] = mapped_column(SmallInteger)
+    # "normal", "moved" (busy times moved it), or "clash" (no free time at all).
+    # When free/busy fails, moved and clash rows are kept as they are.
+    fit: Mapped[str] = mapped_column(String(8), default="normal", server_default="normal")
 
 
 class UserSettings(Base):
