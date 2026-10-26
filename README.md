@@ -1,6 +1,6 @@
 # PrayerFit
 
-PrayerFit puts your daily prayers and your masjid's times in your Google Calendar, planned around your day.
+An app that syncs your daily prayers and masjid times to your Google Calendar, based on your location and planned around your day.
 
 See [PrayerFit_App.md](PrayerFit_App.md) for the full product description and [LEARNING.md](LEARNING.md) for how each part works.
 
