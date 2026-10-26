@@ -1,6 +1,10 @@
 // The landing page for signed-out users, and the page for users whose
 // Google sign-in expired. Welcome on the left, the sign-in card on the
 // right. On a phone they stack.
+//
+// The hadith is the first thing a reader should notice, so it has its own
+// look: a large serif (Amiri, which also has the ﷺ sign) in a quote block
+// with a gold accent, and the source on its own line.
 
 import { SIGN_IN_URL } from "./api";
 import { SIGN_IN_ERRORS } from "./labels";
@@ -17,7 +21,13 @@ export function SignIn({ expired = false, errorCode = null }: Props) {
     <main className="landing">
       <section className="welcome">
         <h1>Welcome to Muslim Calendar</h1>
-        <p className="lead">It keeps your daily prayer times up to date in your Google Calendar, every day.</p>
+        <p className="lead">Keep your prayer times up to date, every day.</p>
+        <figure className="hadith">
+          <blockquote>
+            <p>The Prophet ﷺ was asked which deed is most beloved to Allah, and he said praying on time.</p>
+          </blockquote>
+          <figcaption>Sahih al-Bukhari 527</figcaption>
+        </figure>
       </section>
       <section className="card sign-in" aria-label={expired ? "Sign in again" : "Sign in"}>
         {expired ? (
@@ -31,9 +41,6 @@ export function SignIn({ expired = false, errorCode = null }: Props) {
         ) : (
           <>
             <h2>Get started</h2>
-            <p className="hint">
-              It only asks for access to the "Prayers" calendar it makes. Never Gmail, and never your other calendars.
-            </p>
             <a className="button google" href={SIGN_IN_URL}>
               Sign in with Google
             </a>

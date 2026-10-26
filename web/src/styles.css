@@ -1,6 +1,7 @@
 /* Mobile first: one column, large tap targets. Wider screens get two columns
-   on the landing and setup pages. Colours stay simple: one green, greys.
-   Every colour is a token here, so dark mode only has to change the tokens. */
+   on the landing and setup pages. Colours stay simple: one green, greys,
+   and gold only for the hadith on the landing page. Every colour is a
+   token here, so dark mode only has to change the tokens. */
 
 :root {
   --green: #1f5f4a;
@@ -19,9 +20,15 @@
   --error: #a32020;
   --warning-bg: #fff4dc;
   --shadow: var(--shadow);
+  /* The hadith: warm gold, so it stands apart from the green. */
+  --quote-bg: #fbf4e2;
+  --quote-accent: #b07d1c;
+  --quote-text: #3a2c0f;
+  --quote-source: #7a5a1c;
 
   /* Plus Jakarta Sans, served from our own site (see main.tsx). */
   --font: "Plus Jakarta Sans Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: "Amiri", Georgia, "Times New Roman", serif;
   color-scheme: light dark;
   font-family: var(--font);
   /* Bigger than the browser's 16px, and bigger again on wider screens (below). */
@@ -55,6 +62,10 @@
     --error: #ff8f85;
     --warning-bg: #3a2f12;
     --shadow: rgb(0 0 0 / 0.45);
+    --quote-bg: #2b2414;
+    --quote-accent: #e3b552;
+    --quote-text: #f6e8c4;
+    --quote-source: #d9b56a;
   }
 }
 
@@ -181,40 +192,87 @@ strong {
 /* ---- Landing page: welcome on the left, sign-in card on the right ---- */
 
 .landing {
-  max-width: 1000px;
+  max-width: 1240px;
   margin: 0 auto;
-  padding: 48px 16px;
+  padding: 40px 16px;
   display: grid;
-  gap: 32px;
+  gap: 28px;
   align-items: center;
   /* Keeps the two parts together in the middle instead of spread apart. */
   align-content: center;
   min-height: 100vh;
 }
 
+/* Smaller than the hadith on purpose: the hadith is what the eye lands on. */
 .welcome h1 {
-  font-size: 2.5rem;
-  line-height: 1.1;
+  font-size: 1.625rem;
+  line-height: 1.15;
   letter-spacing: -0.03em;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
+}
+
+.welcome .lead {
+  max-width: none;
+  margin-bottom: 24px;
+}
+
+/* The hadith: a large serif in a warm quote block with a gold bar on the left. */
+.hadith {
+  margin: 0;
+  padding: 24px 24px 20px 24px;
+  background: var(--quote-bg);
+  border-left: 6px solid var(--quote-accent);
+  border-radius: 4px 16px 16px 4px;
+}
+
+.hadith blockquote {
+  margin: 0;
+}
+
+.hadith blockquote p {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.875rem;
+  line-height: 1.45;
+  color: var(--quote-text);
+  text-wrap: pretty;
+}
+
+.hadith figcaption {
+  margin-top: 14px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--quote-source);
 }
 
 .card.sign-in {
-  padding: 28px;
+  padding: 32px;
 }
 
 .card.sign-in h2 {
-  font-size: 1.25rem;
+  font-size: 1.375rem;
+  margin-bottom: 16px;
 }
 
 @media (min-width: 760px) {
   .landing {
-    grid-template-columns: 1.2fr 1fr;
-    gap: 64px;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 72px;
+    padding: 48px 32px;
   }
 
   .welcome h1 {
-    font-size: 3.25rem;
+    font-size: 2.25rem;
+  }
+
+  .hadith {
+    padding: 36px 40px 30px 40px;
+  }
+
+  .hadith blockquote p {
+    font-size: 2.375rem;
   }
 }
 
