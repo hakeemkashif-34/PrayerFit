@@ -31,6 +31,8 @@ export function LocationStep({ current, page = false, onSaved, onKeep, keepLabel
       onSaved(await api.saveLocation(query, suggestion.index));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't save. Try again.");
+    } finally {
+      // Setup keeps this question on screen after saving, so it must be usable again.
       setSaving(false);
     }
   }

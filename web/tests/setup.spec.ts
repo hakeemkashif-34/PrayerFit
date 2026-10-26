@@ -106,6 +106,9 @@ test("the full setup: required page, optional page, then a filled calendar", asy
   await options.first().click();
   expect((await api.sent("PUT", "/api/settings/location", 1))[0].body).toEqual({ query: "200 Kanata", index: 0 });
   await expect(page.getByText(`Saved: ${HOME_PLACE}`)).toBeVisible();
+  // Still on screen, so it's usable again once saved.
+  await expect(page.getByText("Saving…")).toHaveCount(0);
+  await expect(addressBox(page)).toBeEnabled();
 
   // Masjid: a search box, closest first, with distances.
   await expect(page.getByText("Can't find it? Type its address.")).toBeVisible();
