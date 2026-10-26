@@ -6,7 +6,7 @@ public masjid names, never anything about a user.
 """
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -16,7 +16,7 @@ from app.auth.sessions import current_user
 from app.clock import get_now
 from app.config import admin_email
 from app.db import get_db
-from app.stats import daily_totals, masjid_counts, total_users
+from app.stats import Range, masjid_counts, user_totals
 
 router = APIRouter(tags=["stats"])
 
@@ -35,13 +35,6 @@ def require_admin(request: Request, db: DbDep) -> None:
         raise HTTPException(status_code=404, detail="Not Found")
 
 
-class Day(BaseModel):
-    day: str
-    # Signed up that day, and the total so far.
-    signed_up: int
-    total: int
-
-
 class MasjidOut(BaseModel):
     name: str
     users: int
@@ -50,17 +43,32 @@ class MasjidOut(BaseModel):
 
 
 class StatsOut(BaseModel):
-    total_users: int
-    # One point per day, oldest first, for the graph.
-    history: list[Day]
     # Masjids with at least 1 user, most users first.
     masjids: list[MasjidOut]
 
 
+class PointOut(BaseModel):
+    # The start of the hour or day in Toronto time, like "2026-10-26T14:00:00-04:00".
+    start: str
+    total: int
+
+
+class UsersOut(BaseModel):
+    # "hour" for 1 to 3 days, "day" for longer.
+    step: Literal["hour", "day"]
+    # Oldest first. Empty when nobody has ever signed up.
+    points: list[PointOut]
+
+
 @router.get("/admin/stats", response_model=StatsOut, dependencies=[Depends(require_admin)])
-def read_stats(db: DbDep, now: NowDep) -> StatsOut:
+def read_stats(db: DbDep) -> StatsOut:
     return StatsOut(
-        total_users=total_users(db),
-        history=[Day(day=d.day.isoformat(), signed_up=d.signed_up, total=d.total) for d in daily_totals(db, now)],
         masjids=[MasjidOut(name=m.name, users=m.users, mawaqit_linked=m.mawaqit_linked) for m in masjid_counts(db)],
     )
+
+
+@router.get("/admin/stats/users", response_model=UsersOut, dependencies=[Depends(require_admin)])
+def read_user_totals(db: DbDep, now: NowDep, range: Range = "7d") -> UsersOut:  # noqa: A002 - the query is ?range=
+    """Total users over time for the graph. The page asks again each time the dropdown changes."""
+    step, points = user_totals(db, now, range)
+    return UsersOut(step=step, points=[PointOut(start=p.start.isoformat(), total=p.total) for p in points])

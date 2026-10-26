@@ -22,6 +22,7 @@ from app.db import get_db
 from app.google_errors import GoogleError
 from app.http_client import get_http
 from app.models import GoogleToken, User, UserSettings
+from app.stats import record_sign_up
 
 router = APIRouter(tags=["sign-in"])
 
@@ -106,6 +107,7 @@ def callback(
         user = User(google_sub=identity.sub, email=identity.email)
         db.add(user)
         db.flush()  # gives the new user its ID
+        record_sign_up(db)
     user.email = identity.email
     save_tokens(db, user.id, tokens)
 
