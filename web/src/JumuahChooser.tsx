@@ -107,7 +107,7 @@ export function JumuahChooser({ masjidIds, selected, onSelect, onLoaded, emptyTe
         role="radiogroup"
         aria-labelledby="chooser-title"
         style={{
-          gridTemplateColumns: `52px repeat(${laneCount}, minmax(0, 1fr))`,
+          gridTemplateColumns: `64px repeat(${laneCount}, minmax(0, 1fr))`,
           // One more row than minutes, for the last time mark.
           gridTemplateRows: `repeat(${row(last)}, minmax(1.4px, auto))`,
         }}
