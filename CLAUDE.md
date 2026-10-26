@@ -25,7 +25,9 @@ Prayer times: calculated in code, always with ISNA and standard Asr. There is no
 Masjid times: read from each masjid's public MAWAQIT page. MAWAQIT may block this at any time, so calculated times are the fallback. Masjid prayers use the masjid's iqamah. Home prayers use the main masjid's MAWAQIT adhan times when available, and calculated times otherwise
 Drive time: OpenRouteService's free plan, with no live traffic. Each masjid prayer has 2 events: a drive block from the leave time to the arrival time, then the prayer block. Every event the app makes is private
 Background jobs: a nightly job that updates every user's prayers
-Hosting: Azure on student credit
+Hosting: one Azure B2ats v2 Linux VM (free tier) in Canada Central, on student credit, running the same Docker Compose setup plus Caddy for free HTTPS (docker-compose.prod.yml, deploy/). Only the static public IP uses credit, about $3 to $4 a month
+Server: the repo is at ~/prayerfit, secrets only in ~/prayerfit/.env on the server, and deploy/update.sh puts the latest main on it. Address: https://prayerfit.canadacentral.cloudapp.azure.com until the switch to prayerfit.me (steps in the README's Deploy section)
+Google sign-in stays in Testing mode with test users until prayerfit.me is verified, then it gets published. The privacy policy is at /privacy, and it must stay in step with what the app stores and sends
 
 ## How we work
 
@@ -62,7 +64,7 @@ Google Calendar: sign in with Google, create the "Prayers" calendar, and add tod
 Setup questions and nightly updates: address, masjid, which prayers at the masjid, Jumuah masjids, and daylight saving time
 Masjid times and Jumuah: read each masjid's times from its public MAWAQIT page (calculated times as the fallback), add a drive block before masjid prayers, an optional setup page, and pick the Jumuah slot that fits the user's calendar
 Moving prayers around commitments: the busy times in the user's Google Calendar come first, each prayer moves to the earliest free time before its time ends, and today and tomorrow are re-checked every 5 minutes
-Deploy: run it on Azure
+Deploy: run it on Azure over HTTPS, with a firewall, SSH keys only, automatic security updates, a daily database backup, and an update script
 Stretch goals, only after the 7 milestones work:
 Two-way sync: notice edits made in Google Calendar, and keep the website and Google Calendar in sync both ways
 Edit page: change prayers on the website
