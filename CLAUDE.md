@@ -61,10 +61,12 @@ Prayer times: calculate times for any location, with tests
 Google Calendar: sign in with Google, create the "Prayers" calendar, and add today's prayers
 Setup questions and nightly updates: address, masjid, which prayers at the masjid, Jumuah masjids, and daylight saving time
 Masjid times and Jumuah: read each masjid's times from its public MAWAQIT page (calculated times as the fallback), add a drive block before masjid prayers, an optional setup page, and pick the Jumuah slot that fits the user's calendar
-Edit page: change prayers on the website, and keep the website and Google Calendar in sync both ways
-Commitments and notifications: move prayers around other commitments, and alert users when something changes
+Moving prayers around commitments: the busy times in the user's Google Calendar come first, each prayer moves to the earliest free time before its time ends, and today and tomorrow are re-checked every 15 minutes
 Deploy: run it on Azure
-Stretch goals, only after the 8 milestones work:
+Stretch goals, only after the 7 milestones work:
+Two-way sync: notice edits made in Google Calendar, and keep the website and Google Calendar in sync both ways
+Edit page: change prayers on the website
+Notifications: alert users when something changes
 AI timetable reading: an AI reads a masjid's timetable from a photo, poster, or website when it changes. It runs once per masjid, not per user, so a free AI tier should cover it. A masjid admin confirms every time it reads before anyone's calendar changes.
 University jama'ah hub: from Muslim_Calendar_App.md.
 
