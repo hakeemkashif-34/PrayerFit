@@ -53,7 +53,7 @@ def with_times(set_up, db, http, fake_mawaqit, kma):
 
 
 def choices(client, masjid_ids: list[str] | None = None) -> dict:
-    response = client.get("/jumuah/slots", params={"masjid_id": masjid_ids or []})
+    response = client.post("/jumuah/slots", json={"masjid_ids": masjid_ids or []})
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -113,10 +113,10 @@ def test_the_pick_must_be_a_jumuah_masjid(set_up):
 # ---- The chooser ----
 
 
-def test_no_jumuah_times_means_no_slots(set_up):
-    # KMA isn't linked to MAWAQIT, so setup skips the question.
+def test_no_jumuah_times_means_no_slots_and_says_which_masjid(set_up):
+    # KMA isn't linked to MAWAQIT, so there are no slots, and the website says so by name.
     data = choices(set_up)
-    assert (data["slots"], data["selected"]) == ([], None)
+    assert (data["slots"], data["selected"], data["no_times"]) == ([], None, ["KMA"])
 
 
 def test_each_slot_runs_from_its_start_for_the_jumuah_length(with_times, db, kma):
@@ -126,9 +126,12 @@ def test_each_slot_runs_from_its_start_for_the_jumuah_length(with_times, db, kma
     # This week's times as the example, and 45 minutes since KMA's length isn't set.
     assert [(local(s["starts_at"]), local(s["ends_at"])) for s in data["slots"]] == [("13:30", "14:15"), ("14:30", "15:15")]
     assert (first["jumuah_minutes"], first["length_estimated"]) == (45, True)
-    # Nothing about a Friday, the drive, or the user's calendar.
+    # Nothing about a Friday or the user's calendar.
     assert not {"friday", "busy", "busy_checked"} & set(data)
-    assert not {"leave_at", "drive_minutes", "fits"} & set(first)
+    assert not {"fits", "busy"} & set(first)
+    # Without a drive time, the block starts when the user arrives: 5 minutes early.
+    assert local(first["leave_at"]) == "13:25"
+    assert data["no_times"] == []
     # The 1st Jumuah is pre-selected.
     assert data["selected"] == {"masjid_id": kma, "order": 1}
 
@@ -139,12 +142,17 @@ def test_each_slot_runs_from_its_start_for_the_jumuah_length(with_times, db, kma
     assert (local(first["ends_at"]), first["length_estimated"]) == ("14:10", False)
 
 
-def test_busy_times_and_drive_times_are_never_asked(with_times, fake_google, fake_ors, ors_key):
+def test_each_block_starts_at_the_leave_time_and_busy_times_are_never_asked(with_times, fake_google, fake_ors, ors_key):
     fake_google.busy["user-a"] = BUSY_1_TO_1_40
-    google_calls, ors_calls = len(fake_google.requests), len(fake_ors.requests)
+    google_calls = len(fake_google.requests)
     data = choices(with_times)
-    assert len(data["slots"]) == 2
-    assert (len(fake_google.requests), len(fake_ors.requests)) == (google_calls, ors_calls)
+    # 1:30 Jumuah, 5 minutes early, 14 minute drive: leave at 1:11.
+    assert [local(s["leave_at"]) for s in data["slots"]] == ["13:11", "14:11"]
+    assert len(fake_google.requests) == google_calls
+    # The drive time is saved, so asking again doesn't call OpenRouteService again.
+    ors_calls = len(fake_ors.requests)
+    choices(with_times)
+    assert len(fake_ors.requests) == ors_calls
 
 
 def test_a_saved_pick_is_selected(with_times, kma):
@@ -170,8 +178,15 @@ def test_setup_can_ask_about_a_masjid_it_hasnt_saved_yet(with_times, db, http, f
 
 
 def test_a_masjid_that_cant_be_picked_is_refused(set_up):
-    assert set_up.get("/jumuah/slots", params={"masjid_id": str(uuid.uuid4())}).status_code == 404
+    assert set_up.post("/jumuah/slots", json={"masjid_ids": [str(uuid.uuid4())]}).status_code == 404
 
 
 def test_the_chooser_needs_sign_in(client):
-    assert client.get("/jumuah/slots").status_code == 401
+    assert client.post("/jumuah/slots", json={}).status_code == 401
+
+
+def test_a_masjid_without_times_is_named_next_to_one_with_times(with_times, db, kma):
+    other = pick_masjid(with_times, "Jamia Omar", "Jamia Omar")
+    data = choices(with_times, [kma, other["id"]])
+    assert [s["masjid_label"] for s in data["slots"]] == ["KMA", "KMA"]
+    assert data["no_times"] == ["Jamia Omar"]

@@ -121,6 +121,23 @@ def plan_window(
     return planned
 
 
+PREVIEW_DAYS = 7
+
+
+def preview_week(db: Session, http: httpx2.Client, user_id: uuid.UUID, now: datetime) -> tuple[Setup, list[PlannedEvent]]:
+    """This week's events, planned but not saved or sent. For the "Adding your prayers" animation.
+
+    No busy times (so no Google calls), so prayers are at their normal times.
+    Raises SetupIncomplete when a required answer is missing.
+    """
+    setup = load_setup(db, user_id, preview=True)
+    if setup is None:
+        raise SetupIncomplete()
+    dates = window_dates(now.astimezone(ZoneInfo(setup.time_zone)).date(), PREVIEW_DAYS)
+    inputs = masjid_inputs(db, http, setup, with_next_day(dates), now)
+    return setup, plan_window(setup, dates, inputs, None, now)
+
+
 def _insert(db: Session, user_id: uuid.UUID, planned: PlannedEvent, row_id: uuid.UUID) -> None:
     # DO NOTHING: if another run added it a moment ago, keep theirs.
     db.execute(

@@ -192,10 +192,18 @@ def masjid_label(masjid: Masjid, short_name: str | None) -> str:
     return short_name or masjid.name or "the masjid"
 
 
-def load_setup(db: Session, user_id: uuid.UUID) -> Setup | None:
-    """The user's setup, or None if setup isn't finished."""
+def load_setup(db: Session, user_id: uuid.UUID, preview: bool = False) -> Setup | None:
+    """The user's setup, or None if setup isn't finished.
+
+    preview: for the "Adding your prayers" page, which opens while setup is
+    finishing. Only the required answers are needed; the optional ones use
+    what's saved (the defaults until they're saved).
+    """
     row = db.scalars(select(UserSettings).where(UserSettings.user_id == user_id)).first()
-    if row is None or row.setup_completed_at is None or missing_steps(db, row):
+    if row is None:
+        return None
+    missing = [step for step in missing_steps(db, row) if not (preview and step == "optional")]
+    if missing or (row.setup_completed_at is None and not preview):
         return None
     latitude, longitude = read_location(row)
     masjid = None

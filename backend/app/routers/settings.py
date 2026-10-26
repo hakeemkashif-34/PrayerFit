@@ -10,14 +10,14 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 import httpx2
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.auth.sessions import current_user
-from app.calendar_window import SetupIncomplete
+from app.calendar_window import SetupIncomplete, preview_week
 from app.clock import get_now
 from app.db import get_db
 from app.geo.distance import distance_km
@@ -620,24 +620,70 @@ def save_jumuah_pick(request: JumuahPickRequest, user: UserDep, db: DbDep, http:
 # ---- The Jumuah chooser ----
 
 
-@router.get("/jumuah/slots", response_model=JumuahChoices)
-def jumuah_slots_for_user(
-    user: UserDep, db: DbDep, now: NowDep, masjid_id: Annotated[list[uuid.UUID], Query(max_length=11)] = []
-) -> JumuahChoices:
-    """Each Jumuah slot at the user's Jumuah masjids, with this week's times as an example. Saves nothing.
+class SlotsRequest(BaseModel):
+    # The masjids setup is about to save. Empty means the saved Jumuah masjids.
+    masjid_ids: list[uuid.UUID] = Field(default=[], max_length=11)
 
-    masjid_id lists the masjids setup is about to save, so the question can be
+
+@router.post("/jumuah/slots", response_model=JumuahChoices)
+def jumuah_slots_for_user(request: SlotsRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> JumuahChoices:
+    """Each Jumuah slot at the user's Jumuah masjids, with this week's times as an example.
+
+    masjid_ids lists the masjids setup is about to save, so the question can be
     answered on the same page as the masjid. Without it, the saved Jumuah masjids are used.
+    A POST because it may ask OpenRouteService for a drive time and save it.
     """
     masjids = None
-    if masjid_id:
+    if request.masjid_ids:
         masjids = []
-        for one in dict.fromkeys(masjid_id):
+        for one in dict.fromkeys(request.masjid_ids):
             masjid = usable_masjid(db, user.id, one)
             if masjid is None:
                 raise HTTPException(status_code=404, detail={"message": "Pick masjids from the suggestions."})
             masjids.append(masjid)
-    return jumuah_choices(db, user.id, now, masjids)
+    return jumuah_choices(db, http, user.id, now, masjids)
+
+
+class PreviewEvent(BaseModel):
+    local_date: str
+    prayer: str
+    # "prayer" or "drive"
+    kind: str
+    title: str
+    starts_at: datetime
+    ends_at: datetime
+
+
+class PreviewOut(BaseModel):
+    time_zone: str
+    prayer_color_id: ColorId | None
+    drive_color_id: ColorId | None
+    events: list[PreviewEvent]
+
+
+@router.post("/calendar/preview", response_model=PreviewOut)
+def calendar_preview(user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> PreviewOut:
+    """This week's prayers and drive blocks at their real times, for the "Adding your prayers" page.
+
+    Planned only: nothing is saved (except a drive time, like any update) and nothing goes to Google.
+    A POST because it may ask OpenRouteService for a drive time. 409 until the required answers are saved.
+    """
+    try:
+        setup, planned = preview_week(db, http, user.id, now)
+    except SetupIncomplete:
+        raise HTTPException(status_code=409, detail={"message": "Finish setup first."})
+    return PreviewOut(
+        time_zone=setup.time_zone,
+        prayer_color_id=setup.prayer_color_id,
+        drive_color_id=setup.drive_color_id,
+        events=[
+            PreviewEvent(
+                local_date=p.local_date.isoformat(), prayer=p.prayer, kind=p.kind, title=p.summary,
+                starts_at=p.starts_at, ends_at=p.ends_at,
+            )
+            for p in planned
+        ],
+    )
 
 
 # ---- Finishing setup, and retrying Google ----

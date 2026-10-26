@@ -270,3 +270,26 @@ def test_a_user_on_another_method_moves_to_isna_with_only_future_events_sent(sig
     assert response.json()["sent"] == len(changed) == 27
     assert {w.body["summary"] for w in changed} == {"Fajr", "Isha"}
     assert fajr_before["id"] not in {w.path.rsplit("/", 1)[-1] for w in changed}
+
+
+# ---- The week preview for the "Adding your prayers" page ----
+
+
+def test_the_preview_has_this_weeks_real_times_and_sends_nothing(signed_in, fake_photon, fake_google):
+    setup_through_api(signed_in, fake_photon, finish=False)
+    requests = len(fake_google.requests)
+    response = signed_in.post("/calendar/preview")
+    assert response.status_code == 200
+    body = response.json()
+    days = sorted({e["local_date"] for e in body["events"]})
+    assert len(days) == 7
+    first_day = [e for e in body["events"] if e["local_date"] == days[0]]
+    assert [e["prayer"] for e in first_day if e["kind"] == "prayer"] == ["fajr", "dhuhr", "asr", "maghrib", "isha"]
+    assert body["time_zone"] == "America/Toronto"
+    # Nothing was saved or sent: setup isn't even finished.
+    assert len(fake_google.requests) == requests
+    assert signed_in.get("/settings").json()["setup_complete"] is False
+
+
+def test_the_preview_needs_the_required_answers(signed_in):
+    assert signed_in.post("/calendar/preview").status_code == 409

@@ -6,24 +6,29 @@ week's times are only an example of when each slot is. The pick is saved
 by order, and the weekly rule (jumuah.py) still checks it against the
 user's calendar every Friday.
 
-Read only: no Google, no OpenRouteService, nothing saved.
+Each slot is shown from when to leave home to the end of Jumuah, so the
+drive time comes from OpenRouteService (and is saved, like the calendar
+update does). No Google calls, and no busy times.
 """
 
 import uuid
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import httpx2
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.drive_times import drive_seconds
 from app.event_plan import MasjidContext, jumuah_slots
+from app.event_times import trip
 from app.geo.timezones import masjid_time_zone
 from app.jumuah import ordinal
 from app.masjid_times.source import next_friday
 from app.masjid_times.store import load_masjid_times
 from app.models import Masjid
 from app.prayer_times import DEFAULT_TIMEZONE
-from app.user_settings import find_settings, jumuah_masjids, masjid_label
+from app.user_settings import find_settings, jumuah_masjids, masjid_label, read_location
 
 
 class SlotOut(BaseModel):
@@ -34,6 +39,9 @@ class SlotOut(BaseModel):
     # This week's times, as an example.
     starts_at: datetime
     ends_at: datetime
+    # When to leave home: the drive plus the Jumuah "how early". Without a
+    # drive time, it's the arrival time.
+    leave_at: datetime
     jumuah_minutes: int
     # True when the masjid's Jumuah length isn't set, so it's 45 minutes.
     length_estimated: bool
@@ -50,10 +58,13 @@ class JumuahChoices(BaseModel):
     slots: list[SlotOut] = []
     # The saved pick if it's one of the slots, otherwise the 1st Jumuah.
     selected: SlotKey | None = None
+    # Jumuah masjids with no Jumuah times yet, by the name the user sees.
+    # The website says so instead of skipping the question silently.
+    no_times: list[str] = []
 
 
 def jumuah_choices(
-    db: Session, user_id: uuid.UUID, now: datetime, masjids: list[Masjid] | None = None
+    db: Session, http: httpx2.Client, user_id: uuid.UUID, now: datetime, masjids: list[Masjid] | None = None
 ) -> JumuahChoices:
     """masjids: the ones setup is about to save, before they're saved. None means the user's Jumuah masjids."""
     row = find_settings(db, user_id)
@@ -66,13 +77,15 @@ def jumuah_choices(
     friday = next_friday(now.astimezone(ZoneInfo(zone)).date())
     times = load_masjid_times(db, [m.id for m in masjids], [friday], now)
     main_id = row.main_masjid_id if row.main_masjid_choice == "masjid" else None
+    home = read_location(row)
+    drives = drive_seconds(db, http, user_id, home, masjids, now) if home else {}
     contexts = {
         m.id: MasjidContext(
             masjid=m,
             label=masjid_label(m, row.main_masjid_short_name if m.id == main_id else None),
             time_zone=masjid_time_zone(m),
             times=times.get(m.id),
-            drive_seconds=None,
+            drive_seconds=drives.get(m.id),
             jumuah_minutes=m.jumuah_minutes,
         )
         for m in masjids
@@ -82,8 +95,10 @@ def jumuah_choices(
         jumuah_slots(list(contexts.values()), friday),
         key=lambda s: (s.starts_at, listed.index(s.masjid_id), s.order),
     )
+    with_slots = {s.masjid_id for s in slots}
+    no_times = [contexts[m.id].label for m in masjids if m.id not in with_slots]
     if not slots:
-        return JumuahChoices(time_zone=zone)
+        return JumuahChoices(time_zone=zone, no_times=no_times)
 
     keys = {(s.masjid_id, s.order) for s in slots}
     pick = (row.jumuah_pick_masjid_id, row.jumuah_pick_order)
@@ -96,6 +111,7 @@ def jumuah_choices(
 
     def slot_out(slot) -> SlotOut:
         context = contexts[slot.masjid_id]
+        planned = trip(slot.starts_at, row.jumuah_arrive_early_minutes, context.drive_seconds)
         return SlotOut(
             masjid_id=slot.masjid_id,
             masjid_label=context.label,
@@ -106,9 +122,10 @@ def jumuah_choices(
             ends_at=(slot.starts_at.astimezone(UTC) + timedelta(minutes=context.jumuah_length)).astimezone(
                 slot.starts_at.tzinfo
             ),
+            leave_at=planned.leave_at or planned.arrive_at,
             jumuah_minutes=context.jumuah_length,
             length_estimated=context.jumuah_minutes is None,
         )
 
-    return JumuahChoices(time_zone=zone, slots=[slot_out(s) for s in slots], selected=selected)
+    return JumuahChoices(time_zone=zone, slots=[slot_out(s) for s in slots], selected=selected, no_times=no_times)
 
