@@ -8,6 +8,7 @@ import { googleCalendarUrl } from "./googleCalendar";
 import { SettingsPage } from "./SettingsPage";
 import { Setup } from "./Setup";
 import { SignIn } from "./SignIn";
+import { StatsPage } from "./StatsPage";
 import type { CalendarUpdate, Me, Settings } from "./types";
 
 type View =
@@ -34,6 +35,8 @@ const ADDING: CalendarUpdate = {
 export function App() {
   // The new tab opened on Finish (see finishTab.ts) is its own small page.
   if (window.location.pathname === "/adding") return <AddingPage />;
+  // The private stats page. It isn't linked from anywhere.
+  if (window.location.pathname === "/stats") return <StatsPage />;
   return <Main />;
 }
 
