@@ -9,8 +9,11 @@ test("signed-out users see the welcome, the hadith, and a Sign in with Google ca
 
   // Top to bottom: the heading, the line under it, then the hadith with its source on its own line.
   const welcome = page.locator(".welcome");
-  await expect(welcome.getByRole("heading", { level: 1 })).toHaveText("Welcome to Muslim Calendar");
-  await expect(welcome.locator("p.lead")).toHaveText("Keep your prayer times up to date, every day.");
+  await expect(page).toHaveTitle("PrayerFit");
+  await expect(welcome.getByRole("heading", { level: 1 })).toHaveText("Welcome to PrayerFit");
+  await expect(welcome.locator("p.lead")).toHaveText(
+    "PrayerFit puts your daily prayers and your masjid's times in your Google Calendar, planned around your day.",
+  );
   await expect(welcome.locator("blockquote")).toHaveText(HADITH);
   await expect(welcome.locator("figcaption")).toHaveText("Sahih al-Bukhari 527");
   const [heading, lead, quote, source] = await Promise.all(
@@ -117,7 +120,7 @@ test("the welcome is on the left on a computer, and the sign-in card on the righ
   await new MockApi().install(page);
   await page.goto("/");
 
-  const welcome = await page.getByRole("heading", { name: "Welcome to Muslim Calendar" }).boundingBox();
+  const welcome = await page.getByRole("heading", { name: "Welcome to PrayerFit" }).boundingBox();
   const card = await page.getByRole("region", { name: "Sign in" }).boundingBox();
   if (info.project.name === "phone") {
     expect(card!.y).toBeGreaterThan(welcome!.y + welcome!.height); // stacked

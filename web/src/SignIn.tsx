@@ -20,8 +20,8 @@ export function SignIn({ expired = false, errorCode = null }: Props) {
   return (
     <main className="landing">
       <section className="welcome">
-        <h1>Welcome to Muslim Calendar</h1>
-        <p className="lead">Keep your prayer times up to date, every day.</p>
+        <h1>Welcome to PrayerFit</h1>
+        <p className="lead">PrayerFit puts your daily prayers and your masjid's times in your Google Calendar, planned around your day.</p>
         <figure className="hadith">
           <blockquote>
             <p>The Prophet ﷺ was asked which deed is most beloved to Allah, and he said <strong className="on-time">praying on time</strong>.</p>
