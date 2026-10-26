@@ -1153,7 +1153,7 @@ for each prayer, each day:
    d) Jumuah has its own descriptions (section 28).
 3. **Clash**: "Your event covers all of Asr's time today, so figure out a way to fit it in." The title stays `Asr (clash)`.
 4. **Nothing else, ever.** The app only knows busy times, never event names, so a description can't say what the event is.
-5. **Where times come from didn't go away.** It's still saved in `prayer_events.source_description` for every event, and the Settings page shows it: each masjid's "Times from MAWAQIT, updated Oct 25, 2026", and "Calculated times use ISNA with standard Asr." under Location. CLAUDE.md's accuracy rule says this now.
+5. **Where times come from didn't go away.** It's still saved in `prayer_events.source_description` for every event, and the Settings page shows each masjid's "Times from MAWAQIT, updated Oct 25, 2026". I took the "Calculated times use ISNA with standard Asr." line off Settings later (section 30), since there's no choice to make there. CLAUDE.md's accuracy rule says this now.
 6. **Old events lose their descriptions in place.** `google_event` only adds `description` when there is one. An update replaces the whole event (PUT), so leaving the field out removes it from Google. The event body changed, so its hash changed, so every future event is sent once, with the same event ID. Past events keep theirs. `test_old_descriptions_are_removed_in_place` checks this with no inserts at all.
 
 ### 16. Masjid times that can't be confirmed
@@ -1318,5 +1318,25 @@ for each prayer, each day:
 
 ### 29. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`745 passed`) and `npx playwright test` in `web` (`216 passed`).
+1. **Tests**: `pytest` in `backend` (`746 passed`) and `npx playwright test` in `web` (`228 passed`).
 2. **For real**, the steps in section 14 now take up to 5 minutes, not 15.
+
+### 30. Small fixes after review
+
+1. **Settings text**: I removed "Calculated times use ISNA with standard Asr." from the Location item. The method can't be changed, so the line didn't help anyone decide anything. "Time zone: America/Toronto" stays, since that one is about the user.
+2. **Card colours**: the Required and Optional cards are now the same white, with the same border and shadow, and so is the "Calendar updated. 95 events sent to Google." message above them. Before, Optional was only an outline on purpose (milestone 5, section 27). White reads best on the light green page, and it's `--card` in `styles.css`, the same colour the message already used. One `.settings-card` rule covers both cards now.
+3. **Masjids that aren't linked to MAWAQIT**: I link each masjid by hand with `python -m app.admin link-mawaqit`, so I need to know which ones people actually picked.
+   a) `unlinked_masjids` in `routers/stats.py` counts users per main masjid, for masjids with no row in `masjid_sources`. Users who pray at home don't count, even if an old masjid is still saved.
+   b) Most users first, then by name. A masjid with no name uses its address, then "Unnamed masjid".
+   c) /stats shows each one with "3 users" (or "1 user") and its ID, plus the exact `link-mawaqit` command. With none left, it says "Every masjid someone picked is linked."
+   d) Finding a masjid's MAWAQIT page automatically is a stretch goal in CLAUDE.md now.
+4. **The "Adding your prayers" page**:
+   a) Smaller text: the heading is 1.5rem to 2.75rem (it was 2rem to 3.75rem), the line under it is at most 1.25rem, and the caption at most 1.375rem.
+   b) A smaller animation: the page is at most 1120px wide (it was 1400px), and there's a little space under the week.
+   c) "This can take up to 1 minute.", with a digit.
+   d) **A gap between back-to-back blocks**: a drive ends right when its prayer starts, and every block has a smallest height (10px for drives, 16px for prayers) so short ones stay visible. That smallest height could make a drive run into its prayer. Now each block stops 3px (`BLOCK_GAP_PX`) before the next block that day. My first try just cut the block short, but on a phone that squeezed each drive into a thin line. So if cutting it would make it shorter than its smallest height, it keeps that height and moves up a little instead. It's a picture of the week, not the calendar itself, so a drive starting a few pixels early is fine.
+   e) This is all CSS `min()`, `max()`, and `calc()` in each block's `top` and `height`, so it works at any screen size without measuring anything in JavaScript.
+5. **Tests**:
+   a) Backend: `test_masjids_that_arent_linked_yet_are_listed_with_their_user_counts`.
+   b) Playwright: the ISNA line is gone and the time zone stays, both cards and the message are white, the unlinked list (and its empty message) on /stats, the "1 minute" text, the smaller font sizes at 6 widths, and a gap of at least 2px between every pair of blocks in a day, with no drive under 9.5px tall, on a laptop and a phone.
+   c) The mock preview's drive now ends right when its prayer starts, like the real one, so the gap test checks the hard case.
