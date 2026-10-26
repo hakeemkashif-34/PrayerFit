@@ -1,10 +1,10 @@
 // The Settings page, where returning users land: a button to open Google
-// Calendar, then one card with 2 sections. "Required" has the setup
+// Calendar, then 2 cards, side by side on a computer. "Required" has the setup
 // questions (location, masjid, weekly prayers, Jumuah pick). "Optional" has everything
 // with a default. Each item has its own Edit button and saves on its own.
 // Saving updates the calendar.
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { api, ApiError, SIGN_IN_URL } from "./api";
 import { BusyBanner } from "./BusyBanner";
 import { googleCalendarUrl } from "./googleCalendar";
@@ -78,16 +78,20 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
 
   return (
     <div className="page-with-footer">
-      <main className="page">
+      <main className="page settings-page">
         <header className="top">
-          <h1>Settings</h1>
-          <p className="hint">Signed in as {email}</p>
-          <a className="button open-calendar" href={googleCalendarUrl(email)}>
-            Open Google Calendar
-          </a>
-          {tabBlocked && (
-            <p className="hint blocked-note">Your browser blocked the new tab, so open Google Calendar from here.</p>
-          )}
+          <div>
+            <h1>Settings</h1>
+            <p className="hint">Signed in as {email}</p>
+          </div>
+          <div className="top-action">
+            <a className="button open-calendar" href={googleCalendarUrl(email)}>
+              Open Google Calendar
+            </a>
+            {tabBlocked && (
+              <p className="hint blocked-note">Your browser blocked the new tab, so open Google Calendar from here.</p>
+            )}
+          </div>
         </header>
 
         {!busyAccess && <BusyBanner />}
@@ -104,8 +108,8 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
           </p>
         )}
 
-        <div className="card settings-card">
-          <section aria-labelledby="required-title">
+        <div className="settings-grid">
+          <section className="card settings-card required" aria-labelledby="required-title">
             <h2 id="required-title" className="section-title">Required</h2>
             <Row title="Location" step="address" {...rows}
               edit={<LocationStep current={settings.place_name} onSaved={saved} onKeep={cancel} keepLabel="Cancel" />}>
@@ -150,7 +154,7 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
             )}
           </section>
 
-          <section aria-labelledby="optional-section-title">
+          <section className="settings-card optional" aria-labelledby="optional-section-title">
             <h2 id="optional-section-title" className="section-title">Optional</h2>
             <Row title="Jumuah masjids" step="jumuah" {...rows}
               edit={<JumuahStep settings={settings} onSaved={saved} onCancel={cancel} />}>
@@ -160,7 +164,8 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
                 <ol className="plain">
                   {settings.jumuah_masjids.map((m) => (
                     <li key={m.id}>
-                      {masjidName(m)} <span className="hint">· {m.iqamah_status}</span>
+                      {masjidName(m)}
+                      <span className="hint detail">{m.iqamah_status}</span>
                     </li>
                   ))}
                 </ol>
@@ -231,7 +236,7 @@ function pickText(settings: Settings): string {
   const masjid = pick && settings.jumuah_masjids.find((m) => m.id === pick.masjid_id);
   if (!pick || !masjid) return "The earliest Jumuah that fits your calendar";
   const order = ["1st", "2nd", "3rd"][pick.order - 1] ?? `${pick.order}th`;
-  return `${order} Jumuah at ${masjidName(masjid)}, if it fits your calendar`;
+  return `${order} Jumuah at ${masjidName(masjid)}`;
 }
 
 type RowProps = {
@@ -243,19 +248,58 @@ type RowProps = {
   children: ReactNode;
 };
 
-// One setting: its name and value with an Edit button, or its editor.
+// One setting: its name (small and muted) over its value (larger and darker)
+// with an Edit button, or its editor in the same place. Switching between the
+// two eases the row's height from old to new, so it opens and closes smoothly
+// instead of jumping. Skipped when the device asks for less motion.
 function Row({ title, step, editing, onEdit, edit, children }: RowProps) {
-  if (editing === step) return <div className="setting-row editing">{edit}</div>;
+  const open = editing === step;
+  const row = useRef<HTMLElement>(null);
+  const height = useRef(0);
+  // Only rows the user has opened or closed get the fade, not every row on page load.
+  const [moved, setMoved] = useState(false);
+  const wasOpen = useRef(open);
+
+  // Keep the last height up to date, so a switch knows where it started from.
+  useEffect(() => {
+    const el = row.current;
+    if (!el) return;
+    height.current = el.offsetHeight;
+    const watch = new ResizeObserver(() => (height.current = el.offsetHeight));
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (wasOpen.current === open) return;
+    wasOpen.current = open;
+    setMoved(true);
+    const el = row.current;
+    const from = height.current;
+    if (!el || !from || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const to = el.offsetHeight;
+    if (from === to) return;
+    el.style.overflow = "hidden";
+    const ease = el.animate([{ height: `${from}px` }, { height: `${to}px` }], { duration: 220, easing: "ease-out" });
+    ease.onfinish = ease.oncancel = () => (el.style.overflow = "");
+  }, [open]);
+
   return (
-    <section className="setting-row" aria-label={title}>
-      <div>
-        <h3>{title}</h3>
-        {children}
-      </div>
-      <button type="button" className="secondary small" onClick={() => onEdit(step)} disabled={editing !== null}
-        aria-label={`Edit ${title.toLowerCase()}`}>
-        Edit
-      </button>
+    <section ref={row} className={`setting-row${open ? " open" : ""}${moved ? " moved" : ""}`} aria-label={title}>
+      {open ? (
+        <div className="row-edit">{edit}</div>
+      ) : (
+        <div className="row-view">
+          <div className="row-text">
+            <h3>{title}</h3>
+            <div className="row-value">{children}</div>
+          </div>
+          <button type="button" className="secondary small" onClick={() => onEdit(step)} disabled={editing !== null}
+            aria-label={`Edit ${title.toLowerCase()}`}>
+            Edit
+          </button>
+        </div>
+      )}
     </section>
   );
 }
