@@ -88,7 +88,7 @@ test("the windows follow the Jumuah how early typed, before it's saved", async (
   await page.goto("/");
   await expect(slot(page, KMA_1ST)).toHaveAccessibleName(/14 min drive Leave 1:11 PM/);
 
-  await page.getByLabel("How early do you want to arrive before Jumuah?").fill("20");
+  await page.getByLabel("How early do you want to arrive before Jumuah (Friday prayer)?").fill("20");
   // 1:30, 20 minutes early, 14 minute drive: leave 12:56.
   await expect(slot(page, KMA_1ST)).toHaveAccessibleName(/14 min drive Leave 12:56 PM/);
   const last = api.calls("POST", "/api/jumuah/choices").at(-1)!;

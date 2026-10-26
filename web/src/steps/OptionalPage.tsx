@@ -124,11 +124,11 @@ export function OptionalPage({ settings, active, onFinishClick, onSaveFailed, on
         </>
       )}
 
-      <MinutesField id="arrive-early" label="How early do you want to arrive before iqamah?" value={early}
+      <MinutesField id="arrive-early" label="How early do you want to arrive before iqamah (daily prayers)?" value={early}
         onChange={setEarly} error={errors.early} min={0} max={MAX_EARLY} />
 
       {hasJumuah && (
-        <MinutesField id="jumuah-early" label="How early do you want to arrive before Jumuah?" value={jumuahEarly}
+        <MinutesField id="jumuah-early" label="How early do you want to arrive before Jumuah (Friday prayer)?" value={jumuahEarly}
           onChange={setJumuahEarly} error={errors.jumuahEarly} min={0} max={MAX_EARLY} />
       )}
 

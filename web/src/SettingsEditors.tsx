@@ -104,7 +104,7 @@ export function EarlyEditor({ settings, onSaved, onCancel, jumuah }: EditorProps
   return (
     <EditorForm title={jumuah ? "How early for Jumuah" : "How early for prayers"} onSave={save} onCancel={onCancel}>
       <MinutesField id={jumuah ? "jumuah-early" : "arrive-early"}
-        label={jumuah ? "How early do you want to arrive before Jumuah?" : "How early do you want to arrive before iqamah?"}
+        label={jumuah ? "How early do you want to arrive before Jumuah (Friday prayer)?" : "How early do you want to arrive before iqamah (daily prayers)?"}
         value={text} onChange={setText} error={error} min={0} max={MAX_EARLY} />
     </EditorForm>
   );

@@ -171,7 +171,7 @@ test("how early for prayers is edited on its own", async ({ page }) => {
   await page.goto("/");
 
   await page.getByRole("button", { name: "Edit how early for prayers" }).click();
-  const early = page.getByLabel("How early do you want to arrive before iqamah?");
+  const early = page.getByLabel("How early do you want to arrive before iqamah (daily prayers)?");
   await expect(early).toHaveValue("5");
   await early.fill("45");
   await page.getByRole("button", { name: "Save" }).click();
@@ -189,7 +189,7 @@ test("how early for Jumuah is edited on its own", async ({ page }) => {
   await page.goto("/");
 
   await page.getByRole("button", { name: "Edit how early for jumuah" }).click();
-  await page.getByLabel("How early do you want to arrive before Jumuah?").fill("0");
+  await page.getByLabel("How early do you want to arrive before Jumuah (Friday prayer)?").fill("0");
   await page.getByRole("button", { name: "Save" }).click();
 
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({ ...SAVED_OPTIONAL, jumuah_arrive_early_minutes: 0 });
@@ -241,7 +241,7 @@ test("cancel leaves an optional item as it was", async ({ page }) => {
   await page.goto("/");
 
   await page.getByRole("button", { name: "Edit how early for prayers" }).click();
-  await page.getByLabel("How early do you want to arrive before iqamah?").fill("0");
+  await page.getByLabel("How early do you want to arrive before iqamah (daily prayers)?").fill("0");
   await page.getByRole("button", { name: "Cancel" }).click();
 
   await expect(page.getByRole("region", { name: "How early for prayers" })).toContainText("Arrive 5 min before iqamah");
@@ -368,7 +368,7 @@ test("existing users keep their own answers, not the new defaults", async ({ pag
   await expect(page.getByRole("region", { name: "Prayer colour" })).toContainText("Calendar colour");
 
   await page.getByRole("button", { name: "Edit how early for prayers" }).click();
-  await expect(page.getByLabel("How early do you want to arrive before iqamah?")).toHaveValue("0");
+  await expect(page.getByLabel("How early do you want to arrive before iqamah (daily prayers)?")).toHaveValue("0");
   await page.getByRole("button", { name: "Cancel" }).click();
   await page.getByRole("button", { name: "Edit drive colour" }).click();
   await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Calendar colour");
@@ -380,8 +380,8 @@ test("a bad how early number on the Settings page shows the error and saves noth
   await page.goto("/");
 
   for (const [button, label] of [
-    ["Edit how early for prayers", "How early do you want to arrive before iqamah?"],
-    ["Edit how early for jumuah", "How early do you want to arrive before Jumuah?"],
+    ["Edit how early for prayers", "How early do you want to arrive before iqamah (daily prayers)?"],
+    ["Edit how early for jumuah", "How early do you want to arrive before Jumuah (Friday prayer)?"],
   ]) {
     await page.getByRole("button", { name: button }).click();
     await page.getByLabel(label).fill("61");
