@@ -1,5 +1,7 @@
 # Learning Notes
 
+PrayerFit was called Muslim Calendar until milestone 6 (section 34), so older sections may use the old name.
+
 What each part of the app does and why it was built that way. Updated after each milestone.
 
 ---
@@ -546,7 +548,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    c) **At most 5 suggestions**: the backend asks Photon for 10 and keeps 5.
    d) **Favour Canada**: Photon is asked to prefer results near the middle of Canada, with a wide radius. Then the backend moves Canadian results to the top, keeping Photon's order otherwise. That's why it asks for 10: a Canadian match in 7th place still makes the top 5.
    e) **Cache**: each answer is kept for 7 days. The same text, with different spacing or capitals, is only sent once.
-   f) **Through our backend**: the browser never calls Photon. Every request comes from the backend with the User-Agent `MuslimCalendar/0.4 (+mailto:<OSM_CONTACT_EMAIL>)`.
+   f) **Through our backend**: the browser never calls Photon. Every request comes from the backend with the User-Agent `PrayerFit/0.4 (+mailto:<OSM_CONTACT_EMAIL>)` (it was `MuslimCalendar/0.4` before the rename in milestone 6).
    g) **Spaced out**: calls from the whole app are at least 0.25 seconds apart (`throttle.py`).
    h) **Credit**: OpenStreetMap's licence (the ODbL) requires credit wherever its data is shown. One small grey "© OpenStreetMap contributors" link sits in the footer of every page that uses it: setup and the settings page. The landing page shows no OpenStreetMap data, so it has no footer.
    i) **No postal codes**: suggestions and the saved address leave out the postal code. OpenStreetMap's Canadian postal codes are often wrong (it showed the wrong one for my address), and prayer times only need the location. Postal code areas Photon sends as places are dropped too. The cache key got a `v2` so old cached labels with postal codes are never shown.
@@ -932,7 +934,7 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 1. **Bigger text**: the base size is 17px on a phone and 18px on a computer, up from the browser's 16px. Almost every size in `styles.css` is in `rem`, so everything grew with that one change.
 2. **Wider pages**: Settings and the "Adding your prayers" page went from 600px and 440px wide to 880px and 680px, setup's questions from 620px to 900px, and the landing and setup frames to 1240px. Phones still get a 16px gutter on each side.
 3. **Dark mode**: every colour is a token at the top of `styles.css` (`--text`, `--card`, `--field` for text boxes, `--on-green` for text on a green button, and so on). A `prefers-color-scheme: dark` block only changes the tokens, so it follows the phone or computer's setting. I replaced the hard-coded `#fff` backgrounds with `--field` so nothing stays white in dark mode.
-4. **The landing page**: "Welcome to Muslim Calendar", "Keep your prayer times up to date, every day.", then the hadith. The line about only having access to the Prayers calendar is gone.
+4. **The landing page**: "Welcome to Muslim Calendar", "Keep your prayer times up to date, every day.", then the hadith. (Milestone 6, section 34, changed this to "Welcome to PrayerFit" and a new sentence.) The line about only having access to the Prayers calendar is gone.
 5. **The hadith stands out**: it's the biggest text on the page, in a serif, in a warm cream block with a gold bar on the left, and its source ("Sahih al-Bukhari 527") is on its own line underneath, smaller and bold. Gold is only used here, so it doesn't look like the rest of the app's green. Dark mode has its own darker gold block with light text.
 6. **Why Amiri**: the hadith has the ﷺ sign (U+FDFA), and most fonts, including the one the site uses, don't have it, so it showed as an empty box. Amiri is a free serif with both English letters and ﷺ. It comes from npm (`@fontsource/amiri`) and is served by our own site, like Plus Jakarta Sans. Only the weight I use (400) is loaded, and the browser only downloads the parts of it the page needs.
 7. **A bug this caught**: once the location question stayed on screen (section 21), "Saving…" never went away after the location saved, and the address box stayed disabled. It used to disappear after saving, so it never had to reset. It resets now.
@@ -1221,6 +1223,8 @@ Section 32 changed this again: the last MAWAQIT times are used for up to 7 days,
 
 ### 23. Usage stats
 
+Section 34 simplified this: the /stats page is now total users, a graph of total users per day, and a masjid table, and the daily snapshot table is gone.
+
 1. **Counts only.** `app/stats.py` counts:
    a) Signed up: rows in `users`.
    b) Finished setup.
@@ -1320,7 +1324,7 @@ Section 32 changed this again: the last MAWAQIT times are used for up to 7 days,
 
 ### 29. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`832 passed`) and `npx playwright test` in `web` (`238 passed`).
+1. **Tests**: `pytest` in `backend` (`831 passed`) and `npx playwright test` in `web` (`246 passed`).
 2. **For real**, the steps in section 14 now take up to 5 minutes, not 15.
 
 ### 30. Small fixes after review
@@ -1426,3 +1430,36 @@ Section 32 changed this again: the last MAWAQIT times are used for up to 7 days,
    e) The picked block's colours and tick.
    f) The gold highlight on "praying on time".
 4. **Counts**: `npx playwright test` in `web` gives `238 passed`.
+
+### 34. A simpler /stats page, and the new name: PrayerFit
+
+1. **/stats has 3 parts now**:
+   a) "Total users: 42" at the top.
+   b) A graph of total users over time, one dot per day. Hover over a dot, tap it, or tab to it, and a box shows the date, how many signed up that day, and the total so far.
+   c) A table of each masjid with how many users picked it, most first, with a small "No MAWAQIT times" tag on the ones that aren't linked. Masjids with 0 users aren't there, and a masjid picked by address shows as "(picked by address)", never the address.
+   d) Gone: finished setup, active, new this week, the graph's second line and table, "Linked automatically", the no-match list, and the masjid times list.
+2. **The graph comes from sign-up dates** (`daily_totals` in `app/stats.py`):
+   a) It counts users by the local date of `users.created_at` in Toronto time (Postgres `timezone()`), then adds them up day by day, with a point for every day from the first sign-up to today, even days with 0.
+   b) So nothing needs saving each day. The worker's "usage stats" step and the `usage_stats` table are gone (migration 0012 drops it).
+   c) Next day means the next calendar date, never "plus 24 hours", like everywhere else.
+3. **The labels that overlapped**: the graph used to be drawn 640 wide and shrunk to fit a phone, so 12px text became about 7px and the "0" and the first date ran into each other.
+   a) Now it's drawn at its real width (a `ResizeObserver` measures the box), so text is 12px on every screen.
+   b) The dates sit 30px below the bottom line, well clear of the "0".
+   c) The last date is left out if it would be under 96px from the first.
+   d) The box opens inward at the edges, and below or above the dot, so it never covers the dot it's about.
+   e) A tap fires "pointer leave" when the finger lifts, so only a mouse leaving hides the box.
+4. **`python -m app.admin stats`** prints the same: "Total users: 42", then each masjid and its count, with "(no MAWAQIT times)" where it applies. Both use the same functions, `total_users` and `masjid_counts`.
+5. **The rename to PrayerFit**: the landing page now says "Welcome to PrayerFit" and "PrayerFit puts your daily prayers and your masjid's times in your Google Calendar, planned around your day.", with the hadith under it. The name also changed in:
+   a) the browser tab title (`web/index.html`)
+   b) `package.json`
+   c) the FastAPI title ("PrayerFit API")
+   d) the User-Agent sent to Photon, MAWAQIT, and Overpass (`PrayerFit/0.4`)
+   e) the README, CLAUDE.md, this file, and the product description, now `PrayerFit_App.md`
+6. **What didn't change**:
+   a) The Google calendar the app makes is still called "Prayers".
+   b) The GitHub repo, the Docker project, the Docker volumes, and the database user and name (`muslim_calendar`) keep their names. Renaming the database user would break an existing database volume, and the repo gets renamed after this PR is merged.
+   c) The app name on Google's sign-in screen comes from my Google Cloud project's settings, so I change that in the Google Cloud console. The README says where.
+7. **Tests**:
+   a) Backend: total users, the daily points (including a sign-up at 10:30 pm in Ottawa that's already the next day in UTC, and days with 0), the masjid counts (home users and masjids with 0 users left out, the address never shown), the command's output, and that the snapshot table is gone.
+   b) Playwright: only the 3 parts, a dot per day, hover, tap, and keyboard, no labels overlapping and 12px text on a phone, the box staying inside the graph and off its dot, the table with its tags, and the empty states. Also the new landing page text and the tab title.
+8. **Counts**: `pytest` in `backend` gives `831 passed`, and `npx playwright test` in `web` gives `246 passed`.

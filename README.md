@@ -1,8 +1,8 @@
-# Muslim Calendar
+# PrayerFit
 
-A website that keeps your prayer times up to date in your Google Calendar.
+PrayerFit puts your daily prayers and your masjid's times in your Google Calendar, planned around your day.
 
-See [Muslim_Calendar_App.md](Muslim_Calendar_App.md) for the full product description and [LEARNING.md](LEARNING.md) for how each part works.
+See [PrayerFit_App.md](PrayerFit_App.md) for the full product description and [LEARNING.md](LEARNING.md) for how each part works.
 
 ## Stack
 
@@ -32,7 +32,7 @@ Docker Compose starts 4 services:
 |---|---|
 | `web` | nginx. Serves the website and passes `/api/...` and `/auth/...` to the backend. The only service the browser talks to. |
 | `backend` | FastAPI. Runs the database migrations (`alembic upgrade head`) before it starts. |
-| `worker` | Background jobs, checked every minute: the nightly job, reading MAWAQIT, the 5-minute busy check, queued calendar updates, and saving the day's usage counts. |
+| `worker` | Background jobs, checked every minute: the nightly job, reading MAWAQIT, the 5-minute busy check, and queued calendar updates. |
 | `db` | Postgres. |
 
 The website and the API share one address (`http://localhost:8000`), so the browser treats them as the same site. That's what lets the session cookie and the Origin check work.
@@ -66,10 +66,10 @@ The app only checks my primary calendar for busy times. Checking my other calend
 
 ### 1. Set up Google Cloud (once)
 
-1. Go to https://console.cloud.google.com and create a project, for example "Muslim Calendar".
+1. Go to https://console.cloud.google.com and create a project, for example "PrayerFit".
 2. In **APIs & Services > Library**, search for **Google Calendar API** and click **Enable**.
 3. Open **Google Auth Platform** (or **APIs & Services > OAuth consent screen**) and click **Get started**.
-   a) App name: Muslim Calendar. User support email: your email.
+   a) App name: PrayerFit. User support email: your email. (If you set this up as "Muslim Calendar" before, change the app name here, since it's what people see on Google's sign-in screen.)
    b) Audience: **External**.
    c) Contact email: your email. Agree and create.
 4. In **Audience**, leave the publishing status as **Testing**. Under **Test users**, add the Google account you'll sign in with.
@@ -159,7 +159,7 @@ When a user picks a masjid in setup, the app matches it against the list straigh
 
 1. Within 100 m: a match, even if the names are different. Map names are often spelled differently, like "MAC QIC".
 2. From 100 m to 200 m: a match only if the names closely match, ignoring words like masjid, mosque, association, centre, and Ottawa.
-3. It links only if exactly 1 listed masjid matches. Otherwise it doesn't link, and the masjid shows on /stats.
+3. It links only if exactly 1 listed masjid matches. Otherwise it doesn't link, and the masjid shows on /stats with a "No MAWAQIT times" tag.
 
 Then it reads the masjid's page right away, so the Jumuah question in setup already has the masjid's real Jumuah times. If MAWAQIT is down, picking the masjid still works, and calculated times are used until the worker reads it.
 
@@ -189,7 +189,7 @@ Masjids that aren't on MAWAQIT get calculated prayer start times only, with no i
    docker compose exec backend python -m app.admin list-masjids
    ```
 
-   Each line has the ID, the name, its MAWAQIT link (with "(automatic)" for one from the list, or "not linked"), and how many users picked it. A masjid only shows up once someone has picked it in setup. The /stats page (below) also lists every masjid users picked with no MAWAQIT match, most users first.
+   Each line has the ID, the name, its MAWAQIT link (with "(automatic)" for one from the list, or "not linked"), and how many users picked it. A masjid only shows up once someone has picked it in setup. The /stats page (below) also lists every masjid users picked, most users first, with a "No MAWAQIT times" tag on the ones that aren't linked.
 
 2. Link it to its MAWAQIT page:
 
@@ -308,29 +308,33 @@ docker compose exec db psql -U muslim_calendar -c "SELECT id, status, attempts, 
 
 ## Usage stats
 
-Counts only. Never emails, names, or anything else about a user.
+Counts only. Never emails, names, addresses, or anything else about a user.
 
 ```bash
 docker compose exec backend python -m app.admin stats
 ```
 
-It prints:
+It prints the same as the /stats page:
 
 ```
-Signed up: 42
-Finished setup: 30
-Active (calendar updated in the last 2 days): 25
-New this week: 6
+Total users: 42
+
+Masjids:
+  Kanata Muslim Association: 30
+  Jamia Omar: 8  (no MAWAQIT times)
+  (picked by address): 1  (no MAWAQIT times)
 ```
 
-1. **Signed up**: everyone who ever signed in.
-2. **Finished setup**: everyone who finished setup.
-3. **Active**: the calendar was updated in the last 2 days (the nightly job, a settings change, or a 5-minute check finished).
-4. **New this week**: signed in for the first time in the last 7 days.
+1. **Total users**: everyone who ever signed in.
+2. **Masjids**: each masjid at least 1 user picked as their main masjid, most users first. A masjid picked by its address shows as "(picked by address)", never the address. "(no MAWAQIT times)" means it isn't linked, so it's one to add to the MAWAQIT list.
 
-The worker saves these 4 numbers once a day, after 4:00 am, so there's a history.
+**The private page**: put your own Google email in `.env` as `ADMIN_EMAIL=you@gmail.com` and restart. Sign in, then open http://localhost:8000/stats. It has 3 parts:
 
-**The private page**: put your own Google email in `.env` as `ADMIN_EMAIL=you@gmail.com` and restart. Sign in, then open http://localhost:8000/stats. It shows the 4 numbers, a graph of sign-ups and active users over time (hover for a day's numbers, or open the table), a "Linked automatically" list of every link made from my MAWAQIT list (the masjid's map name, the list name it matched, its MAWAQIT link, the distance, and how many users), so I can spot-check them, a "Masjids with no MAWAQIT match" list of every main masjid users picked with no link, most users first, with why ("No listed masjid within 200 m", "2 listed masjids are close, so it wasn't linked", or "Unlinked by hand"), so I know which to add, and a "Masjid times" list of any linked masjid whose MAWAQIT read is failing or over 24 hours old, with its last good read and the error. Anyone else, signed in or not, gets "Page not found". Nothing links to it. With `ADMIN_EMAIL` empty, nobody can open it.
+1. "Total users: 42" at the top.
+2. A graph of total users over time, one dot per day, from the first sign-up to today. Hover over a dot (or tap it on a phone, or tab to it) to see that day's date, how many signed up that day, and the total so far. It's worked out from each user's sign-up date, so nothing is saved each day.
+3. A table of each masjid and how many users picked it, with a small "No MAWAQIT times" tag on masjids that aren't linked.
+
+Anyone else, signed in or not, gets "Page not found". Nothing links to it. With `ADMIN_EMAIL` empty, nobody can open it.
 
 ## Look
 
@@ -357,7 +361,7 @@ Through nginx, every endpoint below is under `/api` (like `/api/me`), except the
 | `PUT /settings/jumuah-pick` | Saves your Jumuah pick as your main masjid and a slot (1st, 2nd, or 3rd), or clears it |
 | `POST /jumuah/slots` | Each Jumuah slot at your main masjid (or the `masjid_id` given, for setup), with this week's times as an example, its leave time, which one is picked, and the masjid's name if it has no Jumuah times yet. No busy times. A POST because it may ask OpenRouteService for a drive time |
 | `POST /calendar/preview` | This week's prayers and drive blocks at their real times, for the "Adding your prayers" page. Nothing goes to Google |
-| `GET /admin/stats` | The usage counts, their history, automatic MAWAQIT links, masjids with no MAWAQIT match, and masjid times that need a look. 404 for everyone but `ADMIN_EMAIL` |
+| `GET /admin/stats` | Total users, total users per day for the graph, and each masjid's users with whether it has MAWAQIT times. 404 for everyone but `ADMIN_EMAIL` |
 | `POST /setup/finish` | Finishes setup and fills the next 14 days. The website calls it after the last question |
 | `POST /calendar/sync` | Sends anything still waiting. Safe to run again |
 | `POST /prayers/today` | Updates today's prayers and drive blocks from your saved settings. Safe to run again |
@@ -385,11 +389,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `832 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `831 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`436 passed, 396 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`437 passed, 394 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
@@ -402,4 +406,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `238 passed`: 119 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `246 passed`: 123 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.

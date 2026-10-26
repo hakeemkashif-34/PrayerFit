@@ -1,4 +1,4 @@
-Muslim Calendar App: Project Context
+PrayerFit: Project Context
 About me and the goal
 I'm Hakeem Kashif, a second-year Computer Science student at Carleton University in the AI and Machine Learning stream.
 I'm building this as a resume project for software engineering internships.
@@ -71,10 +71,10 @@ Jumuah at a different masjid: let a user pray Jumuah somewhere other than their 
 Find a masjid's MAWAQIT page automatically: for now I link each masjid by hand with python -m app.admin link-mawaqit, using the /stats list of masjids that aren't linked yet
 Masjid times from sources other than MAWAQIT, like a masjid's own website (for example, AMA's prayer page). Masjids not on MAWAQIT get prayer start times only until then.
 AI timetable reading: an AI reads a masjid's timetable from a photo, poster, or website when it changes. It runs once per masjid, not per user, so a free AI tier should cover it. A masjid admin confirms every time it reads before anyone's calendar changes.
-University jama'ah hub: from Muslim_Calendar_App.md.
+University jama'ah hub: from PrayerFit_App.md.
 
 Full product description
-See Muslim_Calendar_App.md for the problems, features, and stretch goals.
+See PrayerFit_App.md for the problems, features, and stretch goals.
 
 ## Writing style
 
