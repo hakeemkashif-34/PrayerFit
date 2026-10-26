@@ -8,7 +8,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { api, ApiError } from "./api";
 import { ColourPicker } from "./ColourPicker";
 import { JumuahChooser } from "./JumuahChooser";
-import { COMMUTE_ERROR, EARLY_ERROR, MAX_COMMUTE, MAX_EARLY, wholeMinutes } from "./labels";
+import { EARLY_ERROR, MAX_EARLY, wholeMinutes } from "./labels";
 import { MinutesField } from "./MinutesField";
 import type { OptionalAnswers, SaveResponse, Settings, SlotKey } from "./types";
 
@@ -110,45 +110,14 @@ export function EarlyEditor({ settings, onSaved, onCancel, jumuah }: EditorProps
   );
 }
 
-export function ColourEditor({ settings, onSaved, onCancel, commute }: EditorProps & { commute: boolean }) {
-  const [colour, setColour] = useState(commute ? settings.drive_color_id : settings.prayer_color_id);
-  const title = commute ? "Commute colour" : "Prayer colour";
-  const field = commute ? "drive_color_id" : "prayer_color_id";
+export function ColourEditor({ settings, onSaved, onCancel, drive }: EditorProps & { drive: boolean }) {
+  const [colour, setColour] = useState(drive ? settings.drive_color_id : settings.prayer_color_id);
+  const title = drive ? "Drive colour" : "Prayer colour";
+  const field = drive ? "drive_color_id" : "prayer_color_id";
   return (
     <EditorForm title={title} onCancel={onCancel}
       onSave={() => api.saveOptional({ ...saved(settings), [field]: colour }).then(onSaved)}>
       <ColourPicker label={title} value={colour} onChange={setColour} />
-    </EditorForm>
-  );
-}
-
-export function CommuteTimesEditor({ settings, onSaved, onCancel }: EditorProps) {
-  const [texts, setTexts] = useState<Record<string, string>>(
-    Object.fromEntries(settings.commute_times.map((c) => [c.masjid_id, c.minutes === null ? "" : String(c.minutes)])),
-  );
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  function save() {
-    const times = settings.commute_times.map((c) => {
-      const text = texts[c.masjid_id] ?? "";
-      return { masjid_id: c.masjid_id, minutes: text.trim() === "" ? null : wholeMinutes(text, 1, MAX_COMMUTE), text };
-    });
-    const found = Object.fromEntries(
-      times.filter((t) => t.minutes === null && t.text.trim() !== "").map((t) => [t.masjid_id, COMMUTE_ERROR]),
-    );
-    setErrors(found);
-    if (Object.keys(found).length > 0) return null;
-    return api.saveCommuteTimes(times.map(({ masjid_id, minutes }) => ({ masjid_id, minutes }))).then(onSaved);
-  }
-
-  return (
-    <EditorForm title="Commute times" onSave={save} onCancel={onCancel}>
-      <p className="hint">Leave one blank to use a driving estimate from OpenRouteService.</p>
-      {settings.commute_times.map((c) => (
-        <MinutesField key={c.masjid_id} id={`commute-${c.masjid_id}`} label={`Commute time to ${c.masjid_name}`}
-          value={texts[c.masjid_id] ?? ""} onChange={(value) => setTexts((t) => ({ ...t, [c.masjid_id]: value }))}
-          error={errors[c.masjid_id] ?? ""} min={1} max={MAX_COMMUTE} />
-      ))}
     </EditorForm>
   );
 }

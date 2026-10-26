@@ -1,9 +1,8 @@
 // Setup page 2, "Optional": short name, how early for prayers and for
-// Jumuah, the commute time to the main masjid, colours, and the Jumuah
-// chooser. Every answer has a default, so Skip (top right) saves the
-// defaults and finishes.
+// Jumuah, colours, and the Jumuah chooser. Every answer has a default, so
+// Skip (top right) saves the defaults and finishes.
 //
-// Finish saves the commute time, the Jumuah pick, and the other answers,
+// Finish saves the Jumuah pick and the other answers,
 // then App fills the calendar. Nothing goes to Google Calendar before that.
 // Setup keeps this page mounted while the user goes Back, so nothing typed
 // here is lost.
@@ -13,8 +12,7 @@ import { api, ApiError } from "../api";
 import { ColourPicker } from "../ColourPicker";
 import { JumuahChooser } from "../JumuahChooser";
 import {
-  COMMUTE_ERROR, DEFAULT_ARRIVE_EARLY, DEFAULT_COLOUR, DEFAULT_JUMUAH_ARRIVE_EARLY, EARLY_ERROR, MAX_COMMUTE, MAX_EARLY,
-  masjidName, wholeMinutes,
+  DEFAULT_ARRIVE_EARLY, DEFAULT_COLOUR, DEFAULT_JUMUAH_ARRIVE_EARLY, EARLY_ERROR, MAX_EARLY, wholeMinutes,
 } from "../labels";
 import { MinutesField } from "../MinutesField";
 import type { ChoicesRequest, OptionalAnswers, Settings, SlotKey } from "../types";
@@ -37,43 +35,30 @@ const DEFAULTS: OptionalAnswers = {
   drive_color_id: DEFAULT_COLOUR,
 };
 
-// Blank means OpenRouteService's estimate (null). Anything else must be 1 to 120.
-function commuteMinutes(text: string): number | null | "bad" {
-  if (text.trim() === "") return null;
-  return wholeMinutes(text, 1, MAX_COMMUTE) ?? "bad";
-}
-
 export function OptionalPage({ settings, active, onFinishClick, onSaveFailed, onSaved }: Props) {
   const masjid = settings.main_masjid_choice === "masjid" ? settings.main_masjid : null;
   const hasJumuah = settings.jumuah_masjids.length > 0;
-  const savedCommute = settings.commute_times.find((c) => c.masjid_id === masjid?.id)?.minutes ?? null;
 
   const [shortName, setShortName] = useState(settings.main_masjid_short_name ?? "");
   const [early, setEarly] = useState(String(DEFAULT_ARRIVE_EARLY));
   const [jumuahEarly, setJumuahEarly] = useState(String(DEFAULT_JUMUAH_ARRIVE_EARLY));
-  const [commute, setCommute] = useState(savedCommute === null ? "" : String(savedCommute));
   const [prayerColour, setPrayerColour] = useState<string | null>(DEFAULT_COLOUR);
-  const [commuteColour, setCommuteColour] = useState<string | null>(DEFAULT_COLOUR);
+  const [driveColour, setDriveColour] = useState<string | null>(DEFAULT_COLOUR);
   const [pick, setPick] = useState<SlotKey | null>(settings.jumuah_pick);
-  const [errors, setErrors] = useState({ early: "", jumuahEarly: "", commute: "" });
+  const [errors, setErrors] = useState({ early: "", jumuahEarly: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  // A different main masjid on page 1: its own short name and commute time.
+  // A different main masjid on page 1: its own short name.
   useEffect(() => {
     setShortName(settings.main_masjid_short_name ?? "");
-    setCommute(savedCommute === null ? "" : String(savedCommute));
   }, [masjid?.id]);
 
   const shownName = shortName.trim() || masjid?.name || "the masjid";
 
-  // What the chooser should show: the answers typed so far, if they're valid.
+  // What the chooser should show: the Jumuah "how early" typed so far, if it's valid.
   const typedJumuahEarly = wholeMinutes(jumuahEarly, 0, MAX_EARLY);
-  const typedCommute = commuteMinutes(commute);
-  const overrides: ChoicesRequest = {
-    ...(typedJumuahEarly !== null && { jumuah_arrive_early_minutes: typedJumuahEarly }),
-    ...(masjid && typedCommute !== "bad" && { commute_minutes: { [masjid.id]: typedCommute } }),
-  };
+  const overrides: ChoicesRequest = typedJumuahEarly === null ? {} : { jumuah_arrive_early_minutes: typedJumuahEarly };
 
   async function run(save: () => Promise<Settings>) {
     setBusy(true);
@@ -99,21 +84,19 @@ export function OptionalPage({ settings, active, onFinishClick, onSaveFailed, on
     const found = {
       early: minutes === null ? EARLY_ERROR : "",
       jumuahEarly: jumuahMinutes === null ? EARLY_ERROR : "",
-      commute: masjid && typedCommute === "bad" ? COMMUTE_ERROR : "",
     };
     setErrors(found);
-    if (minutes === null || jumuahMinutes === null || found.commute) return;
+    if (minutes === null || jumuahMinutes === null) return;
 
     onFinishClick();
     void run(async () => {
-      if (masjid) await api.saveCommuteTimes([{ masjid_id: masjid.id, minutes: typedCommute as number | null }]);
       if (hasJumuah && pick) await api.saveJumuahPick(pick);
       const saved = await api.saveOptional({
         arrive_early_minutes: minutes,
         jumuah_arrive_early_minutes: jumuahMinutes,
         short_name: masjid ? shortName.trim() || undefined : undefined,
         prayer_color_id: prayerColour,
-        drive_color_id: commuteColour,
+        drive_color_id: driveColour,
       });
       return saved.settings;
     });
@@ -149,15 +132,9 @@ export function OptionalPage({ settings, active, onFinishClick, onSaveFailed, on
           onChange={setJumuahEarly} error={errors.jumuahEarly} min={0} max={MAX_EARLY} />
       )}
 
-      {masjid && (
-        <MinutesField id="commute-main" label={`Commute time to ${masjidName(masjid)}`} value={commute}
-          onChange={setCommute} error={errors.commute} min={1} max={MAX_COMMUTE}
-          hint="Leave it blank to use a driving estimate from OpenRouteService." />
-      )}
-
       <div className="colour-row">
         <ColourPicker label="Prayer colour" value={prayerColour} onChange={setPrayerColour} />
-        <ColourPicker label="Commute colour" value={commuteColour} onChange={setCommuteColour} />
+        <ColourPicker label="Drive colour" value={driveColour} onChange={setDriveColour} />
       </div>
 
       {hasJumuah && active && <JumuahChooser overrides={overrides} selected={pick} onSelect={setPick} />}

@@ -3,7 +3,7 @@
 // records every request so tests can check what the website sent.
 
 import type { Page, Route } from "@playwright/test";
-import type { ChoicesRequest, CommuteTime, JumuahChoices, JumuahSlot, Masjid, MasjidSuggestion, Me, Settings, SlotKey, Step } from "../src/types";
+import type { ChoicesRequest, JumuahChoices, JumuahSlot, Masjid, MasjidSuggestion, Me, Settings, SlotKey, Step } from "../src/types";
 
 export const KMA: Masjid = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -57,7 +57,6 @@ export function emptySettings(): Settings {
     arrive_early_minutes: 0,
     jumuah_arrive_early_minutes: 5,
     jumuah_pick: null,
-    commute_times: [],
     prayer_color_id: null,
     drive_color_id: null,
   };
@@ -81,7 +80,6 @@ export function finishedSettings(): Settings {
     arrive_early_minutes: 5,
     jumuah_arrive_early_minutes: 10,
     jumuah_pick: null,
-    commute_times: [],
     prayer_color_id: "7",
     drive_color_id: null,
   };
@@ -129,8 +127,6 @@ export class MockApi {
   jumuahLength: Record<string, number> = {};
   // OpenRouteService's pretend driving estimates, in minutes. A masjid that isn't here has no estimate.
   orsMinutes: Record<string, number> = { [KMA.id]: 14, [STITTSVILLE.id]: 20 };
-  // The user's own commute times, by masjid ID.
-  commuteMinutes: Record<string, number> = {};
 
   signedIn(settings: Settings = emptySettings(), me: Partial<Me> = {}) {
     this.settings = settings;
@@ -139,9 +135,6 @@ export class MockApi {
       email: "hakeem@example.com", google_sign_in_needed: false, calendar_access: true, busy_access: true,
       setup_complete: settings.setup_complete, ...me,
     };
-    this.commuteMinutes = Object.fromEntries(
-      settings.commute_times.filter((c) => c.minutes !== null).map((c) => [c.masjid_id, c.minutes!]),
-    );
     return this;
   }
 
@@ -170,14 +163,6 @@ export class MockApi {
     return missing;
   }
 
-  // Like the backend: the main masjid, then the Jumuah masjids, each once.
-  private commuteTimes(): CommuteTime[] {
-    const s = this.settings;
-    const masjids = [...(s.main_masjid_choice === "masjid" && s.main_masjid ? [s.main_masjid] : []), ...s.jumuah_masjids];
-    const unique = masjids.filter((m, i) => masjids.findIndex((x) => x.id === m.id) === i);
-    return unique.map((m) => ({ masjid_id: m.id, masjid_name: m.name ?? m.address ?? "Your masjid", minutes: this.commuteMinutes[m.id] ?? null }));
-  }
-
   // Like POST /jumuah/choices: every slot's window, and which one is selected.
   choices(body: ChoicesRequest): JumuahChoices {
     const s = this.settings;
@@ -188,20 +173,18 @@ export class MockApi {
     const slots: JumuahSlot[] = [];
     s.jumuah_masjids.forEach((masjid) => {
       (this.jumuahTimes[masjid.id] ?? []).forEach((clock, i) => {
-        const override = body.commute_minutes && masjid.id in body.commute_minutes ? body.commute_minutes[masjid.id] : undefined;
-        const own = override === undefined ? this.commuteMinutes[masjid.id] ?? null : override;
-        const commute = own ?? this.orsMinutes[masjid.id] ?? null;
+        const drive = this.orsMinutes[masjid.id] ?? null;
         const length = this.jumuahLength[masjid.id] ?? 45;
         const start = Date.parse(friday(clock));
         const arrive = start - early * MINUTE;
-        const leave = commute === null ? null : arrive - commute * MINUTE;
+        const leave = drive === null ? null : arrive - drive * MINUTE;
         const end = start + length * MINUTE;
         const from = leave ?? arrive;
         slots.push({
           masjid_id: masjid.id, masjid_label: masjid.id === s.main_masjid?.id && s.main_masjid_short_name ? s.main_masjid_short_name : masjid.name ?? "Your masjid",
           order: i + 1, order_label: `${["1st", "2nd", "3rd"][i]} Jumuah`,
           starts_at: iso(start), leave_at: leave === null ? null : iso(leave), arrive_at: iso(arrive), ends_at: iso(end),
-          commute_minutes: commute, commute_source: commute === null ? null : own === null ? "ors" : "user",
+          drive_minutes: drive,
           jumuah_minutes: length, length_estimated: !(masjid.id in this.jumuahLength),
           fits: !busy.some(([b0, b1]) => from < b1 && b0 < end),
         });
@@ -223,7 +206,6 @@ export class MockApi {
 
   private saved(calendar: unknown = null) {
     this.settings.missing = this.missing();
-    this.settings.commute_times = this.commuteTimes();
     return { settings: this.settings, calendar: this.me?.setup_complete ? calendar ?? updated(3) : null };
   }
 
@@ -265,7 +247,6 @@ export class MockApi {
         return json(200, this.me);
       case "GET /api/settings":
         s.missing = this.missing();
-        s.commute_times = this.commuteTimes();
         return json(200, s);
       case "POST /api/setup/location/suggest":
         return json(200, { suggestions: suggest(body.query).map((label, index) => ({ index, label })), ...CREDIT });
@@ -320,12 +301,6 @@ export class MockApi {
         s.jumuah_masjids = body.masjid_ids.map((id: string) => this.savedMasjids.get(id)!);
         if (s.jumuah_pick && !body.masjid_ids.includes(s.jumuah_pick.masjid_id)) s.jumuah_pick = null;
         return json(200, this.saved());
-      case "PUT /api/settings/commute-times":
-        for (const time of body.times as { masjid_id: string; minutes: number | null }[]) {
-          if (time.minutes === null) delete this.commuteMinutes[time.masjid_id];
-          else this.commuteMinutes[time.masjid_id] = time.minutes;
-        }
-        return json(200, this.saved(updated(4)));
       case "PUT /api/settings/jumuah-pick":
         s.jumuah_pick = body.masjid_id ? { masjid_id: body.masjid_id, order: body.order } : null;
         return json(200, this.saved(updated(2)));

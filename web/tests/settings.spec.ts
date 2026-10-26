@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { finishedSettings, GOOGLE_CALENDAR, KMA, MockApi, STITTSVILLE } from "./mock-api";
+import { finishedSettings, GOOGLE_CALENDAR, KMA, MockApi } from "./mock-api";
 
 test("Settings is one card: a Required section and an Optional section, each item with its own Edit", async ({ page }) => {
   await new MockApi().signedIn(finishedSettings()).install(page);
@@ -15,7 +15,7 @@ test("Settings is one card: a Required section and an Optional section, each ite
   }
   const optionalItems = [
     "Jumuah masjids", "Jumuah pick", "Short name", "How early for prayers", "How early for Jumuah",
-    "Commute times", "Prayer colour", "Commute colour",
+    "Prayer colour", "Drive colour",
   ];
   for (const name of optionalItems) {
     await expect(optional.getByRole("region", { name })).toBeVisible();
@@ -30,15 +30,12 @@ test("Settings is one card: a Required section and an Optional section, each ite
   await expect(page.getByRole("region", { name: "Short name" })).toContainText("KMA");
   await expect(page.getByRole("region", { name: "How early for prayers" })).toContainText("Arrive 5 min before iqamah");
   await expect(page.getByRole("region", { name: "How early for Jumuah" })).toContainText("Arrive 10 min before Jumuah");
-  await expect(page.getByRole("region", { name: "Commute times" }).getByRole("listitem")).toHaveText([
-    "Kanata Muslim Association: driving estimate from OpenRouteService",
-    "Stittsville Masjid: driving estimate from OpenRouteService",
-  ]);
   await expect(page.getByRole("region", { name: "Prayer colour" })).toContainText("Peacock");
-  await expect(page.getByRole("region", { name: "Commute colour" })).toContainText("Calendar colour");
+  await expect(page.getByRole("region", { name: "Drive colour" })).toContainText("Calendar colour");
+  // Drive times always come from OpenRouteService, so there's nothing to set for them.
+  await expect(page.getByText(/commute/i)).toHaveCount(0);
   // The prayer time method is gone: times always use ISNA with standard Asr.
   await expect(page.getByText(/method/i)).toHaveCount(0);
-  await expect(page.getByText("Drive colour")).toHaveCount(0);
   await expect(page.getByText("Your prayers")).toHaveCount(0);
   // The page shows OpenStreetMap data and OpenRouteService drive times, so both credits are in its footer.
   const footer = page.getByRole("contentinfo");
@@ -87,7 +84,7 @@ test("a save that can't reach Google offers Sign in again", async ({ page }) => 
   await page.route("**/api/settings/weekly", (route) =>
     route.fulfill({
       json: {
-        settings: { ...finishedSettings(), commute_times: [] },
+        settings: finishedSettings(),
         calendar: { status: "sign_in_needed", sent: 0, waiting: 69, message: "Saved. Sign in again so your calendar can update." },
       },
     }),
@@ -228,55 +225,14 @@ test("each colour is edited on its own", async ({ page }) => {
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({ ...SAVED_OPTIONAL, prayer_color_id: null });
   await expect(page.getByRole("region", { name: "Prayer colour" })).toContainText("Calendar colour");
 
-  await page.getByRole("button", { name: "Edit commute colour" }).click();
-  await page.getByRole("button", { name: /^Commute colour/ }).click();
+  await page.getByRole("button", { name: "Edit drive colour" }).click();
+  await page.getByRole("button", { name: /^Drive colour/ }).click();
   await page.getByRole("option", { name: "Banana" }).click();
   await page.getByRole("button", { name: "Save" }).click();
   expect((await api.sent("PUT", "/api/settings/optional", 2))[1].body).toEqual({
     ...SAVED_OPTIONAL, prayer_color_id: null, drive_color_id: "5",
   });
-  await expect(page.getByRole("region", { name: "Commute colour" })).toContainText("Banana");
-});
-
-test("commute times: one per masjid, blank uses OpenRouteService", async ({ page }) => {
-  const api = new MockApi().signedIn(finishedSettings());
-  await api.install(page);
-  await page.goto("/");
-
-  await page.getByRole("button", { name: "Edit commute times" }).click();
-  await expect(page.getByText("Leave one blank to use a driving estimate from OpenRouteService.")).toBeVisible();
-  const kma = page.getByLabel("Commute time to Kanata Muslim Association");
-  const stittsville = page.getByLabel("Commute time to Stittsville Masjid");
-  await expect(kma).toHaveValue("");
-  for (const bad of ["0", "121", "2.5"]) {
-    await kma.fill(bad);
-    await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByRole("alert")).toHaveText("Enter a whole number of minutes from 1 to 120, or leave it blank.");
-  }
-  expect(api.calls("PUT", "/api/settings/commute-times")).toHaveLength(0);
-
-  await kma.fill("10");
-  await stittsville.fill("120");
-  await page.getByRole("button", { name: "Save" }).click();
-  expect((await api.sent("PUT", "/api/settings/commute-times", 1))[0].body).toEqual({
-    times: [{ masjid_id: KMA.id, minutes: 10 }, { masjid_id: STITTSVILLE.id, minutes: 120 }],
-  });
-  await expect(page.getByRole("region", { name: "Commute times" }).getByRole("listitem")).toHaveText([
-    "Kanata Muslim Association: 10 min (your time)", "Stittsville Masjid: 120 min (your time)",
-  ]);
-  await expect(page.getByRole("status")).toHaveText("Calendar updated. 4 events sent to Google.");
-
-  // Clearing one goes back to the estimate.
-  await page.getByRole("button", { name: "Edit commute times" }).click();
-  await expect(page.getByLabel("Commute time to Kanata Muslim Association")).toHaveValue("10");
-  await page.getByLabel("Commute time to Kanata Muslim Association").fill("");
-  await page.getByRole("button", { name: "Save" }).click();
-  expect((await api.sent("PUT", "/api/settings/commute-times", 2))[1].body).toEqual({
-    times: [{ masjid_id: KMA.id, minutes: null }, { masjid_id: STITTSVILLE.id, minutes: 120 }],
-  });
-  await expect(page.getByRole("region", { name: "Commute times" })).toContainText(
-    "Kanata Muslim Association: driving estimate from OpenRouteService",
-  );
+  await expect(page.getByRole("region", { name: "Drive colour" })).toContainText("Banana");
 });
 
 test("cancel leaves an optional item as it was", async ({ page }) => {
@@ -414,8 +370,8 @@ test("existing users keep their own answers, not the new defaults", async ({ pag
   await page.getByRole("button", { name: "Edit how early for prayers" }).click();
   await expect(page.getByLabel("How early do you want to arrive before iqamah?")).toHaveValue("0");
   await page.getByRole("button", { name: "Cancel" }).click();
-  await page.getByRole("button", { name: "Edit commute colour" }).click();
-  await expect(page.getByRole("button", { name: /^Commute colour/ })).toContainText("Calendar colour");
+  await page.getByRole("button", { name: "Edit drive colour" }).click();
+  await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Calendar colour");
 });
 
 test("a bad how early number on the Settings page shows the error and saves nothing", async ({ page }) => {

@@ -1,6 +1,6 @@
 // Setup is 2 pages. Page 1, "Required": location, main masjid (or "I pray
 // at home"), and the weekly grid. Page 2, "Optional": short name, how
-// early, commute time, colours, and the Jumuah chooser. It matches the
+// early, colours, and the Jumuah chooser. It matches the
 // landing page: the list of pages on the left and the questions on the
 // right. On a phone, the list becomes one line at the top.
 //

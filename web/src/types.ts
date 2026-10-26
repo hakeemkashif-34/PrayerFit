@@ -30,17 +30,10 @@ export type Step = "address" | "masjid" | "weekly" | "optional";
 // Each item on the Settings page, edited on its own.
 export type Editable =
   | "address" | "masjid" | "weekly"
-  | "jumuah" | "jumuah_pick" | "short_name" | "early" | "jumuah_early" | "commute" | "prayer_colour" | "commute_colour";
+  | "jumuah" | "jumuah_pick" | "short_name" | "early" | "jumuah_early" | "prayer_colour" | "drive_colour";
 
 // A Jumuah slot: a masjid and its 1st, 2nd, or 3rd Jumuah.
 export type SlotKey = { masjid_id: string; order: number };
-
-export type CommuteTime = {
-  masjid_id: string;
-  masjid_name: string;
-  // null uses OpenRouteService's driving estimate.
-  minutes: number | null;
-};
 
 export type Settings = {
   setup_complete: boolean;
@@ -60,8 +53,6 @@ export type Settings = {
   jumuah_arrive_early_minutes: number;
   // null means the earliest Jumuah that fits.
   jumuah_pick: SlotKey | null;
-  // The main masjid, then the Jumuah masjids.
-  commute_times: CommuteTime[];
   prayer_color_id: string | null;
   drive_color_id: string | null;
 };
@@ -114,12 +105,12 @@ export type JumuahSlot = SlotKey & {
   masjid_label: string;
   order_label: string; // "1st Jumuah"
   starts_at: string;
-  // null when the commute time is unknown.
+  // null when the drive time is unknown.
   leave_at: string | null;
   arrive_at: string;
   ends_at: string;
-  commute_minutes: number | null;
-  commute_source: "user" | "ors" | null;
+  // OpenRouteService's driving estimate.
+  drive_minutes: number | null;
   jumuah_minutes: number;
   length_estimated: boolean;
   fits: boolean;
@@ -138,5 +129,4 @@ export type JumuahChoices = {
 // Answers the optional page hasn't saved yet, so the chooser can show them.
 export type ChoicesRequest = {
   jumuah_arrive_early_minutes?: number;
-  commute_minutes?: Record<string, number | null>;
 };

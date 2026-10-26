@@ -70,9 +70,6 @@ export const api = {
   saveJumuah: (masjid_ids: string[]) => request<SaveResponse>("PUT", "/api/settings/jumuah", { masjid_ids }),
   // Skip sends the defaults.
   saveOptional: (answers: OptionalAnswers) => request<SaveResponse>("PUT", "/api/settings/optional", answers),
-  // null minutes clears a time, so OpenRouteService's estimate is used.
-  saveCommuteTimes: (times: { masjid_id: string; minutes: number | null }[]) =>
-    request<SaveResponse>("PUT", "/api/settings/commute-times", { times }),
   // null clears the pick, so the earliest Jumuah that fits is used.
   saveJumuahPick: (pick: SlotKey | null) => request<SaveResponse>("PUT", "/api/settings/jumuah-pick", pick ?? {}),
   // A POST, but it saves nothing.

@@ -49,7 +49,7 @@ export const GOOGLE_COLOURS: { id: string; name: string; hex: string }[] = [
 ];
 export const CALENDAR_COLOUR = "Calendar colour";
 // The optional step's defaults, the same as the backend's: 5 minutes early
-// for prayers and for Jumuah, and Basil (Google's green) for prayer and commute blocks.
+// for prayers and for Jumuah, and Basil (Google's green) for prayer and drive blocks.
 export const DEFAULT_ARRIVE_EARLY = 5;
 export const DEFAULT_JUMUAH_ARRIVE_EARLY = 5;
 export const DEFAULT_COLOUR = "10";
@@ -98,5 +98,3 @@ export function wholeMinutes(text: string, min: number, max: number): number | n
 
 export const MAX_EARLY = 60;
 export const EARLY_ERROR = `Enter a whole number of minutes from 0 to ${MAX_EARLY}.`;
-export const MAX_COMMUTE = 120;
-export const COMMUTE_ERROR = `Enter a whole number of minutes from 1 to ${MAX_COMMUTE}, or leave it blank.`;

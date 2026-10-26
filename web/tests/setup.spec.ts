@@ -146,13 +146,11 @@ test("the full setup: required page, optional page, then a filled calendar", asy
   const jumuahEarly = page.getByLabel("How early do you want to arrive before Jumuah?");
   await expect(jumuahEarly).toHaveValue("5");
   await jumuahEarly.fill("15");
-  // Blank means OpenRouteService's estimate.
-  const commute = page.getByLabel("Commute time to Kanata Muslim Association");
-  await expect(commute).toHaveValue("");
-  await commute.fill("12");
+  // Drive times always come from OpenRouteService, so there's no box for them.
+  await expect(page.getByLabel(/Commute time|Drive time/)).toHaveCount(0);
   // Both colours start as Basil, Google's green.
   await expect(page.getByRole("button", { name: /^Prayer colour/ })).toContainText("Basil");
-  await expect(page.getByRole("button", { name: /^Commute colour/ })).toContainText("Basil");
+  await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Basil");
   await page.getByRole("button", { name: /^Prayer colour/ }).click();
   // Every Google colour, by Google's name, after "Calendar colour".
   await expect(page.getByRole("listbox").getByRole("option")).toHaveText([
@@ -164,18 +162,15 @@ test("the full setup: required page, optional page, then a filled calendar", asy
   await expect(page.locator(".colour-list .tick")).toHaveCount(1);
   await expect(page.getByRole("option", { name: "Basil" }).locator(".tick")).toBeVisible();
   await page.getByRole("option", { name: "Peacock" }).click();
-  await pickColour(page, "Commute colour", "Tomato");
-  await expect(page.getByRole("button", { name: /^Commute colour/ })).toContainText("Tomato");
+  await pickColour(page, "Drive colour", "Tomato");
+  await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Tomato");
 
   // The Jumuah chooser, with the earliest that fits already picked.
   await expect(page.getByRole("heading", { name: "Jumuah on Friday, Oct 30" })).toBeVisible();
   await expect(page.getByRole("radio", { name: /^Kanata Muslim Association 1st Jumuah at 1:30 PM/ })).toBeChecked();
   await page.getByRole("button", { name: "Finish" }).click();
 
-  // Finish saves the commute time, the pick, and the other answers, then finishes.
-  expect((await api.sent("PUT", "/api/settings/commute-times", 1))[0].body).toEqual({
-    times: [{ masjid_id: KMA.id, minutes: 12 }],
-  });
+  // Finish saves the pick and the other answers, then finishes.
   expect((await api.sent("PUT", "/api/settings/jumuah-pick", 1))[0].body).toEqual({ masjid_id: KMA.id, order: 1 });
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({
     arrive_early_minutes: 10, jumuah_arrive_early_minutes: 15, short_name: "KMA", prayer_color_id: "7", drive_color_id: "11",
@@ -215,13 +210,12 @@ test("Back goes to page 1 without losing anything on either page", async ({ page
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(0);
 });
 
-test("a different masjid after going Back gets its own short name and commute time", async ({ page }) => {
+test("a different masjid after going Back gets its own short name", async ({ page }) => {
   const api = new MockApi().signedIn();
   await api.install(page);
   await page.goto("/");
   await toOptionalAtKma(page);
   await page.getByLabel("Short name for Kanata Muslim Association").fill("KMA");
-  await page.getByLabel("Commute time to Kanata Muslim Association").fill("12");
 
   await page.getByRole("button", { name: "← Back" }).click();
   await page.getByRole("button", { name: "Change" }).click();
@@ -229,7 +223,6 @@ test("a different masjid after going Back gets its own short name and commute ti
   await page.getByRole("button", { name: "Next" }).click();
 
   await expect(page.getByLabel("Short name for Stittsville Masjid")).toHaveValue("");
-  await expect(page.getByLabel("Commute time to Stittsville Masjid")).toHaveValue("");
 });
 
 test("Next asks for a location and a masjid first", async ({ page }) => {
@@ -279,10 +272,9 @@ test("I pray at home means every prayer at home, with no weekly grid", async ({ 
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   await page.getByRole("button", { name: "Next" }).click();
 
-  // Page 2 has no short name, commute time, Jumuah how early, or chooser.
+  // Page 2 has no short name, Jumuah how early, or chooser.
   await expectPage(page, 2);
   await expect(page.getByLabel(/Short name/)).toHaveCount(0);
-  await expect(page.getByLabel(/Commute time/)).toHaveCount(0);
   await expect(page.getByLabel(/before Jumuah/)).toHaveCount(0);
   await expect(page.getByRole("heading", { name: /^Jumuah on/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Finish" }).click();
@@ -291,7 +283,6 @@ test("I pray at home means every prayer at home, with no weekly grid", async ({ 
   expect(api.settings.main_masjid_choice).toBe("home");
   expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({ choice: "home" });
   expect(api.calls("PUT", "/api/settings/weekly")).toHaveLength(0);
-  expect(api.calls("PUT", "/api/settings/commute-times")).toHaveLength(0);
   expect(api.calls("PUT", "/api/settings/jumuah-pick")).toHaveLength(0);
   expect(api.calls("POST", "/api/jumuah/choices")).toHaveLength(0);
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
@@ -462,7 +453,7 @@ test("the page uses Plus Jakarta Sans from our own site", async ({ page }) => {
   expect(fontRequests.every((url) => url.startsWith("http://localhost:4173/assets/"))).toBe(true);
 });
 
-test("Skip saves the defaults, and no commute time or Jumuah pick", async ({ page }) => {
+test("Skip saves the defaults, and no Jumuah pick", async ({ page }) => {
   const api = new MockApi().signedIn();
   await api.install(page);
   await page.goto("/");
@@ -470,7 +461,6 @@ test("Skip saves the defaults, and no commute time or Jumuah pick", async ({ pag
 
   // Something typed and picked, then skipped: the defaults win.
   await page.getByLabel("How early do you want to arrive before iqamah?").fill("20");
-  await page.getByLabel("Commute time to Kanata Muslim Association").fill("12");
   await page.getByRole("radio", { name: /2nd Jumuah/ }).check({ force: true });
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(0);
   await page.getByRole("button", { name: "Skip" }).click();
@@ -479,7 +469,6 @@ test("Skip saves the defaults, and no commute time or Jumuah pick", async ({ pag
     arrive_early_minutes: 5, jumuah_arrive_early_minutes: 5, prayer_color_id: "10", drive_color_id: "10",
   });
   await expectGoogleCalendar(page, api);
-  expect(api.calls("PUT", "/api/settings/commute-times")).toHaveLength(0);
   expect(api.calls("PUT", "/api/settings/jumuah-pick")).toHaveLength(0);
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
   expect([api.settings.prayer_color_id, api.settings.drive_color_id]).toEqual(["10", "10"]);
@@ -490,7 +479,7 @@ test("the colour dropdown works with the keyboard", async ({ page }) => {
   await page.goto("/");
   await toOptionalAtHome(page);
 
-  const button = page.getByRole("button", { name: /^Commute colour/ });
+  const button = page.getByRole("button", { name: /^Drive colour/ });
   await button.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("listbox")).toBeVisible();
@@ -553,32 +542,7 @@ test("0 minutes early is allowed", async ({ page }) => {
   await expectGoogleCalendar(page, api);
 });
 
-test("the commute time takes whole minutes from 1 to 120, or blank", async ({ page }) => {
-  const api = new MockApi().signedIn();
-  await api.install(page);
-  await page.goto("/");
-  await toOptionalAtKma(page);
-
-  const box = page.getByLabel("Commute time to Kanata Muslim Association");
-  await expect(page.getByText("Leave it blank to use a driving estimate from OpenRouteService.")).toBeVisible();
-  for (const bad of ["0", "121", "2.5", "-5"]) {
-    await box.fill(bad);
-    await page.getByRole("button", { name: "Finish" }).click();
-    await expect(page.getByRole("alert")).toHaveText("Enter a whole number of minutes from 1 to 120, or leave it blank.");
-    await expect(box).toHaveAttribute("aria-invalid", "true");
-  }
-  expect(api.calls("PUT", "/api/settings/commute-times")).toHaveLength(0);
-
-  // Blank is fine: it uses OpenRouteService's estimate.
-  await box.fill("");
-  await page.getByRole("button", { name: "Finish" }).click();
-  expect((await api.sent("PUT", "/api/settings/commute-times", 1))[0].body).toEqual({
-    times: [{ masjid_id: KMA.id, minutes: null }],
-  });
-  await expectGoogleCalendar(page, api);
-});
-
-test("page 2: Optional heading, Commute colour, and Skip in the top-right corner", async ({ page }) => {
+test("page 2: Optional heading, Drive colour, and Skip in the top-right corner", async ({ page }) => {
   await new MockApi().signedIn().install(page);
   await page.goto("/");
   await toOptionalAtKma(page);
@@ -589,8 +553,8 @@ test("page 2: Optional heading, Commute colour, and Skip in the top-right corner
     await expect(page.getByText(gone)).toHaveCount(0);
   }
   await expect(page.getByLabel("Short name for Kanata Muslim Association", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Commute colour/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Drive colour/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Drive colour/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Commute colour/ })).toHaveCount(0);
 
   // Skip is level with the heading, at the right edge of the page.
   const skip = page.getByRole("button", { name: "Skip" });
@@ -708,7 +672,7 @@ test("the adding page opened by hand just links to Settings", async ({ page }) =
   expect(api.requests).toEqual([]);
 });
 
-for (const path of ["/api/settings/commute-times", "/api/settings/jumuah-pick", "/api/settings/optional"]) {
+for (const path of ["/api/settings/jumuah-pick", "/api/settings/optional"]) {
   test(`a failed save (${path}) closes the new tab and stays on page 2`, async ({ page }) => {
     const api = new MockApi().signedIn();
     api.failNext[path] = { status: 503, detail: { message: "The server is busy. Try again." } };

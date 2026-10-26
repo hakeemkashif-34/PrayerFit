@@ -12,7 +12,7 @@ import {
   colourName, earlyText, GOOGLE_COLOURS, jumuahEarlyText, masjidLabel, masjidName, PRAYER_NAMES, PRAYERS, WEEKDAYS,
 } from "./labels";
 import { OsmFooter } from "./OsmFooter";
-import { ColourEditor, CommuteTimesEditor, EarlyEditor, JumuahPickEditor, ShortNameEditor } from "./SettingsEditors";
+import { ColourEditor, EarlyEditor, JumuahPickEditor, ShortNameEditor } from "./SettingsEditors";
 import { JumuahStep } from "./steps/JumuahStep";
 import { LocationStep } from "./steps/LocationStep";
 import { MasjidStep } from "./steps/MasjidStep";
@@ -186,27 +186,13 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
               </Row>
             )}
 
-            {settings.commute_times.length > 0 && (
-              <Row title="Commute times" step="commute" {...rows}
-                edit={<CommuteTimesEditor settings={settings} onSaved={saved} onCancel={cancel} />}>
-                <ul className="plain">
-                  {settings.commute_times.map((c) => (
-                    <li key={c.masjid_id}>
-                      <strong>{c.masjid_name}:</strong>{" "}
-                      {c.minutes === null ? "driving estimate from OpenRouteService" : `${c.minutes} min (your time)`}
-                    </li>
-                  ))}
-                </ul>
-              </Row>
-            )}
-
             <Row title="Prayer colour" step="prayer_colour" {...rows}
-              edit={<ColourEditor settings={settings} onSaved={saved} onCancel={cancel} commute={false} />}>
+              edit={<ColourEditor settings={settings} onSaved={saved} onCancel={cancel} drive={false} />}>
               <p><ColourName id={settings.prayer_color_id} /></p>
             </Row>
 
-            <Row title="Commute colour" step="commute_colour" {...rows}
-              edit={<ColourEditor settings={settings} onSaved={saved} onCancel={cancel} commute />}>
+            <Row title="Drive colour" step="drive_colour" {...rows}
+              edit={<ColourEditor settings={settings} onSaved={saved} onCancel={cancel} drive />}>
               <p><ColourName id={settings.drive_color_id} /></p>
             </Row>
           </section>
