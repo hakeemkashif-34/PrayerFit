@@ -20,8 +20,8 @@ Busy times come first. It works in 2 passes:
    earliest free gap of at least 10 minutes before its time ends, avoiding
    the events pass 1 planned. No gap means a clash (see fit_prayers.py).
 
-Events have no description, except a moved prayer (which says when the
-user is busy) and a clash. Where each time came from is saved in
+Events have no description, except a moved prayer, a clash, and a Jumuah
+that couldn't be at the user's pick. Where each time came from is saved in
 source_description and shown on the Settings page instead.
 
 Every masjid prayer gets 2 events: a drive block from the leave time to
@@ -271,13 +271,11 @@ def _jumuah(
         return None
     where = next(c for c in jumuah if c.masjid.id == choice.window.slot.masjid_id)
     source = f"{where.label} Jumuah ({where.times.source_label}, updated {_updated(where.times, user_zone)})"
-    description = ""
-    if choice.fit == "moved":
-        # Jumuah has no adhan of its own, so its start time is the day's 1st Jumuah.
-        first = min(slot.starts_at for slot in jumuah_slots(jumuah, local_date))
-        description = moved_text("Jumuah", first, choice.window.slot.starts_at)
-    elif choice.fit == "clash":
-        description = clash_text("Jumuah")
+    # Only when the user's pick couldn't be used: it clashes, it isn't on this
+    # Friday, or every Jumuah clashes. A Jumuah at the pick has no description.
+    pick = setup.jumuah_pick
+    at_pick = pick is not None and (choice.window.slot.masjid_id, choice.window.slot.order) == (pick.masjid_id, pick.order)
+    description = choice.reason if choice.fit == "clash" or (pick is not None and not at_pick) else ""
     return _masjid_events(
         setup, local_date, "dhuhr", "Jumuah", where, choice.window.slot.starts_at, source, user_zone,
         timedelta(minutes=where.jumuah_length), early=setup.jumuah_arrive_early_minutes, fit=choice.fit,
