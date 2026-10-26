@@ -12,7 +12,7 @@ test("signed-out users see the welcome, the hadith, and a Sign in with Google ca
   await expect(page).toHaveTitle("PrayerFit");
   await expect(welcome.getByRole("heading", { level: 1 })).toHaveText("Welcome to PrayerFit");
   await expect(welcome.locator("p.lead")).toHaveText(
-    "PrayerFit puts your daily prayers and your masjid's times in your Google Calendar, planned around your day.",
+    "An app that syncs your daily prayers and masjid times to your Google Calendar, based on your location and planned around your day.",
   );
   await expect(welcome.locator("blockquote")).toHaveText(HADITH);
   await expect(welcome.locator("figcaption")).toHaveText("Sahih al-Bukhari 527");
@@ -62,24 +62,35 @@ for (const scheme of ["light", "dark"] as const) {
   });
 }
 
-test('"praying on time" stands out: bold, on a soft gold highlight', async ({ page }) => {
+test('"praying on time" stands out: bold, on a soft gold highlight around the whole words', async ({ page }) => {
   await new MockApi().install(page);
   await page.goto("/");
+  await page.evaluate(() => document.fonts.ready);
   const words = page.locator(".hadith .on-time");
   await expect(words).toHaveText("praying on time");
-  const [weight, background, colour, wrap] = await words.evaluate((el) => {
+  const look = await words.evaluate((el) => {
     const s = getComputedStyle(el);
-    return [Number(s.fontWeight), s.backgroundImage, s.color, s.whiteSpace];
+    return {
+      weight: Number(s.fontWeight), background: s.backgroundColor, colour: s.color, radius: parseFloat(s.borderTopLeftRadius),
+      size: parseFloat(s.fontSize), top: parseFloat(s.paddingTop), bottom: parseFloat(s.paddingBottom),
+      left: parseFloat(s.paddingLeft), right: parseFloat(s.paddingRight), lines: el.getClientRects().length,
+    };
   });
-  expect(weight).toBeGreaterThanOrEqual(700);
-  // A highlighter band in soft gold (#f6e2a6) behind the words.
-  expect(background).toContain("rgb(246, 226, 166)");
-  // Kept together on 1 line, even on a phone.
-  expect(wrap).toBe("nowrap");
+  expect(look.weight).toBeGreaterThanOrEqual(700);
+  // A solid soft gold (#fbe08a), a little brighter than the old #f6e2a6, with slightly rounded corners.
+  expect(look.background).toBe("rgb(251, 224, 138)");
+  expect(look.radius).toBeGreaterThan(0);
+  // A little padding on every side, and about the same above and below the words.
+  for (const side of [look.top, look.bottom, look.left, look.right]) expect(side).toBeGreaterThan(0);
+  expect(Math.abs(look.top - look.bottom)).toBeLessThan(look.size * 0.05);
+  // Just the height of the words, not Amiri's tall line box (about 1.75 times the font size).
   const box = (await words.boundingBox())!;
-  expect(box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  expect(box.height).toBeLessThan(look.size * 1.3);
+  // On 1 line and inside the screen, even on a phone, so the phrase is never split.
+  expect(look.lines).toBe(1);
+  expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
   // The same near-black as the rest of the hadith, so it's easy to read on the gold.
-  expect(colour).toBe(await page.locator(".hadith blockquote p").evaluate((el) => getComputedStyle(el).color));
+  expect(look.colour).toBe(await page.locator(".hadith blockquote p").evaluate((el) => getComputedStyle(el).color));
   // Only those words. The rest of the hadith has no highlight.
   expect(await page.locator(".hadith blockquote p").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
 });

@@ -17,8 +17,10 @@
   --green-soft: #d7ecdc;
   /* The picked Jumuah block. Dark green text on it is 7.1:1. */
   --green-light: #b9e0c4;
-  /* The highlight behind "praying on time" on the landing page. */
+  /* The "No MAWAQIT times" tag on /stats. */
   --gold-soft: #f6e2a6;
+  /* The highlight behind "praying on time" on the landing page: a little brighter, still soft. */
+  --gold-highlight: #fbe08a;
   --on-green: #ffffff;
   /* Near-black for values and headings, grey-green for labels and hints. */
   --text: #0b1510;
@@ -265,15 +267,21 @@ strong {
   text-wrap: pretty;
 }
 
-/* "praying on time": bold, with a soft gold highlight that sits well next to the green.
-   Like a highlighter pen: a band behind the lower part of the words, not a box
-   the height of Amiri's tall line. It stays on 1 line so the phrase isn't split. */
+/* "praying on time": bold, on a soft gold highlight that sits well next to the green.
+   Amiri's line box is much taller than its letters (about 1.75em for letters about
+   0.85em tall), so a plain background left big gaps above and below the words. As an
+   inline-block with line-height 1, the box is just the height of the words, and the
+   padding makes the space above and below them even, with a little at the sides.
+   It moves to the next line as a whole, so the phrase is never split. */
 .hadith .on-time {
+  display: inline-block;
+  line-height: 1;
   font-weight: 700;
   color: var(--text);
+  background: var(--gold-highlight);
+  padding: 0.07em 0.2em 0.09em;
+  border-radius: 0.22em;
   white-space: nowrap;
-  padding: 0 0.12em;
-  background: linear-gradient(transparent 38%, var(--gold-soft) 38%, var(--gold-soft) 88%, transparent 88%);
 }
 
 .hadith figcaption {

@@ -1498,3 +1498,12 @@ Section 34 simplified this: the /stats page is now total users, a graph of total
    d) Searching the repo for the old name, in any capitalization and with a space, `_`, or `-`, finds only the README's 3 lines about removing the old Docker volume, which need its old name. Masjid names like Kanata Muslim Association stay as they are, and the Google calendar is still called "Prayers".
 3. **Moving to the new names**: a fresh database starts in `prayerfit_db-data`. The README says which 3 `.env` lines to change and how to remove the old volume.
 4. **Counts**: `pytest` in `backend` gives `841 passed`, and `npx playwright test` in `web` gives `258 passed`.
+
+### 37. The landing sentence and a fuller highlight
+
+1. **The sentence** under "Welcome to PrayerFit" is now "An app that syncs your daily prayers and masjid times to your Google Calendar, based on your location and planned around your day."
+2. **The "praying on time" highlight** replaced section 33's highlighter band:
+   a) A solid gold, `--gold-highlight` (`#fbe08a`), a little brighter than before but still soft. The /stats tag keeps the old `--gold-soft`.
+   b) It covers the whole height of the words. Amiri's line box is about 1.75 times the font size, with lots of empty room above and below the letters, so a plain background made a tall box with big gaps. As an `inline-block` with `line-height: 1`, the box is just the words, and padding of 0.07em on top and 0.09em at the bottom puts about the same space above and below the letters (I measured 5 to 7px each way in screenshots).
+   c) Slightly rounded corners (0.22em), and a little more padding at the sides.
+   d) It moves to the next line as a whole, so on a phone it's never split across 2 lines. At 320px wide it still fits.
