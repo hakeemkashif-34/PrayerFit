@@ -48,7 +48,7 @@ class OsmSettings:
     @property
     def user_agent(self) -> str:
         # A stock library User-Agent doesn't say who to contact.
-        return f"MuslimCalendar/0.4 (+mailto:{self.contact_email})"
+        return f"PrayerFit/0.4 (+mailto:{self.contact_email})"
 
 
 @lru_cache

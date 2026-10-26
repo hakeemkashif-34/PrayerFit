@@ -24,7 +24,7 @@ class FakeMawaqit:
     def handle(self, request: httpx2.Request) -> httpx2.Response:
         self.requests.append(request)
         assert request.method == "GET"
-        assert "MuslimCalendar" in request.headers["user-agent"]
+        assert "PrayerFit" in request.headers["user-agent"]
         parts = request.url.path.strip("/").split("/")
         known = parts[0] == "en" and (len(parts) == 2 or (len(parts) == 3 and parts[1] == "id"))
         if not known:

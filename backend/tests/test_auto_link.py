@@ -288,7 +288,7 @@ def test_find_masjids_reads_points_and_outlines():
         MapMasjid("Far Away Masjid", 45.5, -75.5),
         MapMasjid(None, 45.3265, -75.72),
     ]
-    assert "MuslimCalendar" in fake.requests[0].headers["user-agent"]
+    assert "PrayerFit" in fake.requests[0].headers["user-agent"]
 
 
 def test_an_overpass_error_is_a_clear_message():

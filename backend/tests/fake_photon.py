@@ -66,7 +66,7 @@ class FakePhoton:
             return httpx2.Response(int(self.failure), text="Fake failure")
 
         params = request.url.params
-        assert "MuslimCalendar" in request.headers["user-agent"]
+        assert "PrayerFit" in request.headers["user-agent"]
         assert params["lang"] == "en"
         assert "lat" in params and "lon" in params  # every search has a bias
         osm_tag = params.get("osm_tag")

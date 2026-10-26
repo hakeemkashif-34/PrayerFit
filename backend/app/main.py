@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Muslim Calendar API", lifespan=lifespan)
+app = FastAPI(title="PrayerFit API", lifespan=lifespan)
 app.include_router(prayer_times.router)
 app.include_router(auth.router)
 app.include_router(prayers.router)

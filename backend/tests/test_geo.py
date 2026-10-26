@@ -59,7 +59,7 @@ def test_suggests_places_canada_first(session, http, fake_photon):
     ]
     assert (found[0].latitude, found[0].longitude) == HOME
     request = fake_photon.requests[0]
-    assert request.headers["user-agent"] == "MuslimCalendar/0.4 (+mailto:tests@example.com)"
+    assert request.headers["user-agent"] == "PrayerFit/0.4 (+mailto:tests@example.com)"
     assert request.url.params["q"] == QUERY
 
 
@@ -192,7 +192,7 @@ def test_masjid_suggestions_are_places_of_worship_closest_first(session, http, f
     assert (found[1].osm_type, found[1].osm_id) == ("way", 203)
     request = fake_photon.requests[0]
     assert request.url.params["osm_tag"] == "amenity:place_of_worship"
-    assert request.headers["user-agent"] == "MuslimCalendar/0.4 (+mailto:tests@example.com)"
+    assert request.headers["user-agent"] == "PrayerFit/0.4 (+mailto:tests@example.com)"
 
 
 def test_masjid_search_is_biased_to_home_rounded_to_about_1_km(session, http, fake_photon):
