@@ -401,13 +401,13 @@ test("Required is on the left and Optional on the right on a computer, and stack
     expect(optional!.x).toBeGreaterThan(required!.x + required!.width - 1);
     expect(Math.abs(optional!.y - required!.y)).toBeLessThan(2);
   }
-  // Not 2 identical cards: Required sits forward on paper, Optional is only outlined.
+  // Both cards look the same: white, with the same shadow.
   const look = (name: string) =>
     page.getByRole("region", { name }).evaluate((el) => {
       const s = getComputedStyle(el);
       return `${s.backgroundColor} ${s.boxShadow}`;
     });
-  expect(await look("Required")).not.toBe(await look("Optional"));
+  expect(await look("Required")).toBe(await look("Optional"));
 });
 
 test("labels are small and muted, values larger and darker, and nothing is in all caps", async ({ page }) => {
@@ -490,9 +490,30 @@ test("no notice when every masjid's times are fresh", async ({ page }) => {
   await expect(page.getByText(/couldn't be confirmed/)).toHaveCount(0);
 });
 
-test("where calculated times come from is on Settings, since events don't say it", async ({ page }) => {
+test("where masjid times come from is on Settings, since events don't say it", async ({ page }) => {
   await new MockApi().signedIn(finishedSettings()).install(page);
   await page.goto("/");
-  await expect(page.getByRole("region", { name: "Location" })).toContainText("Calculated times use ISNA with standard Asr.");
   await expect(page.getByRole("region", { name: "Main masjid" })).toContainText("Times from MAWAQIT, updated Oct 25, 2026");
+});
+
+test("Location shows the time zone, and no line about the calculation method", async ({ page }) => {
+  await new MockApi().signedIn(finishedSettings()).install(page);
+  await page.goto("/");
+  const location = page.getByRole("region", { name: "Location" });
+  await expect(location).toContainText("America/Toronto");
+  await expect(page.getByText(/ISNA/)).toHaveCount(0);
+});
+
+test("the Required and Optional cards and the calendar message share one background", async ({ page }) => {
+  await new MockApi().signedIn(finishedSettings()).install(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Edit prayers at the masjid" }).click();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status")).toHaveText(/^Calendar updated/);
+  const background = (selector: string) =>
+    page.locator(selector).evaluate((el) => getComputedStyle(el).backgroundColor);
+  // White, which stands out on the light green page.
+  expect(await background(".settings-card.required")).toBe("rgb(255, 255, 255)");
+  expect(await background(".settings-card.optional")).toBe("rgb(255, 255, 255)");
+  expect(await page.getByRole("status").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(255, 255, 255)");
 });

@@ -123,8 +123,6 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
               edit={<LocationStep current={settings.place_name} onSaved={saved} onKeep={cancel} keepLabel="Cancel" />}>
               <p>{settings.place_name}</p>
               <p className="hint">Time zone: {settings.time_zone}</p>
-              {/* Events don't say where their times came from, so it's shown here. */}
-              <p className="hint">Calculated times use ISNA with standard Asr.</p>
             </Row>
 
             <Row title="Main masjid" question={QUESTIONS.masjid} step="masjid" {...rows}
@@ -164,7 +162,7 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
             )}
           </section>
 
-          <section className="settings-card optional" aria-labelledby="optional-section-title">
+          <section className="card settings-card optional" aria-labelledby="optional-section-title">
             <h2 id="optional-section-title" className="section-title">Optional</h2>
             {!atHome && settings.main_masjid && (
               <Row title="Short name" step="short_name" {...rows}

@@ -929,20 +929,14 @@ ul.colour-list li[aria-selected="true"] {
   }
 }
 
-/* Required sits forward: paper with a soft shadow. Optional is quieter:
-   no fill and no shadow, just the outline, so the two never look the same. */
+/* Both cards are the same white as the calendar message above them, so
+   the page reads as one set of white panels on the light green. */
 .settings-card {
+  background: var(--card);
+  border: 1px solid var(--line);
   border-radius: 16px;
   padding: 8px 24px 12px;
-}
-
-.settings-card.required {
   box-shadow: 0 1px 2px rgb(23 32 28 / 0.05), 0 20px 40px -28px var(--shadow);
-}
-
-.settings-card.optional {
-  background: transparent;
-  border: 1px solid var(--line);
 }
 
 .section-title {
