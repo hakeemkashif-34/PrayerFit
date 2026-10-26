@@ -37,7 +37,6 @@ def save_setup(
         user = db.scalars(select(User).where(User.google_sub == sub)).one()
         row = get_settings(db, user.id)
         save_location(row, "1 Test Street, Ottawa", *location, time_zone)
-        row.jumuah_saved = True
         row.optional_saved = True
         if masjid_name is None:
             row.main_masjid_choice = "home"

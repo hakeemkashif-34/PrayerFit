@@ -1,4 +1,4 @@
-# Muslim Calendar App
+# PrayerFit
 
 A website that keeps your prayer times up to date in your Google Calendar.
 

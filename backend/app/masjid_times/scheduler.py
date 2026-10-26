@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.geo.timezones import masjid_time_zone
 from app.masjid_times.source import SourceBlocked, SourceError, get_source
 from app.masjid_times.store import save_days
-from app.models import Masjid, MasjidFetchJob, MasjidSource, UserJumuahMasjid, UserSettings
+from app.models import Masjid, MasjidFetchJob, MasjidSource, UserSettings
 from app.update_jobs import queue_update, users_of_masjid
 
 logger = logging.getLogger("app.masjid_times")
@@ -55,12 +55,8 @@ class FetchResult:
 
 
 def _has_users(masjid_id):
-    return or_(
-        exists().where(
-            UserSettings.main_masjid_choice == "masjid", UserSettings.main_masjid_id == masjid_id
-        ),
-        exists().where(UserJumuahMasjid.masjid_id == masjid_id),
-    )
+    # Someone's main masjid. Jumuah is at the main masjid too.
+    return exists().where(UserSettings.main_masjid_choice == "masjid", UserSettings.main_masjid_id == masjid_id)
 
 
 def due_masjids(db: Session, now: datetime) -> list[uuid.UUID]:

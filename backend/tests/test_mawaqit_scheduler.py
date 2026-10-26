@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.masjid_times.scheduler import block_start, run_due_fetches, run_fetch
 from app.models import MasjidDayTimes, MasjidFetchJob, MasjidSource, UpdateJob
-from tests.masjid_helpers import add_user, link, masjid_id, set_jumuah
+from tests.masjid_helpers import add_user, link, masjid_id
 from tests.mawaqit_pages import conf, page, set_day
 
 TORONTO = ZoneInfo("America/Toronto")
@@ -152,14 +152,12 @@ def test_failures_are_logged_without_addresses(db, http, kma, fake_mawaqit, capl
 
 
 def test_a_change_queues_updates_only_for_linked_users(db, http, kma, fake_google, fake_mawaqit):
-    # user-d prays elsewhere but goes to KMA for Jumuah. user-e has nothing to do with KMA.
-    add_user(fake_google, db, "user-d", masjid_name="Other Masjid", at_masjid={0: {"isha"}})
+    # user-e prays at another masjid, so KMA has nothing to do with them. Jumuah is at the main masjid too.
     add_user(fake_google, db, "user-e", masjid_name="Other Masjid", at_masjid={0: {"isha"}})
-    set_jumuah(db, "user-d", ["KMA"])
     from tests.masjid_helpers import user_id
 
     run_due_fetches(db, http, NOW)
-    linked = {f"update:{user_id(db, s)}" for s in ("user-a", "user-b", "user-c", "user-d")}
+    linked = {f"update:{user_id(db, s)}" for s in ("user-a", "user-b", "user-c")}
     assert queued(db) == linked
 
     # The same times again: nothing new to queue.

@@ -1,4 +1,4 @@
-Muslim Calendar App: Project Context
+PrayerFit: Project Context
 About me and the goal
 I'm Hakeem Kashif, a second-year Computer Science student at Carleton University in the AI and Machine Learning stream.
 I'm building this as a resume project for software engineering internships.
@@ -19,7 +19,7 @@ Tech stack
 Backend: Python and FastAPI
 Database: Postgres, with SQLAlchemy and Alembic for migrations
 Website: React and TypeScript
-Sign-in: Google sign-in, with access to Google Calendar only, never Gmail. 2 calendar scopes: calendar.app.created, so the app can manage only the calendar it made, and calendar.freebusy, so it can see when the user is busy on Friday (never what their events are) and pick a Jumuah that fits. Free/busy only checks the primary calendar, since checking others would need calendar.calendarlist.readonly
+Sign-in: Google sign-in, with access to Google Calendar only, never Gmail. 2 calendar scopes: calendar.app.created, so the app can manage only the calendar it made, and calendar.freebusy, so it can see when the user is busy (never what their events are) and fit every prayer around their calendar, every day, not just Jumuah on Friday. Free/busy only checks the primary calendar, since checking others would need calendar.calendarlist.readonly
 Calendar: prayers go into a separate "Prayers" calendar that the app owns, so it never touches the user's other events
 Prayer times: calculated in code, always with ISNA and standard Asr. There is no setting for the method
 Masjid times: read from each masjid's public MAWAQIT page. MAWAQIT may block this at any time, so calculated times are the fallback. Masjid prayers use the masjid's iqamah. Home prayers use the main masjid's MAWAQIT adhan times when available, and calculated times otherwise
@@ -38,7 +38,7 @@ Hosting: Azure on student credit
 
 Accuracy rules
 A wrong prayer time means a missed prayer, so every prayer time calculation needs tests.
-Show where each time came from.
+Show where each time came from on the Settings page, not in each event. Events only get a description when a prayer was moved or clashes.
 Never apply a masjid time change unless it came from the masjid's own published source or a masjid admin confirmed it.
 
 Lessons from a similar app
@@ -61,15 +61,20 @@ Prayer times: calculate times for any location, with tests
 Google Calendar: sign in with Google, create the "Prayers" calendar, and add today's prayers
 Setup questions and nightly updates: address, masjid, which prayers at the masjid, Jumuah masjids, and daylight saving time
 Masjid times and Jumuah: read each masjid's times from its public MAWAQIT page (calculated times as the fallback), add a drive block before masjid prayers, an optional setup page, and pick the Jumuah slot that fits the user's calendar
-Edit page: change prayers on the website, and keep the website and Google Calendar in sync both ways
-Commitments and notifications: move prayers around other commitments, and alert users when something changes
+Moving prayers around commitments: the busy times in the user's Google Calendar come first, each prayer moves to the earliest free time before its time ends, and today and tomorrow are re-checked every 5 minutes
 Deploy: run it on Azure
-Stretch goals, only after the 8 milestones work:
+Stretch goals, only after the 7 milestones work:
+Two-way sync: notice edits made in Google Calendar, and keep the website and Google Calendar in sync both ways
+Edit page: change prayers on the website
+Notifications: alert users when something changes
+Jumuah at a different masjid: let a user pray Jumuah somewhere other than their main masjid. For now Jumuah is always at the main masjid
+Find a masjid's MAWAQIT page automatically: for now I link each masjid by hand with python -m app.admin link-mawaqit, using the /stats list of masjids that aren't linked yet
+Masjid times from sources other than MAWAQIT, like a masjid's own website (for example, AMA's prayer page). Masjids not on MAWAQIT get prayer start times only until then.
 AI timetable reading: an AI reads a masjid's timetable from a photo, poster, or website when it changes. It runs once per masjid, not per user, so a free AI tier should cover it. A masjid admin confirms every time it reads before anyone's calendar changes.
-University jama'ah hub: from Muslim_Calendar_App.md.
+University jama'ah hub: from PrayerFit_App.md.
 
 Full product description
-See Muslim_Calendar_App.md for the problems, features, and stretch goals.
+See PrayerFit_App.md for the problems, features, and stretch goals.
 
 ## Writing style
 

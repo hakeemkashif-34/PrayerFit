@@ -110,7 +110,7 @@ What each part of the app does and why it was built that way. Updated after each
 1. **Tests on your laptop**
    a) Start only the database: `docker compose up -d db`.
    b) In `backend`, activate the virtual environment and install `requirements-dev.txt`.
-   c) Point the tests at the database: `export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim_calendar` (use your `.env` values).
+   c) Point the tests at the database: `export DATABASE_URL=postgresql://prayerfit:change-me@localhost:5432/prayerfit` (use your `.env` values).
    d) Run `pytest`. You should see `2 passed`.
 
 2. **The whole app in Docker**
@@ -450,7 +450,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    a) Row already sent to this calendar: update (PUT). If Google says 404, insert it again.
    b) Otherwise insert. On 409, update.
 5. **`status: confirmed`** in every update. A user-deleted event stays in Google as "cancelled" with its ID still taken. Updating it with `confirmed` brings it back, so it reappears once, not twice. I couldn't test this against the real Google, so it's in the manual checks. (Since milestone 4, unchanged events aren't sent again, so a deleted event only comes back when it changes. See milestone 4, section 6.)
-6. **`extendedProperties.private.appEventId`**: the app's UUID on each Google event. Private properties are only visible to this app. Milestone 6 uses it to match Google events back to rows.
+6. **`extendedProperties.private.appEventId`**: the app's UUID on each Google event. Private properties are only visible to this app. Two-way sync (now a stretch goal) would use it to match Google events back to rows.
 7. **Partway failures**: a timeout, 429, or 5xx stops the run. Rows sent so far stay `synced`, the rest stay `pending`, and the answer is 503 with `saved` and `waiting` lists. Running again finishes the job.
 8. **Event times**:
    a) Start is the rounded prayer time from the calculator.
@@ -546,7 +546,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    c) **At most 5 suggestions**: the backend asks Photon for 10 and keeps 5.
    d) **Favour Canada**: Photon is asked to prefer results near the middle of Canada, with a wide radius. Then the backend moves Canadian results to the top, keeping Photon's order otherwise. That's why it asks for 10: a Canadian match in 7th place still makes the top 5.
    e) **Cache**: each answer is kept for 7 days. The same text, with different spacing or capitals, is only sent once.
-   f) **Through our backend**: the browser never calls Photon. Every request comes from the backend with the User-Agent `MuslimCalendar/0.4 (+mailto:<OSM_CONTACT_EMAIL>)`.
+   f) **Through our backend**: the browser never calls Photon. Every request comes from the backend with the User-Agent `PrayerFit/0.4 (+mailto:<OSM_CONTACT_EMAIL>)`.
    g) **Spaced out**: calls from the whole app are at least 0.25 seconds apart (`throttle.py`).
    h) **Credit**: OpenStreetMap's licence (the ODbL) requires credit wherever its data is shown. One small grey "© OpenStreetMap contributors" link sits in the footer of every page that uses it: setup and the settings page. The landing page shows no OpenStreetMap data, so it has no footer.
    i) **No postal codes**: suggestions and the saved address leave out the postal code. OpenStreetMap's Canadian postal codes are often wrong (it showed the wrong one for my address), and prayer times only need the location. Postal code areas Photon sends as places are dropped too. The cache key got a `v2` so old cached labels with postal codes are never shown.
@@ -607,7 +607,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    a) **Fill my calendar** fills all 14 days, while the user waits (about 10 to 20 seconds with real Google).
    b) Each Edit after setup updates the calendar straight away.
    c) If Google fails partway, the settings are still saved. The website shows "Some prayers haven't reached Google Calendar yet" with **Try again** (`POST /calendar/sync`), and the nightly job retries too.
-10. **A trade-off**: in milestone 3, running `POST /prayers/today` again sent all 5 events every time, which also brought back an event the user deleted in Google. Now unchanged events aren't sent, so a deleted event only comes back when its details change. Noticing edits and deletions made in Google is milestone 6 (two-way sync).
+10. **A trade-off**: in milestone 3, running `POST /prayers/today` again sent all 5 events every time, which also brought back an event the user deleted in Google. Now unchanged events aren't sent, so a deleted event only comes back when its details change. Noticing edits and deletions made in Google is two-way sync, which is now a stretch goal.
 11. **`POST /prayers/today`** no longer takes a location. It uses the saved settings and answers 409 "Finish setup first" before setup is done.
 
 ### 7. The nightly job
@@ -758,7 +758,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 ### 6. Freshness
 
 1. Measured from the last read that passed every check.
-2. Under 24 hours: fresh. 24 hours to 7 days: stale, still used, and the description adds "MAWAQIT times may be out of date (last updated Oct 22, 2026)". Over 7 days: not used, so calculated times come back.
+2. Under 24 hours: fresh. 24 hours to 7 days: stale, still used, and the description adds "MAWAQIT times may be out of date (last updated Oct 22, 2026)". Over 7 days: not used, so calculated times come back. (Milestone 6 changed this to 24 hours in section 16, then back to 7 days in section 32, with a Settings notice instead of a description.)
 3. **"updated" in a description is when the times last changed**, not when they were last read. Otherwise the date would move every day and every masjid event would be sent to Google every day for nothing.
 
 ### 7. Which time each prayer uses
@@ -866,7 +866,7 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
    a) The pick, if it fits: "Your pick (1st Jumuah)."
    b) If it clashes, the earliest Jumuah that fits, across all Jumuah masjids: "Your pick (2nd Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits."
    c) If that slot isn't on this Friday (KMA only has 2 this week), that counts as a clash, with "isn't on this Friday" instead.
-   d) If every slot clashes, keep the pick: "Every Jumuah clashes with your calendar. Kept your pick (1st Jumuah)."
+   d) If every slot clashes, keep the pick: "Every Jumuah clashes with your calendar. Kept your pick (1st Jumuah)." Milestone 6 changed this to the 1st Jumuah of the day (milestone 6, section 6).
    e) With no pick, the earliest that fits.
 4. Ties (2 slots at the same time) go to the masjid the user listed first.
 5. **Removing the picked masjid** from the Jumuah list clears the pick, so Settings never shows a pick that can't be used.
@@ -932,7 +932,7 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 1. **Bigger text**: the base size is 17px on a phone and 18px on a computer, up from the browser's 16px. Almost every size in `styles.css` is in `rem`, so everything grew with that one change.
 2. **Wider pages**: Settings and the "Adding your prayers" page went from 600px and 440px wide to 880px and 680px, setup's questions from 620px to 900px, and the landing and setup frames to 1240px. Phones still get a 16px gutter on each side.
 3. **Dark mode**: every colour is a token at the top of `styles.css` (`--text`, `--card`, `--field` for text boxes, `--on-green` for text on a green button, and so on). A `prefers-color-scheme: dark` block only changes the tokens, so it follows the phone or computer's setting. I replaced the hard-coded `#fff` backgrounds with `--field` so nothing stays white in dark mode.
-4. **The landing page**: "Welcome to Muslim Calendar", "Keep your prayer times up to date, every day.", then the hadith. The line about only having access to the Prayers calendar is gone.
+4. **The landing page**: a welcome heading, one sentence about what the app does, then the hadith. (Section 34 has the wording it uses now.) The line about only having access to the Prayers calendar is gone.
 5. **The hadith stands out**: it's the biggest text on the page, in a serif, in a warm cream block with a gold bar on the left, and its source ("Sahih al-Bukhari 527") is on its own line underneath, smaller and bold. Gold is only used here, so it doesn't look like the rest of the app's green. Dark mode has its own darker gold block with light text.
 6. **Why Amiri**: the hadith has the ﷺ sign (U+FDFA), and most fonts, including the one the site uses, don't have it, so it showed as an empty box. Amiri is a free serif with both English letters and ﷺ. It comes from npm (`@fontsource/amiri`) and is served by our own site, like Plus Jakarta Sans. Only the weight I use (400) is loaded, and the browser only downloads the parts of it the page needs.
 7. **A bug this caught**: once the location question stayed on screen (section 21), "Saving…" never went away after the location saved, and the address box stayed disabled. It used to disappear after saving, so it never had to reset. It resets now.
@@ -963,3 +963,547 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 7. **Opening and closing an item**: `Row` in `SettingsPage.tsx` remembers the row's height, and when it switches between showing and editing, it animates from the old height to the new one with the Web Animations API (`el.animate`, 0.22 seconds). The new content fades in with CSS. Only rows the user opened or closed get the fade, so nothing moves on page load. With motion turned off, there's no animation at all, and button transitions are off too.
 8. **Colours as swatches**: the saved prayer and drive colours on Settings show their Google colour as a small circle next to the name.
 9. **Checked with screenshots** of every page on a computer and a phone, in light and dark mode.
+
+## Milestone 6: Moving prayers around commitments
+
+### 1. Where things are
+
+1. **`backend/app/fit_prayers.py`**: the algorithm. Pure functions, no database and no network, like `plan_day` and `choose_jumuah`.
+   a) `prayer_windows`: when each prayer's time starts and ends.
+   b) `fit_prayer`: where one prayer goes, given the busy times.
+   c) `masjid_is_free`: whether the whole trip to the masjid is free.
+2. **`backend/app/event_plan.py`**: `plan_day` now works in 2 passes and uses `fit_prayers.py`.
+3. **`backend/app/busy_times.py`**: `busy_between` reads busy times for the whole window in one call.
+4. **`backend/app/calendar_window.py`**: keeps moved prayers when free/busy fails, and leaves a masjid prayer alone once its drive has started.
+5. **`backend/app/busy_checks.py`**: the 5-minute check for today and tomorrow (every 15 minutes at first, see section 25).
+6. **`backend/alembic/versions/0007_prayer_event_fit.py`** adds `prayer_events.fit`. **`0008_busy_check_jobs.py`** adds the `busy_check_jobs` table.
+
+### 2. The main rule: events come first
+
+1. Commitments are the busy times in the user's primary Google Calendar. There's no new screen for typing them in.
+2. Anything in the calendar has priority. The prayer works around it.
+3. A moved prayer goes in the earliest free time once the prayer's time has started, before or after the event.
+   a) Class from 4:00 to 5:00 pm: Asr goes at 5:00.
+   b) Isha starts at 7:23 pm and a meeting runs 7:45 to 9:00: Isha goes at 7:23, before the meeting.
+
+### 3. When each prayer's time ends
+
+1. Fajr ends at sunrise. Dhuhr at Asr, Asr at Maghrib, Maghrib at Isha.
+2. Isha ends at **midnight**: halfway between Maghrib and the next day's Fajr. Not 12:00 am on the clock, and never the 2 am a "before Fajr" rule would allow.
+3. The start times are the same ones home prayers use: the main masjid's MAWAQIT adhan when it's usable, calculated otherwise. That's `_home_time` in `event_plan.py`, which both the events and the windows use, so they can't disagree.
+4. **Sunrise** is the calculated one. The MAWAQIT parser reads sunrise but doesn't save it, since it isn't a prayer. The calculated sunrise is rounded down, which is the safe side for an end time.
+5. **Midnight is worked out in UTC**, then rounded down to the minute. On October 31, 2026, Maghrib is 6:00 pm (EDT) and the next Fajr is 5:30 am (EST). That's 12.5 real hours, so midnight is 12:15 am. A wall clock would say 11.5 hours and 11:45 pm. `test_isha_midnight_counts_real_hours_on_the_night_the_clocks_go_back` checks this.
+6. The last day in the window needs the next day's Fajr, so `plan_window` calculates one extra day, and the masjid times are loaded for it too.
+
+### 4. Prayer lengths
+
+1. The lengths from milestone 5 are now the maximums: Fajr 10, Dhuhr 15, Asr 10, Maghrib 10, Isha 15 (`PRAYER_LENGTHS`).
+2. Every prayer needs at least 10 minutes (`MIN_LENGTH`). A shorter gap is skipped.
+3. In a gap shorter than the maximum, the prayer shrinks to fit. A 12-minute gap fits Isha as a 12-minute block.
+4. A moved prayer has to end by the time its window ends.
+
+### 5. The algorithm
+
+"Normal time" means the iqamah for a masjid prayer and the adhan for every other prayer. A masjid prayer with no iqamah uses its start time.
+
+```
+for each prayer, each day:
+    if it's a masjid prayer:
+        if the drive, the "how early" minutes, and the prayer block are all free:
+            pray at the masjid at iqamah, with its drive block
+            stop
+        else:
+            it can't be at the masjid today
+    if the normal time is free:
+        pray at the normal time
+    else if there's a free gap of at least 10 minutes before the prayer's time ends:
+        pray in the earliest one, starting no earlier than the prayer's start time
+    else:
+        keep it at the normal time, flagged as a clash
+```
+
+1. **Finding the gap** (`earliest_gap`):
+   a) Sort the busy times and join any that overlap.
+   b) Start a cursor at the prayer's start.
+   c) Walk the busy times in order. The space between the cursor and the next busy start is a gap. If it's at least 10 minutes, use it. If not, move the cursor to the end of that busy time.
+   d) After the last busy time, the gap runs to the window's end.
+   e) Each prayer only has a handful of busy times, so this is quick: sorting is O(n log n) and the walk is O(n).
+2. **Touching isn't overlapping**: a block that ends exactly when an event starts still fits, the same rule Jumuah uses.
+3. **2 passes in `plan_day`**:
+   a) Pass 1 decides the masjid prayers, using only the user's busy times.
+   b) Pass 2 places every other prayer. The normal time check only looks at the user's events. The gap search also avoids the app's own events from pass 1 (drive blocks and masjid prayers) and the prayers already placed. Without that, a moved Asr could land on Maghrib's drive block. `test_a_moved_prayer_never_lands_on_the_apps_own_drive_block` checks it.
+   c) Why the app's own events don't count for the normal time: then a home prayer could move just because a masjid drive block touched it, even with an empty calendar.
+4. **Never in the past**: the gap search starts at the later of the prayer's start and now, rounded up to the minute. At 7:46 pm, if a meeting turns out to end at 7:45, Isha goes at 7:46, not 7:45.
+5. **All the maths is in UTC.** Python compares 2 times in the same `ZoneInfo` by their wall clocks, which is wrong on a daylight saving day. The tests move prayers on November 1 (1:00 am happens twice) and March 8 (2:00 am is skipped).
+
+### 6. Jumuah
+
+1. The user's pick is used if it fits.
+2. If it clashes, the earliest Jumuah that fits is used, across all Jumuah masjids.
+3. **Changed**: if every Jumuah clashes, the 1st Jumuah of the day is used: the earliest across all Jumuah masjids, with ties going to the masjid listed first. The description says "Every Jumuah clashes with your calendar, so this is the 1st Jumuah." Before, it kept the pick.
+4. A Friday without Jumuah times goes through the normal algorithm for Dhuhr.
+
+### 7. Titles and descriptions
+
+1. At the masjid: `Asr at KMA`, as before.
+2. Everywhere else: `Asr`, as before.
+3. Moved, or a masjid prayer prayed at home because of an event: the title is just the prayer's name. Section 15 has the description.
+4. No free time at all: the title is `Asr (clash)`.
+5. Drive blocks only exist for prayers actually at the masjid. When a masjid prayer moves, its future drive block is deleted, the same way as when a prayer moves home in the weekly grid.
+6. **A prayer that busy times didn't touch keeps exactly the same title as before**, so a check with nothing new sends nothing.
+
+### 8. Saving `fit`
+
+1. Each prayer event now saves `fit`: `normal`, `moved`, or `clash`.
+2. It isn't part of what's sent to Google, so it isn't in `event_hash` and never causes a write.
+3. It's there for the next section.
+
+### 9. When free/busy fails
+
+1. `BusyTimes.status` is `checked`, `no_access`, or `failed`.
+2. **No access** (the user didn't tick free/busy): busy times are empty, so nothing moves. Everything works as it did before.
+3. **Failed** (a Google error, a timeout, a bad answer): the busy times are unknown, not empty. If the update treated that as "free", every moved prayer would jump back to its normal time, right into the user's class. So:
+   a) The nightly job and settings updates still run, since a new day or a changed setting still needs to go out. But `save_window(keep_moved=True)` leaves every future row with `fit` of `moved` or `clash` exactly as it is, drive block and all.
+   b) The 5-minute check stops before saving anything. The next block tries again.
+4. A move is never undone because busy times are unknown. `test_a_free_busy_failure_never_undoes_a_move` checks it.
+
+### 10. Events that already started
+
+1. A row that already started is never changed, the same as before.
+2. New: a masjid prayer whose drive block has started is left alone too, even though the prayer itself hasn't started. The user is already on the road. Without this, an event added at 7:31 pm would move Isha home while the user is driving to KMA.
+
+### 11. The 5-minute check
+
+1. **Why**: the nightly job runs at 3:00 am. An event added at noon should move that evening's Isha before Isha, not the next night.
+2. **What**: every 5 minutes, for each user with setup done, the free/busy scope, and a working sign-in, update today and tomorrow (`refresh_calendar(days=2, busy_check=True)`). Only changed events go to Google.
+3. **Stable IDs**: `busy:<user id>:<5-minute block in UTC>`, like `busy:...:2026-10-26T13:05`. The worker runs every minute, but each block's check is saved before it runs (`INSERT ... ON CONFLICT DO NOTHING`) and claimed with one `UPDATE ... WHERE status = 'pending'`, the same pattern as the nightly job. A test starts 2 workers at once and checks free/busy was called once.
+4. **Quiet checks are cheap**: when nothing changed, the check returns before even looking up the Prayers calendar. So most checks are 1 free/busy call. Section 25 has the quota numbers. It stays $0.
+5. **Cleanup**: check rows older than 2 days are deleted on each run, so the table stays small (288 rows per user per day before cleanup).
+6. The worker now runs 4 steps every minute: nightly jobs, MAWAQIT reads, busy checks, then queued updates.
+7. The nightly job still covers all 14 days, and asks free/busy for the whole window in one call (from the first day's midnight to the end of the day after the last day, so the last day's Isha is covered).
+
+### 12. The Prayers calendar is never busy
+
+1. Free/busy only asks for `primary`, and only `primary` is read from the answer, the same as milestone 5.
+2. The fake Google still answers that the Prayers calendar is busy all day. A test checks nothing moves because of it. Otherwise every prayer would clash with itself.
+
+### 13. Tests
+
+1. **`test_fit_prayers.py`** (pure, no database):
+   a) A free normal time stays.
+   b) Touching ends don't clash.
+   c) Praying before and after an event.
+   d) Gaps under 10 minutes skipped.
+   e) Shrinking to fit.
+   f) Exactly 10 minutes is enough.
+   g) A moved prayer fits fully before its time ends.
+   h) Clashes.
+   i) Joined events.
+   j) Avoiding the app's own events.
+   k) Never in the past.
+   l) Fajr ending at sunrise.
+   m) The other windows.
+   n) Isha ending at midnight.
+   o) Midnight and moving on both daylight saving days.
+   p) The masjid trip check.
+2. **`test_moving_calendar.py`** (the real calendar update with the fakes):
+   a) Scenario 1, Isha at KMA (adhan 7:23 pm, iqamah 7:40 pm, 10 minute drive): a class until 7:35 gives `Isha` at 7:40, and a class from 7:00 to 8:30 gives `Isha` at 8:30.
+   b) Scenario 2, Asr at KMA (adhan 3:36 pm, iqamah 4:15 pm, Maghrib 6:01 pm): a class from 3:00 to 6:30 gives `Asr (clash)` at 4:15, and a class from 3:00 to 4:21 gives `Asr` at 4:21.
+   c) Isha before a meeting.
+   d) The drive block being deleted.
+   e) The app's own drive block.
+   f) Nothing moving without busy times.
+   g) Daylight saving.
+   h) Free/busy failing never undoing a move but still applying other changes.
+   i) Users without access.
+3. **`test_busy_checks.py`**:
+   a) A new event moves the prayer, and removing it puts it back on the next check.
+   b) Only today and tomorrow.
+   c) Nothing changed means zero writes and only a free/busy call.
+   d) The Prayers calendar never counts.
+   e) A failure changes nothing and the next block retries.
+   f) Started events and a started drive aren't moved.
+   g) Never in the past.
+   h) Who gets checked.
+   i) One check per 5 minutes.
+   j) 2 workers at once.
+   k) Old checks deleted.
+4. **Jumuah**: `test_jumuah_picker.py` covers the pick fitting, the pick clashing, and every slot clashing (now the 1st Jumuah). `test_busy_times.py` checks the same through the calendar.
+5. I broke the code on purpose to check the new tests fail. I removed the app's own events from the gap search, used wall clock hours for midnight, ignored the drive in the masjid check, turned off `keep_moved`, dropped the started-drive rule, and dropped "never in the past". Each one made at least one test fail.
+6. Every old test still passes without changing what it expects, except the Jumuah "every slot clashes" rule, the free/busy call now covering the whole window, and the worker's step list.
+
+### 14. How to check it works
+
+1. **Tests**: `pytest` in `backend` (`753 passed`) and `npx playwright test` in `web` (`222 passed`), with the changes in sections 15 to 24.
+2. **For real**, with the test Google account:
+   a) Start everything with `docker compose up -d`, so the worker runs.
+   b) Add an event to the test account's main calendar that covers one of today's or tomorrow's prayers.
+   c) Within 5 minutes, that prayer moves in the Prayers calendar, and its description says something like "Moved because of an event in your calendar (42 minutes after Dhuhr's start time)."
+   d) Delete the event. Within 5 minutes, the prayer is back at its normal time.
+   e) `SELECT id, status, events_sent FROM busy_check_jobs ORDER BY block_start DESC LIMIT 5` shows the checks.
+3. **Checks I couldn't do here**: real free/busy answers from Google. The cloud environment I built this in can't reach Google, so the steps above are the real test.
+
+### 15. Event descriptions: only for moved and clashing prayers
+
+1. **Every other event has no description**, drive blocks included. Before, each one said where its time came from, and drive blocks said the drive time and how early.
+2. **Moved**: "Moved because of an event in your calendar (42 minutes after Dhuhr's start time)."
+   a) The minutes are from the prayer's start time (the adhan) to where it was placed, worked out in UTC like everything else.
+   b) Over an hour it reads "1 hour 12 minutes". Right at the adhan it reads "(at Dhuhr's start time)". `duration_text` and `moved_text` in `event_plan.py` do this, and a test checks 1, 59, 60, 61, 72, 120, and 125 minutes.
+   c) A masjid prayer prayed at home at its iqamah counts too, for example "(17 minutes after Isha's start time)".
+   d) Jumuah has its own descriptions (section 28).
+3. **Clash**: "Your event covers all of Asr's time today, so figure out a way to fit it in." The title stays `Asr (clash)`.
+4. **Nothing else, ever.** The app only knows busy times, never event names, so a description can't say what the event is.
+5. **Where times come from didn't go away.** It's still saved in `prayer_events.source_description` for every event, and the Settings page shows each masjid's "Times from MAWAQIT, updated Oct 25, 2026". I took the "Calculated times use ISNA with standard Asr." line off Settings later (section 30), since there's no choice to make there. CLAUDE.md's accuracy rule says this now.
+6. **Old events lose their descriptions in place.** `google_event` only adds `description` when there is one. An update replaces the whole event (PUT), so leaving the field out removes it from Google. The event body changed, so its hash changed, so every future event is sent once, with the same event ID. Past events keep theirs. `test_old_descriptions_are_removed_in_place` checks this with no inserts at all.
+
+### 16. Masjid times that can't be confirmed
+
+Section 32 changed this again: the last MAWAQIT times are used for up to 7 days, and the notice comes after 24 hours.
+
+1. **24 hours, not 7 days.** `freshness.py` now has just FRESH (under 24 hours), STALE (24 hours or more), and NEVER. Only FRESH is used. A stale masjid's prayers use calculated times until a read works again.
+2. **Why that's the safe side**: a calculated start time is never later than the iqamah, so the user turns up early, never late. A week-old iqamah could be wrong after the masjid moved it earlier.
+3. **No event description for it.** Instead, Settings shows a notice at the top: "KMA's times couldn't be confirmed since Oct 24, 2026. Your calendar is using calculated times until they're back." (`masjid_notices` on `GET /settings`, from `masjid_notices` in `routers/settings.py`.)
+   a) One notice per linked masjid the user uses (main or Jumuah), by the name they see, so the main masjid is "KMA".
+   b) The date is the last good read. A masjid that was never read uses the day it was linked, but only once 24 hours have passed, so a masjid linked a minute ago doesn't get a notice before its first read.
+4. The /stats page lists the same masjids for me (section 21).
+
+### 17. Masjid search: within 100 km
+
+1. A typo like "Kanta M" used to find churches thousands of km away, since Photon matches loosely and the bias toward home is only a preference.
+2. **2 checks**:
+   a) Photon gets a `bbox` around the (rounded) home, a little wider than 100 km, so it doesn't even send far away places.
+   b) The backend then keeps only places within 100 km by the real (haversine) distance, nearest first. A box has corners further than 100 km, so the box alone isn't enough. A test puts a masjid 105 km away inside the box and checks it's left out.
+3. **Addresses only when the text has a number.** Before, no masjid match also searched addresses, so "Kanta M" showed random streets. Now it says "No masjid found near you. Check the spelling, or type the masjid's address instead." Typing "3500 Fallowfield" still finds a masjid that isn't on the map.
+4. The cache keys changed (`masjid:100km:` and `near:100km:`), so older cached answers without the limit are never read.
+
+### 18. Light theme only
+
+1. White, black, and green, on a light green page (`--background: #e8f3ea`). The dark mode block is gone and `color-scheme: light`, so the site and the browser's own parts (checkboxes, scrollbars) look the same whatever the device's setting is.
+2. **Readable on light green**: I checked each text colour's contrast with a small script. Near-black text is 16:1, the grey-green for labels is 8.9:1, the lightest hint colour is 5.7:1, and white on the green buttons is 7:1. The usual minimum for small text is 4.5:1.
+3. The hadith block is now white with a green bar, and notices are white with a green bar (or a dark red bar for a warning).
+4. A test checks the page, button, and heading colours are exactly the same with dark mode turned on.
+
+### 19. Layout: nothing covers anything
+
+1. **Suggestion lists push the page down.** They used to be `position: absolute`, floating over the next question, so its text showed through. Now they're part of the page's flow, so the masjid question moves down while the address list is open. The colour picker's list works the same way. A test checks the next heading moves below the open list.
+2. **I checked every page with screenshots** at phone (390px), laptop (1280px), and desktop (1680px) widths. That's how I found 3 problems:
+   a) In the Jumuah view, the masjid name disappeared from the selected block. Its line hides overflow, and in a flex column that lets it shrink to 0 height first. `flex: none` on each line fixed it.
+   b) The Adding page's week ran off the bottom of a laptop screen. The page is now exactly the screen's height and the week fills what's left.
+   c) Setup showed the address twice (the "Saved:" panel and the box). See section 20.
+
+### 20. The location box shows the picked address
+
+1. Before, the box still showed what was typed ("139 Escar") after picking. Now `SuggestBox` has `fillOnPick`, so picking puts the suggestion's text in the box.
+2. Filling the box would normally start a new search. A `filled` flag stops that until the user types again.
+3. In setup, the box starts with the saved address and a "✓ Saved" line under it, instead of a separate "Saved:" panel. Settings still has its panel with Cancel.
+4. Suggestion labels never have a postal code (milestone 4), so the box never shows one either.
+
+### 21. The Jumuah question as a Friday
+
+1. A day calendar for Friday: times down the side from 11 AM to 4 PM (wider if a slot starts earlier or ends later), with the rest of the day greyed out (a striped background).
+2. **Each slot runs from when to leave home to the end of Jumuah.** `POST /jumuah/slots` now returns `leave_at`: the start minus the Jumuah "how early" minutes and the drive. The top part of the block, from leaving to the start, is lighter and says "Leave 1:11 PM".
+   a) It needs the drive time, so it calls `drive_seconds` (OpenRouteService, saved for 30 days like the calendar update). That's why it's a POST now: a GET must never change anything, and this may save a drive time.
+   b) With no drive time, the block starts at the arrival time.
+3. Blocks are placed by minute: 2px per minute from the view's start. Blocks that overlap go side by side.
+4. **Picking**: clicking a block picks it. The picked block is solid green with white text and "✓ Selected". Each block is still a real radio button, so arrow keys and screen readers work.
+5. The same component is used in setup and in the Settings editor. In setup it shows as soon as a masjid is picked.
+6. **Never skipped silently**: the API now returns `no_times`, the names of Jumuah masjids with no times yet. Setup says "Jumuah times for Kanata Muslim Association aren't available yet. We'll use the 1st Jumuah, and you can change it in Settings later." Settings says the first sentence only.
+
+### 22. The "Adding your prayers" page
+
+1. **Most of the screen**: the page is exactly the screen's height. The heading is 2rem to 3.75rem depending on the screen, and the week fills what's left. "This can take up to a minute." is sized from the screen's width so it always stays on one line (a test checks 320px to 1680px).
+2. **Real times**: `POST /calendar/preview` plans this week without saving or sending anything (`preview_week` in `calendar_window.py`). It uses `load_setup(preview=True)`, which only needs the required answers, since the tab opens while setup is still saving the optional ones. If it answers 409, the page asks again, up to 6 times, 1.2 seconds apart, then shows a typical week instead.
+3. **The animation**: a week view with times down the side and 7 days across. One block goes in every second, day by day and in time order, so each drive comes just before its prayer. Prayer blocks grow down from their start time, and drive blocks are narrower and slide in from the left, in the drive colour. The day being filled is highlighted, and a caption names the block, like "Adding Thursday's Asr" or "Adding Thursday's drive to KMA". After the whole week it holds for 3 seconds and starts again.
+4. React only decides which blocks are shown (a counter that goes up every second). CSS does the movement.
+5. **Reduced motion**: a spinner, and the page doesn't even ask for the preview.
+6. **Opened by hand**: it now knows there's no setup tab straight away, so it never starts the week or calls the API. A test caught it calling the API before.
+7. The tests use Playwright's fake clock (`page.clock`), so "one block a second" and the captions are checked exactly.
+
+### 23. Usage stats
+
+Section 34 simplified this: the /stats page is now total users, a graph of total users per day, and a masjid table, and the daily snapshot table is gone.
+
+1. **Counts only.** `app/stats.py` counts:
+   a) Signed up: rows in `users`.
+   b) Finished setup.
+   c) Active: users with a nightly job, settings update, or 5-minute check that finished "done" in the last 2 days.
+   d) New this week: users created in the last 7 days. Not "since Monday", so it doesn't drop to 0 every week.
+2. **The command**: `python -m app.admin stats` prints the 4 lines. A test checks nothing in the output has an "@".
+3. **A daily snapshot**: the worker's 5th step saves the 4 numbers in `usage_stats` once a day, after 4:00 am Toronto time (after the 3:00 am nightly jobs, so "active" counts last night). The date is the row's ID, so the worker running every minute still saves one row a day. Migration `0009`.
+4. **The private page**: `GET /admin/stats` checks the signed-in user's email against `ADMIN_EMAIL`, ignoring capitals. Anyone else, signed in or not, gets exactly FastAPI's normal 404, `{"detail": "Not Found"}`, so it looks like a page that doesn't exist. The website's `/stats` shows "Page not found" for that. Nothing links to it.
+5. **The graph**: one SVG line chart, sign-ups and active users over time, on one axis (both are counts of people).
+   a) The colours are green and purple. I ran them through a colour-blindness checker, and they pass. Purple is only on this private page.
+   b) Each line has its name at its end, so colour isn't the only way to tell them apart.
+   c) Hovering snaps a line to the nearest day and shows both numbers.
+   d) "Show as a table" has every value.
+6. **Masjid times**: every linked masjid whose read is failing or over 24 hours old, with its last good read and the error. Masjid names are public (OpenStreetMap), so this is still nothing about a user.
+7. `ADMIN_EMAIL` is in `.env.example` with no value. Empty means nobody can open it.
+
+### 24. Tests for this round
+
+1. **Backend**:
+   a) Moved and clash texts.
+   b) No descriptions anywhere, and old descriptions removed in place.
+   c) The 24-hour rule and the Settings notice.
+   d) Masjids within 100 km and the typo case.
+   e) `leave_at` and `no_times`.
+   f) The week preview.
+   g) Stats: the counts, the command, the daily row, the 404s, and the masjid list.
+2. **Website**:
+   a) The light-only colours, and the suggestion list pushing the page down.
+   b) The picked address in the box.
+   c) The "No masjid found near you" message.
+   d) The Friday view: hours, greyed out, leave times, block positions, and the selected style.
+   e) The no-times message in setup and Settings.
+   f) The Adding page: size at 6 widths, real times, captions, colours, the loop, the retries, and reduced motion.
+   g) The Settings notice.
+   h) The /stats page for the admin, someone else, and nobody signed in.
+
+### 25. Checking busy times every 5 minutes
+
+1. `CHECK_EVERY_MINUTES` in `busy_checks.py` went from 15 to 5, so a new event in my calendar moves a prayer within 5 minutes, and deleting it puts the prayer back within 5. The job ID is now the 5-minute block, like `busy:<user id>:2026-10-26T13:05`.
+2. **The quota, checked first.** Google's Calendar API docs say:
+   a) No charge under 1,000,000 requests a day per project.
+   b) 10,000 requests a minute per project.
+   c) 600 requests a minute per user.
+   d) Full billing details come later in 2026, with at least 90 days' notice.
+3. **For 1,000 users**:
+   a) Busy checks: 12 an hour, so 288 a day each, and 288,000 a day in all. A quiet check is 1 free/busy call (section 11).
+   b) Everything else: the nightly job (1 free/busy call, the calendar lookup, and the new day's events per user), moved prayers, and settings changes. Roughly 20,000 a day.
+   c) Total: about 310,000 a day, about 31% of the free 1,000,000.
+   d) Per minute: 1,000 checks per 5 minutes is about 200 a minute, far under 10,000. Each user makes about 1 call every 5 minutes, far under 600 a minute.
+   e) The free 1,000,000 would run out at around 3,200 users at this rate. Token refreshes go to Google's sign-in server, not the Calendar API, so they don't count.
+4. **A limit to know about**: the worker runs the checks one user at a time. If each takes about 0.3 seconds, 1,000 users is about 5 minutes, the whole block. That's fine at today's size, but well before 1,000 users the checks would need to run in parallel (more workers, or a few at a time).
+5. Settings says "Updates and changes are reflected on your calendar every 5 minutes." under the email at the top.
+
+### 26. Jumuah is always at the main masjid
+
+1. **No more Jumuah masjids.** The "Jumuah masjids" item on Settings, its editor (`JumuahStep.tsx`), and `PUT /settings/jumuah` are gone. Jumuah at a different masjid is a stretch goal in CLAUDE.md now.
+2. **Everything uses the main masjid**:
+   a) `Setup.jumuah_masjid` is just the main masjid. `masjid_inputs` builds 1 masjid context, used for both the daily prayers and Jumuah.
+   b) `POST /jumuah/slots` takes one `masjid_id` (the main masjid setup hasn't saved yet), or none for the saved main masjid.
+   c) Drive times are only asked for the main masjid.
+   d) MAWAQIT reads and queued updates only look at main masjids (`users_of_masjid`, `_has_users`).
+3. **No Jumuah** when the user prays at home, or the main masjid has no Jumuah times, as before.
+4. **The pick follows the main masjid.** `PUT /settings/jumuah-pick` only accepts the main masjid. Saving a new main masjid resets the pick to its 1st Jumuah. Saving the same one keeps the pick. Choosing "I pray at home" clears it.
+5. **Migration `0010`** for existing users:
+   a) A pick at the main masjid stays.
+   b) Any other pick, or no pick, becomes the main masjid's 1st Jumuah.
+   c) A user who prays at home has their pick cleared.
+   d) The `user_jumuah_masjids` table and the `jumuah_saved` column are dropped, since nothing uses them any more.
+   e) Its downgrade puts the table back with each main masjid in it, the way it was before.
+   f) `test_migration_0010_keeps_jumuah_at_the_main_masjid` checks all 4 kinds of user.
+6. The older migration tests (0004 to 0006) now upgrade only to their own migration before checking, so 0010 dropping the table doesn't break them.
+7. `test_main_masjid_jumuah.py` tested the old "main masjid joins the Jumuah list" rule, so I removed it. The pick rules are tested in `test_jumuah_pick_and_chooser.py`.
+
+### 27. Settings: the question, then just the answer
+
+1. Each Settings item now shows its setup question as the label, and only the answer as the value:
+   a) "What's your location?"
+   b) "Which masjid do you usually go to?"
+   c) "Which prayers do you usually pray at the masjid?"
+   d) The Jumuah question.
+   e) "How early do you want to arrive before iqamah (daily prayers)?" with "5 minutes".
+   f) "How early do you want to arrive before Jumuah (Friday prayer)?" with "5 minutes".
+2. Short name and the colours never had a question in setup, so they keep their labels.
+3. The "Arrive 5 min before iqamah" wording is gone. `minutesText` gives "5 minutes" (or "1 minute").
+4. The questions live in one place, `QUESTIONS` in `labels.ts`, so setup, the editors, and Settings can't drift apart.
+5. `Row` has a short `title` too, like "How early for prayers". Screen readers and the Edit button use it ("Edit how early for prayers"), since reading out a whole question on every button would be a lot.
+6. The Jumuah pick's value is just "2nd Jumuah", since it's always at the main masjid.
+
+### 28. Jumuah descriptions
+
+1. A Jumuah only gets a description when the pick couldn't be used:
+   a) The pick clashes: "Your pick (1st Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits."
+   b) The pick isn't on this Friday: "Your pick (3rd Jumuah) isn't on this Friday, so this is the earliest Jumuah that fits."
+   c) Every Jumuah clashes: "Every Jumuah clashes with your calendar, so this is the 1st Jumuah."
+2. A Jumuah at the pick has no description. These are the picker's own reasons (`choose_jumuah`), so the description and the rule can't disagree.
+3. This replaced the "Moved because of an event in your calendar (1 hour after Jumuah's start time)" and "covers all of Jumuah's time" texts from section 15.
+
+### 29. How to check it works
+
+1. **Tests**: `pytest` in `backend` (`841 passed`) and `npx playwright test` in `web` (`258 passed`).
+2. **For real**, the steps in section 14 now take up to 5 minutes, not 15.
+
+### 30. Small fixes after review
+
+1. **Settings text**: I removed "Calculated times use ISNA with standard Asr." from the Location item. The method can't be changed, so the line didn't help anyone decide anything. "Time zone: America/Toronto" stays, since that one is about the user.
+2. **Card colours**: the Required and Optional cards are now the same white, with the same border and shadow, and so is the "Calendar updated. 95 events sent to Google." message above them. Before, Optional was only an outline on purpose (milestone 5, section 27). White reads best on the light green page, and it's `--card` in `styles.css`, the same colour the message already used. One `.settings-card` rule covers both cards now.
+3. **Masjids that aren't linked to MAWAQIT**: I link each masjid by hand with `python -m app.admin link-mawaqit`, so I need to know which ones people actually picked.
+   a) `unlinked_masjids` in `routers/stats.py` counts users per main masjid, for masjids with no row in `masjid_sources`. Users who pray at home don't count, even if an old masjid is still saved.
+   b) Most users first, then by name. A masjid with no name uses its address, then "Unnamed masjid".
+   c) /stats shows each one with "3 users" (or "1 user") and its ID, plus the exact `link-mawaqit` command. With none left, it says "Every masjid someone picked is linked."
+   d) Finding a masjid's MAWAQIT page automatically is a stretch goal in CLAUDE.md now.
+4. **The "Adding your prayers" page**:
+   a) Smaller text: the heading is 1.5rem to 2.75rem (it was 2rem to 3.75rem), the line under it is at most 1.25rem, and the caption at most 1.375rem.
+   b) A smaller animation: the page is at most 1120px wide (it was 1400px), and there's a little space under the week.
+   c) "This can take up to 1 minute.", with a digit.
+   d) **A gap between back-to-back blocks**: a drive ends right when its prayer starts, and every block has a smallest height (10px for drives, 16px for prayers) so short ones stay visible. That smallest height could make a drive run into its prayer. Now each block stops 3px (`BLOCK_GAP_PX`) before the next block that day. My first try just cut the block short, but on a phone that squeezed each drive into a thin line. So if cutting it would make it shorter than its smallest height, it keeps that height and moves up a little instead. It's a picture of the week, not the calendar itself, so a drive starting a few pixels early is fine.
+   e) This is all CSS `min()`, `max()`, and `calc()` in each block's `top` and `height`, so it works at any screen size without measuring anything in JavaScript.
+5. **Tests**:
+   a) Backend: `test_masjids_that_arent_linked_yet_are_listed_with_their_user_counts`.
+   b) Playwright: the ISNA line is gone and the time zone stays, both cards and the message are white, the unlinked list (and its empty message) on /stats, the "1 minute" text, the smaller font sizes at 6 widths, and a gap of at least 2px between every pair of blocks in a day, with no drive under 9.5px tall, on a laptop and a phone.
+   c) The mock preview's drive now ends right when its prayer starts, like the real one, so the gap test checks the hard case.
+
+### 31. Linking masjids to MAWAQIT from my own list
+
+1. **Why a list**: MAWAQIT's search needs a login and it has no sitemap, so the app can't find a masjid's page by itself. I collected Ottawa's 23 MAWAQIT masjids by hand, each with its link and where it is. Users never see any of this.
+2. **The file**: `backend/app/data/mawaqit_masjids.csv`, with the columns `name,mawaqit_link,latitude,longitude`.
+   a) Most links are share links like `https://mawaqit.net/en/id/9793`. One is a page link, `https://mawaqit.net/en/cio-gatineau`.
+   b) `external_id_from_link()` in `mawaqit.py` turns them into what's saved: `id/9793` or `cio-gatineau`. `page_url()` builds the URL again from that, so a saved value can only ever point at mawaqit.net.
+   c) "id" is also a language code (Indonesian), so `https://mawaqit.net/id/9793` is a share link but `https://mawaqit.net/id/cio-gatineau` is a page link. There's a test for both.
+3. **The ID page is the same page**: I checked a saved copy of `https://mawaqit.net/en/id/9793`. It answers with KMA's page directly, no redirect, and its `confData` has the same times, iqamah, Jumuah, and time zone as KMA's page link. The parser gives the same 7 days from both. So I didn't commit the full page. The trimmed fixture already covers it.
+4. **Redirects**: `download()` still follows up to 3 redirects in case MAWAQIT changes this, but by hand, checking each one stays on `https://mawaqit.net`. A redirect anywhere else is refused before it's requested.
+5. **Loading the file** (`mawaqit_list.py`):
+   a) A new table, `mawaqit_list`, keyed by the saved ID, so loading the file again never adds a copy.
+   b) The backend loads it when it starts (FastAPI's `lifespan` in `main.py`), and the worker does too, before its first run.
+   c) A fixed name or location in the file replaces the saved one. A row removed from the file stays, since users may be linked to it.
+   d) It's a file loaded on start, not a migration, so adding a masjid is one new line, not a new migration.
+   e) One bad line stops the load, and the message names the line, like `mawaqit_masjids.csv line 5: the name is empty`. On start that's logged, not raised, so a typo can't take the site down. A test reads the real file on every push, so a typo fails CI first.
+6. **Matching** (`match.py`), plain functions with no database:
+   a) Within 100 m: a match, even with a different name. Map names are often spelled differently ("MAC QIC"), but 2 masjids are almost never within 100 m of each other.
+   b) From 100 m to 200 m: a match only if the names closely match. `name_words()` drops accents, punctuation, and common words (masjid, mosque, association, centre, center, Ottawa, the, of). Then the names match if one's words contain the other's, or if they're at least 85% alike (`difflib`). "Ottawa Main Mosque (OMA)" gives {main, oma}, which contains "Ottawa Main Mosque" ({main}). "Jami Omar" and "Jamia Omar" are 95% alike.
+   c) Exactly 1 match links. 0 is "no match", and 2 or more is "unclear", so the app never guesses between 2 masjids.
+7. **When it links** (`auto_link.py`):
+   a) In setup, when a user picks a masjid (`POST /masjids/from-suggestion`). `link_and_fetch` links it and reads its page straight away, so the Jumuah question already has the real Jumuah times. It uses the worker's job ID for this 6-hour block, so picking again never reads MAWAQIT twice. Any error is logged and dropped, so MAWAQIT being down never stops setup.
+   b) When the list changes (the file has new or changed rows on start, or `add-mawaqit`). `rematch_picked` matches every masjid users picked that isn't linked. The worker reads the new links within a minute, and that updates their calendars.
+8. **My links come first**:
+   a) `masjid_sources.origin` is "admin" (`link-mawaqit`) or "auto". Migration 0011 marks every link made before this as "admin".
+   b) Automatic matching only looks at masjids with no link, so it never replaces one of mine. `link-mawaqit` does replace an automatic one.
+   c) `unlink-mawaqit` sets `masjids.no_auto_link`, so a wrong automatic link I remove after a spot-check doesn't come back. `link-mawaqit` clears it.
+   d) Automatic links also save which list entry they matched and how far away it is, for /stats.
+9. **Admin commands**:
+   a) `add-mawaqit <link> --name --lat --lon` saves a list row straight away and links matching masjids. It says to add the same line to the CSV, since the CSV is what rebuilds the list.
+   b) `scan-area` asks OpenStreetMap's Overpass API for every masjid within 40 km of Ottawa and prints each as linked, no match, or unclear, then the totals. It only reports. Overpass is free, and only this command uses it. Setup still searches with Photon, since Overpass is meant for occasional big queries, not one per user. `--km` is limited to 100.
+10. **/stats**:
+    a) "Linked automatically": the masjid's map name, the list name it matched, the MAWAQIT link, the distance, and how many users. Newest first, including links nobody has saved yet (0 users), so I can spot-check every one.
+    b) "Masjids with no MAWAQIT match" replaced section 30's "not linked" list. It gives a reason, worked out again from the list each time: "No listed masjid within 200 m", "2 listed masjids are close, so it wasn't linked", or "Unlinked by hand".
+    c) A masjid picked by its address now shows "(no name, picked by address)". Section 30's list showed the address, which is where one user said their masjid is, so that was a privacy slip. `list-masjids` already hid it.
+11. **Tests**:
+    a) `test_masjid_match.py`: a match within 100 m with a different name, a name match at 150 m, a different name at 150 m, 2 close masjids (no link), too far (no link), the 100 m and 200 m edges, and name matching.
+    b) `test_mawaqit_list.py`: the real file (23 rows, valid links), each masjid loading once, the app loading it on start, a fixed row, bad lines, and a list change linking a masjid a user already picked.
+    c) `test_auto_link.py`: setup links KMA and reads `/en/id/9793` once, so the Jumuah question has its 1:15 Jumuah; MAWAQIT being down; a manual link never replaced (by setup, a list change, or `add-mawaqit`); an unlinked masjid not linked again; `add-mawaqit`; and `scan-area` with a fake Overpass.
+    d) `test_mawaqit_download.py`: share links and page links, redirects within mawaqit.net, and redirects anywhere else refused.
+    e) A migration test for 0011, and Playwright tests for both new /stats lists.
+12. **Counts**: `pytest` in `backend` gave `830 passed`, and `npx playwright test` in `web` gives `230 passed`.
+
+### 32. Keeping MAWAQIT times for up to 7 days
+
+1. **What changed**: section 16 switched to calculated times 24 hours after the last good read. Now the last MAWAQIT times are kept for up to 7 days.
+2. **Why**: each read saves a full 30-day calendar (`FETCH_DAYS = 30` in `scheduler.py`), with every day's adhan and iqamah. If MAWAQIT blocks us for a few days, the times we already have are still the masjid's own published times, and much closer to right than calculated ones.
+3. **The steps** (`freshness.py`), measured from the last good read:
+   a) Under 24 hours (`FRESH`): used.
+   b) 24 hours to 7 days (`STALE`): still used. Settings shows a notice.
+   c) Over 7 days (`TOO_OLD`): not used, so calculated times are used until a read works again.
+   d) Never read (`NEVER`): calculated times.
+   `Freshness.usable` is True for the first 2, and everything that picks a time goes through it (`MasjidTimes.usable_day` in `store.py`), so this was a one-file logic change.
+4. **The Settings notice** (`masjid_notices` in `routers/settings.py`) still starts after 24 hours, with 2 versions:
+   a) Still used: "KMA's times couldn't be confirmed since Oct 22, 2026. Your calendar is still using the last times read from MAWAQIT, and switches to calculated times on Oct 29, 2026 if they still can't be read." The switch date is the last good read plus 7 days, in the user's time zone.
+   b) Over 7 days, or never read for a day: "KMA's times couldn't be confirmed since Oct 15, 2026. Your calendar is using calculated times until they're back."
+5. **The line under the masjid** says "so the last times read are used" or "so calculated times are used" to match.
+6. **When the switch shows up**: nothing runs at the 7-day mark itself. For users who allowed free/busy, the next 5-minute check updates today and tomorrow. Every other day, and every other user, gets it from the nightly job.
+7. **Tests**:
+   a) `test_freshness.py`: still used at exactly 24 hours and exactly 7 days, and not used at 7 days and 1 second.
+   b) `test_masjid_times_calendar.py`: a read 7 days ago still gives Isha at KMA's 8:15 pm iqamah, and a read 7 days and 1 minute ago gives the calculated start.
+   c) `test_optional_settings.py`: both notice texts, the switch date, and both masjid lines.
+8. **Counts**: `pytest` in `backend` gives `832 passed`, and `npx playwright test` in `web` gave `230 passed` (238 after section 33).
+
+### 33. The hadith highlight and a simpler Jumuah question
+
+1. **"praying on time"** on the landing page is bold, with a soft gold highlight (`--gold-soft`, `#f6e2a6`).
+   a) It's a band behind the lower part of the words, like a highlighter pen (a `linear-gradient` background), not a box. Amiri's lines are tall, so a full box looked heavy.
+   b) The near-black text on the gold is 14.5:1.
+   c) It has `white-space: nowrap`, so the phrase is never split across 2 lines on a phone.
+2. **The Jumuah question** (`JumuahChooser.tsx`), on setup and Settings:
+   a) Shorter: 1.2px a minute instead of 2, so 11 AM to 4 PM is 360px tall instead of 600. The width is the same.
+   b) Each block covers just the Jumuah, from its start to its end. The "Leave 1:11 PM" part and the hint about it are gone. The API still sends `leave_at`, since the calendar's drive blocks use it.
+   c) All the blocks are in 1 column. `place()` puts each one at its time, but never shorter than 54px (`MIN_BLOCK_PX`), so its 2 lines always fit. If that would make it reach the next block, the next one moves down to keep a 6px gap (`GAP_PX`), and the day grows if a block moves past 4 PM.
+   d) Inside a block: "1st Jumuah" and "1:30 to 2:15 PM". No masjid name, since Jumuah is always at the main masjid.
+   e) The picked block is a light green (`--green-light`, `#b9e0c4`) with dark green text (7.1:1), and a small ✓ right after "1st Jumuah" instead of the word "Selected". The ✓ is hidden from screen readers, since the radio button already says it's picked.
+3. **Tests**:
+   a) The hint is exactly "This week's Friday, as an example."
+   b) A block starts at 1:30 and is 45 minutes tall, with no "Leave" and no masjid name.
+   c) 11 AM to 4 PM is 360px.
+   d) 3 Jumuahs only 20 minutes apart stay in 1 column with at least a 4px gap, and nothing in any block is cut off, on setup and on Settings.
+   e) The picked block's colours and tick.
+   f) The gold highlight on "praying on time".
+4. **Counts**: `npx playwright test` in `web` gives `238 passed`.
+
+### 34. A simpler /stats page, and the new name: PrayerFit
+
+1. **/stats has 3 parts now**:
+   a) "Total users: 42" at the top.
+   b) A graph of total users over time, one dot per day. Hover over a dot, tap it, or tab to it, and a box shows the date, how many signed up that day, and the total so far.
+   c) A table of each masjid with how many users picked it, most first, with a small "No MAWAQIT times" tag on the ones that aren't linked. Masjids with 0 users aren't there, and a masjid picked by address shows as "(picked by address)", never the address.
+   d) Gone: finished setup, active, new this week, the graph's second line and table, "Linked automatically", the no-match list, and the masjid times list.
+2. **The graph comes from sign-up dates** (`daily_totals` in `app/stats.py`):
+   a) It counts users by the local date of `users.created_at` in Toronto time (Postgres `timezone()`), then adds them up day by day, with a point for every day from the first sign-up to today, even days with 0.
+   b) So nothing needs saving each day. The worker's "usage stats" step and the `usage_stats` table are gone (migration 0012 drops it).
+   c) Next day means the next calendar date, never "plus 24 hours", like everywhere else.
+3. **The labels that overlapped**: the graph used to be drawn 640 wide and shrunk to fit a phone, so 12px text became about 7px and the "0" and the first date ran into each other.
+   a) Now it's drawn at its real width (a `ResizeObserver` measures the box), so text is 12px on every screen.
+   b) The dates sit 30px below the bottom line, well clear of the "0".
+   c) The last date is left out if it would be under 96px from the first.
+   d) The box opens inward at the edges, and below or above the dot, so it never covers the dot it's about.
+   e) A tap fires "pointer leave" when the finger lifts, so only a mouse leaving hides the box.
+4. **`python -m app.admin stats`** prints the same: "Total users: 42", then each masjid and its count, with "(no MAWAQIT times)" where it applies. Both use the same functions, `total_users` and `masjid_counts`.
+5. **The rename to PrayerFit**: the landing page now says "Welcome to PrayerFit" and "PrayerFit puts your daily prayers and your masjid's times in your Google Calendar, planned around your day.", with the hadith under it. The name also changed in:
+   a) the browser tab title (`web/index.html`)
+   b) `package.json`
+   c) the FastAPI title ("PrayerFit API")
+   d) the User-Agent sent to Photon, MAWAQIT, and Overpass (`PrayerFit/0.4`)
+   e) the README, CLAUDE.md, this file, and the product description, now `PrayerFit_App.md`
+6. **What didn't change**:
+   a) The Google calendar the app makes is still called "Prayers".
+   b) The GitHub repo kept its name until this PR was merged. Section 36 renamed the Docker project, the volume, and the database user and name too.
+   c) The app name on Google's sign-in screen comes from my Google Cloud project's settings, so I change that in the Google Cloud console. The README says where.
+7. **Tests**:
+   a) Backend: total users, the daily points (including a sign-up at 10:30 pm in Ottawa that's already the next day in UTC, and days with 0), the masjid counts (home users and masjids with 0 users left out, the address never shown), the command's output, and that the snapshot table is gone.
+   b) Playwright: only the 3 parts, a dot per day, hover, tap, and keyboard, no labels overlapping and 12px text on a phone, the box staying inside the graph and off its dot, the table with its tags, and the empty states. Also the new landing page text and the tab title.
+8. **Counts**: `pytest` in `backend` gives `831 passed`, and `npx playwright test` in `web` gives `246 passed`.
+
+### 35. Delete my account
+
+1. **Where**: the very bottom of Settings, under Sign out. It's outlined in red (`button.danger-outline`), not filled, so it looks careful rather than inviting.
+2. **It asks first**: "This deletes your PrayerFit account, your settings, and the Prayers calendar from your Google Calendar. This can't be undone." The confirm button is solid red. Cancel gets focus, so a stray Enter deletes nothing. It's an `alertdialog` inside the page, not a pop-up window, so it works the same on a phone.
+3. **`DELETE /account`** (`app/account.py`), in order:
+   a) Delete the app's "Prayers" calendar (`DELETE /calendars/{id}`), so every event goes with it. That's the only call into their Google Calendar. The `calendar.app.created` scope can't reach anything else anyway.
+   b) Revoke the app's access (`POST https://oauth2.googleapis.com/revoke` with the refresh token). That also ends every access token. Google answering "already revoked" counts as done.
+   c) Delete the user row. Every table with their data points at `users.id` with `ON DELETE CASCADE`, so Postgres deletes the rest in the same step: sessions (every browser they're signed in on), Google tokens, settings, weekly prayers, the calendar row, prayer events, drive times, and every job.
+   d) Masjids they typed in by address have `created_by_user_id`, so they go too, with their MAWAQIT link and saved times. Only the person who typed one in can pick it (`usable_masjid`), so no other user can be using it. Masjids from OpenStreetMap are public and stay.
+   e) The answer clears the session cookie, and the website shows the landing page with "Your account has been deleted."
+4. **When Google can't help**: if Google can't be reached, or their sign-in had expired, steps a and b are skipped and everything stored is still deleted. The answer says `{"google_cleaned": false}`, and the landing page adds that they can delete the "Prayers" calendar in Google Calendar themselves. A calendar they already deleted counts as done.
+5. **No races**: it holds the same per-user lock as calendar updates (`user_lock`), so a 5-minute check or the nightly job can't write to the calendar halfway through.
+6. **Not linked to them, so not deleted**: Photon search answers are cached for 7 days, keyed by a keyed hash of the search text and encrypted (`geocode_cache`). Nothing in a cache row says who searched, so it can't be found by user. It expires on its own after 7 days.
+7. **Tests** (`test_delete_account.py`):
+   a) Nothing about the user is left in any table. The test checks every table's ID columns for their ID, and every text column for their ID inside it, like a job ID. A 2nd user's rows are all still there.
+   b) Exactly 1 Calendar API call: deleting their Prayers calendar. Their access is revoked. The 2nd user's calendar and access are untouched.
+   c) Signed out in every browser.
+   d) A typed-in masjid goes, with its MAWAQIT link and times. KMA stays.
+   e) Google unreachable, and an expired sign-in: everything stored is still deleted, and the answer says `google_cleaned: false`.
+   f) It needs sign-in, and another site can't do it (the Origin check).
+   g) Playwright: the red outline, the question, Cancel, the landing message, the Google-unreachable message, and an error keeping them on Settings.
+
+### 36. The /stats box, and PrayerFit everywhere
+
+1. **The /stats box** now works like YouTube's:
+   a) It shows only while the mouse is over a dot, and moving off hides it. The rest of the graph shows nothing.
+   b) Each dot sits in a `g.dot-target` with an invisible 12px circle around it, so it's easy to point at.
+   c) On a phone there's no hover, so tapping a dot shows it. Tapping anywhere else hides it: while the box is up, a `pointerdown` listener on the page hides it unless the tap was on a dot. Lifting the finger fires "pointer leave", which is ignored for touch.
+   d) Keyboard focus still shows it, and Tab moves to the next day.
+2. **The last of the old name**:
+   a) `docker-compose.yml` has `name: prayerfit`. Docker named the project after the folder before, so the containers and the volume are now `prayerfit-*` and `prayerfit_db-data` wherever it's cloned.
+   b) The database user and name in `.env.example` are `prayerfit`.
+   c) The README's commands use `prayerfit`, and the clone link is `https://github.com/hakeemkashif-34/prayerfit`.
+   d) Searching the repo for the old name, in any capitalization and with a space, `_`, or `-`, finds only the README's 3 lines about removing the old Docker volume, which need its old name. Masjid names like Kanata Muslim Association stay as they are, and the Google calendar is still called "Prayers".
+3. **Moving to the new names**: a fresh database starts in `prayerfit_db-data`. The README says which 3 `.env` lines to change and how to remove the old volume.
+4. **Counts**: `pytest` in `backend` gives `841 passed`, and `npx playwright test` in `web` gives `258 passed`.
+
+### 37. The landing sentence and a fuller highlight
+
+1. **The sentence** under "Welcome to PrayerFit" is now "An app that syncs your daily prayers and masjid times to your Google Calendar, based on your location and planned around your day."
+2. **The "praying on time" highlight** replaced section 33's highlighter band:
+   a) A solid gold, `--gold-highlight` (`#fbe08a`), a little brighter than before but still soft. The /stats tag keeps the old `--gold-soft`.
+   b) It covers the whole height of the words. Amiri's line box is about 1.75 times the font size, with lots of empty room above and below the letters, so a plain background made a tall box with big gaps. As an `inline-block` with `line-height: 1`, the box is just the words, and padding of 0.07em on top and 0.09em at the bottom puts about the same space above and below the letters (I measured 5 to 7px each way in screenshots).
+   c) Slightly rounded corners (0.22em), and a little more padding at the sides.
+   d) It moves to the next line as a whole, so on a phone it's never split across 2 lines. At 320px wide it still fits.

@@ -10,14 +10,14 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 import httpx2
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.auth.sessions import current_user
-from app.calendar_window import SetupIncomplete
+from app.calendar_window import SetupIncomplete, preview_week
 from app.clock import get_now
 from app.db import get_db
 from app.geo.distance import distance_km
@@ -26,9 +26,10 @@ from app.geo.timezones import timezone_for
 from app.google_errors import CalendarAccessMissing, GoogleError, ReauthRequired
 from app.http_client import get_http
 from app.event_plan import date_text
-from app.masjid_times.freshness import Freshness, freshness
+from app.masjid_times.auto_link import link_and_fetch
+from app.masjid_times.freshness import FRESH_FOR, USABLE_FOR, Freshness, freshness
 from app.jumuah_choices import JumuahChoices, jumuah_choices
-from app.models import Masjid, MasjidSource, PrayerEvent, User, UserJumuahMasjid, WeeklyMasjidPrayers
+from app.models import Masjid, MasjidSource, PrayerEvent, User, WeeklyMasjidPrayers
 from app.prayer_sync import SyncIncomplete
 from app.prayer_times import DEFAULT_TIMEZONE
 from app.update_jobs import queue_update, run_update
@@ -38,9 +39,8 @@ from app.user_settings import (
     DEFAULT_COLOR_ID,
     DEFAULT_JUMUAH_ARRIVE_EARLY_MINUTES,
     find_settings,
-    follow_main_masjid,
     get_settings,
-    jumuah_masjids,
+    masjid_label,
     missing_steps,
     read_address,
     read_location,
@@ -105,9 +105,6 @@ class SettingsOut(BaseModel):
     main_masjid: MasjidOut | None
     main_masjid_short_name: str | None
     weekly: list[WeekdayPrayers]
-    jumuah_saved: bool
-    # In the order the user listed them.
-    jumuah_masjids: list[MasjidOut]
     # The optional step: minutes to arrive before iqamah, and Google colour IDs.
     arrive_early_minutes: int
     jumuah_arrive_early_minutes: int
@@ -115,6 +112,8 @@ class SettingsOut(BaseModel):
     jumuah_pick: JumuahPickOut | None
     prayer_color_id: ColorId | None
     drive_color_id: ColorId | None
+    # "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
+    masjid_notices: list[str] = []
 
 
 class CalendarUpdate(BaseModel):
@@ -138,12 +137,45 @@ def times_status(db: Session, masjid: Masjid, now: datetime, time_zone: str) -> 
     age = freshness(source.last_success_at, now)
     if age is Freshness.NEVER:
         return "Linked to MAWAQIT. Its times haven't been read yet"
-    if age is Freshness.TOO_OLD:
-        return "MAWAQIT times are more than 7 days old, so calculated times are used"
     if age is Freshness.STALE:
-        return f"MAWAQIT times may be out of date (last updated {date_text(source.last_success_at, time_zone)})"
+        return f"MAWAQIT times couldn't be confirmed since {date_text(source.last_success_at, time_zone)}, so the last times read are used"
+    if age is Freshness.TOO_OLD:
+        return f"MAWAQIT times couldn't be confirmed since {date_text(source.last_success_at, time_zone)}, so calculated times are used"
     changed = source.last_changed_at or source.last_success_at
     return f"Times from MAWAQIT, updated {date_text(changed, time_zone)}"
+
+
+def masjid_notices(db: Session, masjids: list[tuple[Masjid, str]], now: datetime, time_zone: str) -> list[str]:
+    """A notice for each linked masjid whose times couldn't be confirmed in the last 24 hours.
+
+    masjids: each masjid with the label the user sees, like "KMA".
+    A masjid linked less than 24 hours ago that hasn't been read yet gets no notice.
+    For up to 7 days the last times read are still used, so the notice says
+    when the calendar switches to calculated times.
+    """
+    notices = []
+    for masjid, label in masjids:
+        source = db.get(MasjidSource, masjid.id)
+        if source is None:
+            continue
+        age = freshness(source.last_success_at, now)
+        if age is Freshness.FRESH:
+            continue
+        since = source.last_success_at or source.linked_at
+        if now - since < FRESH_FOR:
+            continue
+        if age is Freshness.STALE:
+            notices.append(
+                f"{label}'s times couldn't be confirmed since {date_text(since, time_zone)}. "
+                "Your calendar is still using the last times read from MAWAQIT, and switches to calculated times on "
+                f"{date_text(since + USABLE_FOR, time_zone)} if they still can't be read."
+            )
+        else:
+            notices.append(
+                f"{label}'s times couldn't be confirmed since {date_text(since, time_zone)}. "
+                "Your calendar is using calculated times until they're back."
+            )
+    return notices
 
 
 def _masjid_out(db: Session, masjid: Masjid, home: tuple[float, float] | None, now: datetime, time_zone: str) -> MasjidOut:
@@ -163,6 +195,9 @@ def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
     home = read_location(row)
     main = db.get(Masjid, row.main_masjid_id) if row.main_masjid_id else None
     missing = missing_steps(db, row)
+    # The only masjid the user uses (Jumuah is there too), by the name they see.
+    used_main = main if row.main_masjid_choice == "masjid" else None
+    labelled = [(used_main, masjid_label(used_main, row.main_masjid_short_name))] if used_main else []
     return SettingsOut(
         setup_complete=row.setup_completed_at is not None and not missing,
         missing=missing,
@@ -176,8 +211,6 @@ def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
             WeekdayPrayers(weekday=d.weekday, **{p: getattr(d, p) for p in PRAYERS})
             for d in weekly_rows(db, user_id)
         ],
-        jumuah_saved=row.jumuah_saved,
-        jumuah_masjids=[_masjid_out(db, m, home, now, zone) for m in jumuah_masjids(db, user_id)],
         arrive_early_minutes=row.arrive_early_minutes or 0,
         jumuah_arrive_early_minutes=row.jumuah_arrive_early_minutes,
         jumuah_pick=(
@@ -187,6 +220,7 @@ def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
         ),
         prayer_color_id=row.prayer_color_id,
         drive_color_id=row.drive_color_id,
+        masjid_notices=masjid_notices(db, labelled, now, zone),
     )
 
 
@@ -362,10 +396,11 @@ class MasjidSuggestResponse(BaseModel):
 
 @router.post("/setup/masjid/suggest", response_model=MasjidSuggestResponse)
 def suggest_masjid(request: SuggestRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> MasjidSuggestResponse:
-    """Up to 5 masjids for what the user has typed, closest to home first. Saves nothing.
+    """Up to 5 masjids within 100 km for what the user has typed, closest to home first. Saves nothing.
 
-    If no masjid matches, or the text looks like an address, addresses
-    near home are included, so a masjid that isn't on the map can still be picked.
+    If the text looks like an address (it has a number), addresses near home
+    are included, so a masjid that isn't on the map can still be picked.
+    An empty list means nothing nearby matched.
     """
     home = _home(db, user.id)
     found = suggest_masjids(db, http, request.query, home, now)
@@ -443,6 +478,8 @@ def masjid_from_suggestion(request: PickRequest, user: UserDep, db: DbDep, http:
         )
     masjid = _masjid_from(db, user.id, found[request.index])
     db.commit()
+    # Link it to MAWAQIT from my list and read its times now, so the Jumuah question has real times.
+    link_and_fetch(db, http, masjid, now)
     zone = find_settings(db, user.id).time_zone or DEFAULT_TIMEZONE
     return _masjid_out(db, masjid, home, now, zone)
 
@@ -462,21 +499,23 @@ class MainMasjidRequest(BaseModel):
 @router.put("/settings/main-masjid", response_model=SaveResponse)
 def save_main_masjid(request: MainMasjidRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> SaveResponse:
     row = get_settings(db, user.id)
-    old_main_id = row.main_masjid_id if row.main_masjid_choice == "masjid" else None
     if request.choice == "home":
-        follow_main_masjid(db, row, old_main_id, None)
+        # Praying at home means no Jumuah, so no Jumuah pick either.
         row.main_masjid_choice = "home"
         row.main_masjid_id = None
         row.main_masjid_short_name = None
+        row.jumuah_pick_masjid_id = row.jumuah_pick_order = None
         return _saved(db, http, user, now)
 
     masjid = usable_masjid(db, user.id, request.masjid_id) if request.masjid_id else None
     if masjid is None:
         raise HTTPException(status_code=404, detail={"message": "Pick a masjid from the suggestions."})
-    if row.main_masjid_id != masjid.id:
-        # A short name belongs to one masjid. Picking the same one again keeps it.
-        row.main_masjid_short_name = None
-    follow_main_masjid(db, row, old_main_id, masjid.id)
+    if row.main_masjid_id != masjid.id or row.jumuah_pick_masjid_id != masjid.id:
+        # A short name and a Jumuah pick belong to one masjid. Jumuah is always at the
+        # main masjid, so a new one starts at its 1st Jumuah. Picking the same one again keeps both.
+        if row.main_masjid_id != masjid.id:
+            row.main_masjid_short_name = None
+        row.jumuah_pick_masjid_id, row.jumuah_pick_order = masjid.id, 1
     row.main_masjid_choice = "masjid"
     row.main_masjid_id = masjid.id
     return _saved(db, http, user, now)
@@ -506,34 +545,6 @@ def save_weekly(request: WeeklyRequest, user: UserDep, db: DbDep, http: HttpDep,
             db.add(row)
         for prayer in PRAYERS:
             setattr(row, prayer, getattr(day, prayer))
-    return _saved(db, http, user, now)
-
-
-# ---- Jumuah masjids (settings page only, for now) ----
-
-
-class JumuahRequest(BaseModel):
-    # Empty is allowed: Jumuah isn't required of everyone.
-    masjid_ids: list[uuid.UUID] = Field(max_length=10)
-
-
-@router.put("/settings/jumuah", response_model=SaveResponse)
-def save_jumuah(request: JumuahRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> SaveResponse:
-    ids = list(dict.fromkeys(request.masjid_ids))  # drop repeats, keep order
-    for masjid_id in ids:
-        if usable_masjid(db, user.id, masjid_id) is None:
-            raise HTTPException(status_code=404, detail={"message": "Pick Jumuah masjids from the suggestions."})
-    db.execute(delete(UserJumuahMasjid).where(UserJumuahMasjid.user_id == user.id))
-    # The order matters: when 2 slots start at the same time, the Jumuah picker uses the one listed first.
-    db.add_all(
-        UserJumuahMasjid(user_id=user.id, masjid_id=masjid_id, position=position)
-        for position, masjid_id in enumerate(ids)
-    )
-    row = get_settings(db, user.id)
-    row.jumuah_saved = True
-    if row.jumuah_pick_masjid_id is not None and row.jumuah_pick_masjid_id not in ids:
-        # A pick at a masjid that's no longer listed can't be used, so don't keep showing it.
-        row.jumuah_pick_masjid_id = row.jumuah_pick_order = None
     return _saved(db, http, user, now)
 
 
@@ -581,8 +592,10 @@ def save_jumuah_pick(request: JumuahPickRequest, user: UserDep, db: DbDep, http:
     row = get_settings(db, user.id)
     if (request.masjid_id is None) != (request.order is None):
         raise HTTPException(status_code=422, detail={"message": "Send both a masjid and a slot, or neither."})
-    if request.masjid_id is not None and request.masjid_id not in {m.id for m in jumuah_masjids(db, user.id)}:
-        raise HTTPException(status_code=404, detail={"message": "Pick one of your Jumuah masjids."})
+    main_id = row.main_masjid_id if row.main_masjid_choice == "masjid" else None
+    if request.masjid_id is not None and request.masjid_id != main_id:
+        # Jumuah is always at the main masjid.
+        raise HTTPException(status_code=404, detail={"message": "Pick a Jumuah at your main masjid."})
     row.jumuah_pick_masjid_id = request.masjid_id
     row.jumuah_pick_order = request.order
     return _saved(db, http, user, now)
@@ -591,24 +604,67 @@ def save_jumuah_pick(request: JumuahPickRequest, user: UserDep, db: DbDep, http:
 # ---- The Jumuah chooser ----
 
 
-@router.get("/jumuah/slots", response_model=JumuahChoices)
-def jumuah_slots_for_user(
-    user: UserDep, db: DbDep, now: NowDep, masjid_id: Annotated[list[uuid.UUID], Query(max_length=11)] = []
-) -> JumuahChoices:
-    """Each Jumuah slot at the user's Jumuah masjids, with this week's times as an example. Saves nothing.
+class SlotsRequest(BaseModel):
+    # The main masjid setup is about to save. Left out, the saved main masjid is used.
+    masjid_id: uuid.UUID | None = None
 
-    masjid_id lists the masjids setup is about to save, so the question can be
-    answered on the same page as the masjid. Without it, the saved Jumuah masjids are used.
+
+@router.post("/jumuah/slots", response_model=JumuahChoices)
+def jumuah_slots_for_user(request: SlotsRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> JumuahChoices:
+    """Each Jumuah slot at the user's main masjid, with this week's times as an example.
+
+    masjid_id is the masjid setup is about to save, so the question can be
+    answered on the same page as the masjid. Jumuah is always at the main masjid.
+    A POST because it may ask OpenRouteService for a drive time and save it.
     """
-    masjids = None
-    if masjid_id:
-        masjids = []
-        for one in dict.fromkeys(masjid_id):
-            masjid = usable_masjid(db, user.id, one)
-            if masjid is None:
-                raise HTTPException(status_code=404, detail={"message": "Pick masjids from the suggestions."})
-            masjids.append(masjid)
-    return jumuah_choices(db, user.id, now, masjids)
+    masjid = None
+    if request.masjid_id is not None:
+        masjid = usable_masjid(db, user.id, request.masjid_id)
+        if masjid is None:
+            raise HTTPException(status_code=404, detail={"message": "Pick a masjid from the suggestions."})
+    return jumuah_choices(db, http, user.id, now, masjid)
+
+
+class PreviewEvent(BaseModel):
+    local_date: str
+    prayer: str
+    # "prayer" or "drive"
+    kind: str
+    title: str
+    starts_at: datetime
+    ends_at: datetime
+
+
+class PreviewOut(BaseModel):
+    time_zone: str
+    prayer_color_id: ColorId | None
+    drive_color_id: ColorId | None
+    events: list[PreviewEvent]
+
+
+@router.post("/calendar/preview", response_model=PreviewOut)
+def calendar_preview(user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> PreviewOut:
+    """This week's prayers and drive blocks at their real times, for the "Adding your prayers" page.
+
+    Planned only: nothing is saved (except a drive time, like any update) and nothing goes to Google.
+    A POST because it may ask OpenRouteService for a drive time. 409 until the required answers are saved.
+    """
+    try:
+        setup, planned = preview_week(db, http, user.id, now)
+    except SetupIncomplete:
+        raise HTTPException(status_code=409, detail={"message": "Finish setup first."})
+    return PreviewOut(
+        time_zone=setup.time_zone,
+        prayer_color_id=setup.prayer_color_id,
+        drive_color_id=setup.drive_color_id,
+        events=[
+            PreviewEvent(
+                local_date=p.local_date.isoformat(), prayer=p.prayer, kind=p.kind, title=p.summary,
+                starts_at=p.starts_at, ends_at=p.ends_at,
+            )
+            for p in planned
+        ],
+    )
 
 
 # ---- Finishing setup, and retrying Google ----

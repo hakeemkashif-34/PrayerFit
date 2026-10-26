@@ -7,12 +7,12 @@ and only decrypted here, when the app needs them.
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.auth.crypto import decrypt, encrypt
 from app.jumuah import JumuahPick
-from app.models import Masjid, UserJumuahMasjid, UserSettings, WeeklyMasjidPrayers
+from app.models import Masjid, UserSettings, WeeklyMasjidPrayers
 from app.prayer_times import AsrMethod, CalculationMethod
 
 PRAYERS = ("fajr", "dhuhr", "asr", "maghrib", "isha")
@@ -33,7 +33,6 @@ def _empty(user_id: uuid.UUID) -> UserSettings:
     # Column defaults only apply on insert, so an unsaved row needs them set here.
     return UserSettings(
         user_id=user_id,
-        jumuah_saved=False,
         optional_saved=False,
         arrive_early_minutes=0,
         jumuah_arrive_early_minutes=DEFAULT_JUMUAH_ARRIVE_EARLY_MINUTES,
@@ -90,40 +89,6 @@ def weekly_rows(db: Session, user_id: uuid.UUID) -> list[WeeklyMasjidPrayers]:
     )
 
 
-def jumuah_masjids(db: Session, user_id: uuid.UUID) -> list[Masjid]:
-    """In the order the user listed them. The Jumuah picker uses it when drive times are unknown."""
-    return list(
-        db.scalars(
-            select(Masjid)
-            .join(UserJumuahMasjid, UserJumuahMasjid.masjid_id == Masjid.id)
-            .where(UserJumuahMasjid.user_id == user_id)
-            .order_by(UserJumuahMasjid.position, Masjid.name)
-        )
-    )
-
-
-def follow_main_masjid(
-    db: Session, row: UserSettings, old_main_id: uuid.UUID | None, new_main_id: uuid.UUID | None
-) -> None:
-    """Keep the main masjid as the first Jumuah masjid, so users don't pick it twice.
-
-    1. A first main masjid, with no Jumuah masjids yet: it becomes the Jumuah masjid.
-    2. The Jumuah list was only the old main masjid: the new one takes its place.
-       Going to "I pray at home" empties it, so skipping the masjid means no Jumuah.
-    3. Anything else means the user chose their Jumuah list themselves, so it's left alone.
-    Doesn't commit.
-    """
-    if old_main_id == new_main_id:
-        return
-    current = [m.id for m in jumuah_masjids(db, row.user_id)]
-    if current and current != [old_main_id]:
-        return
-    db.execute(delete(UserJumuahMasjid).where(UserJumuahMasjid.user_id == row.user_id))
-    if new_main_id is not None:
-        db.add(UserJumuahMasjid(user_id=row.user_id, masjid_id=new_main_id, position=0))
-        row.jumuah_saved = True
-
-
 def usable_masjid(db: Session, user_id: uuid.UUID, masjid_id: uuid.UUID) -> Masjid | None:
     """A masjid this user may pick: any OpenStreetMap one, or one they typed in."""
     return db.scalars(
@@ -166,8 +131,6 @@ class Setup:
     # weekday (0 is Monday) -> the prayers usually prayed at the masjid
     at_masjid: dict[int, frozenset[str]]
     user_id: uuid.UUID | None = None
-    # In the order the user listed them. Empty means no Jumuah.
-    jumuah_masjids: tuple[Masjid, ...] = ()
     arrive_early_minutes: int = 0
     jumuah_arrive_early_minutes: int = 5
     # The Jumuah the user picked, or None for the earliest that fits.
@@ -175,6 +138,11 @@ class Setup:
     # Google event colours, "1" to "11". None uses the calendar's colour.
     prayer_color_id: str | None = None
     drive_color_id: str | None = None
+
+    @property
+    def jumuah_masjid(self) -> Masjid | None:
+        """Jumuah is always at the main masjid. Praying at home means no Jumuah."""
+        return self.masjid
 
     def label_for(self, masjid: Masjid) -> str:
         """The main masjid's short name if this is it, otherwise the masjid's name."""
@@ -192,10 +160,18 @@ def masjid_label(masjid: Masjid, short_name: str | None) -> str:
     return short_name or masjid.name or "the masjid"
 
 
-def load_setup(db: Session, user_id: uuid.UUID) -> Setup | None:
-    """The user's setup, or None if setup isn't finished."""
+def load_setup(db: Session, user_id: uuid.UUID, preview: bool = False) -> Setup | None:
+    """The user's setup, or None if setup isn't finished.
+
+    preview: for the "Adding your prayers" page, which opens while setup is
+    finishing. Only the required answers are needed; the optional ones use
+    what's saved (the defaults until they're saved).
+    """
     row = db.scalars(select(UserSettings).where(UserSettings.user_id == user_id)).first()
-    if row is None or row.setup_completed_at is None or missing_steps(db, row):
+    if row is None:
+        return None
+    missing = [step for step in missing_steps(db, row) if not (preview and step == "optional")]
+    if missing or (row.setup_completed_at is None and not preview):
         return None
     latitude, longitude = read_location(row)
     masjid = None
@@ -215,7 +191,6 @@ def load_setup(db: Session, user_id: uuid.UUID) -> Setup | None:
         masjid_label=masjid_label(masjid, row.main_masjid_short_name) if masjid else None,
         at_masjid=at_masjid,
         user_id=user_id,
-        jumuah_masjids=tuple(jumuah_masjids(db, user_id)),
         arrive_early_minutes=row.arrive_early_minutes or 0,
         jumuah_arrive_early_minutes=row.jumuah_arrive_early_minutes,
         jumuah_pick=(

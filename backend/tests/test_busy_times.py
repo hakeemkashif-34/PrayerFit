@@ -11,11 +11,11 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.busy_times import busy_on
-from app.models import GoogleToken
+from app.busy_times import busy_between
+from app.models import GoogleToken, UserSettings
 from tests.calendar_helpers import clock, fetch, google_events, on, refresh, titled
 from tests.fake_google import OLD_SCOPES
-from tests.masjid_helpers import add_user, link, masjid_id, set_jumuah
+from tests.masjid_helpers import add_user, link, masjid_id
 
 TORONTO = ZoneInfo("America/Toronto")
 NOW = datetime(2026, 10, 25, 8, 0, tzinfo=TORONTO)  # Sunday
@@ -27,7 +27,6 @@ WEEKDAYS = {day: {"dhuhr", "isha"} for day in range(5)}
 def user(db, fake_google, fake_mawaqit):
     uid = add_user(fake_google, db, "user-a", masjid_name="Kanata Muslim Association", short_name="KMA", at_masjid=WEEKDAYS)
     link(db, masjid_id(db, "Kanata Muslim Association"), "kma-kanata", fake_mawaqit)
-    set_jumuah(db, "user-a", ["Kanata Muslim Association"])
     return uid
 
 
@@ -38,9 +37,9 @@ def old_scopes(db, user) -> None:
         session.commit()
 
 
-def busy(db, http, user, day=FRIDAY):
+def busy(db, http, user, first=FRIDAY, last=FRIDAY):
     with Session(db) as session:
-        return busy_on(session, http, user, day, "America/Toronto")
+        return busy_between(session, http, user, first, last, "America/Toronto")
 
 
 # ---- The adapter ----
@@ -53,14 +52,22 @@ def test_busy_times_are_read_from_the_primary_calendar(db, http, user, fake_goog
     assert result.busy == [(datetime(2026, 10, 30, 13, 0, tzinfo=TORONTO), datetime(2026, 10, 30, 14, 0, tzinfo=TORONTO))]
     [request] = fake_google.freebusy_requests()
     assert request.body["items"] == [{"id": "primary"}]
-    assert (request.body["timeMin"], request.body["timeMax"]) == ("2026-10-30T00:00:00-04:00", "2026-10-31T00:00:00-04:00")
+    # To the end of the next day, so Isha after midnight is covered.
+    assert (request.body["timeMin"], request.body["timeMax"]) == ("2026-10-30T00:00:00-04:00", "2026-11-01T00:00:00-04:00")
 
 
-def test_the_day_ends_at_the_next_midnight_on_a_clock_change(db, http, user, fake_google):
+def test_the_range_ends_at_a_local_midnight_on_a_clock_change(db, http, user, fake_google):
     # Nov 1, 2026 is 25 hours long in Toronto.
-    busy(db, http, user, date(2026, 11, 1))
+    busy(db, http, user, date(2026, 10, 31), date(2026, 10, 31))
     [request] = fake_google.freebusy_requests()
-    assert (request.body["timeMin"], request.body["timeMax"]) == ("2026-11-01T00:00:00-04:00", "2026-11-02T00:00:00-05:00")
+    assert (request.body["timeMin"], request.body["timeMax"]) == ("2026-10-31T00:00:00-04:00", "2026-11-02T00:00:00-05:00")
+
+
+def test_one_call_covers_the_whole_14_day_window(db, http, user, fake_google):
+    fetch(db, http, NOW)
+    refresh(db, http, user, NOW)
+    [request] = fake_google.freebusy_requests()
+    assert (request.body["timeMin"], request.body["timeMax"]) == ("2026-10-25T00:00:00-04:00", "2026-11-09T00:00:00-05:00")
 
 
 def test_the_prayers_calendar_is_never_counted(db, http, user, fake_google):
@@ -77,28 +84,36 @@ def test_the_prayers_calendar_is_never_counted(db, http, user, fake_google):
 def test_a_google_error_means_no_busy_times(db, http, user, fake_google, status):
     fake_google.freebusy_failure = status
     result = busy(db, http, user)
-    assert (result.busy, result.checked) == ([], False)
+    assert (result.busy, result.status) == ([], "failed")
 
 
 def test_no_free_busy_access_means_no_busy_times_and_no_request(db, http, user, fake_google):
     old_scopes(db, user)
     fake_google.busy["user-a"] = [("2026-10-30T16:00:00Z", "2026-10-30T20:00:00Z")]
-    assert busy(db, http, user).checked is False
+    assert busy(db, http, user).status == "no_access"
     assert fake_google.freebusy_requests() == []
 
 
 # ---- Busy times in the calendar update ----
 
 
+def pick(db, user, order: int) -> None:
+    with Session(db) as session:
+        row = session.scalars(select(UserSettings).where(UserSettings.user_id == user)).one()
+        row.jumuah_pick_masjid_id, row.jumuah_pick_order = masjid_id(db, "Kanata Muslim Association"), order
+        session.commit()
+
+
 def test_a_busy_first_jumuah_moves_to_the_earliest_that_fits(db, http, user, fake_google, ors_key):
+    pick(db, user, 1)
     # Busy 1:00 to 1:40: the 1st Jumuah (1:30) clashes, the 2nd (2:30) fits.
     fake_google.busy["user-a"] = [("2026-10-30T17:00:00Z", "2026-10-30T17:40:00Z")]
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
     jumuah = titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")
     assert clock(jumuah) == "14:30"
-    assert "The earliest Jumuah that fits your calendar." in jumuah["description"]
-    # One free/busy call per update, for the coming Friday only.
+    assert jumuah["description"] == "Your pick (1st Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits."
+    # One free/busy call per update.
     assert len(fake_google.freebusy_requests()) == 1
 
 
@@ -132,12 +147,12 @@ def test_a_free_busy_failure_never_fails_the_update(db, http, user, fake_google)
     assert clock(titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")) == "13:30"
 
 
-def test_without_jumuah_masjids_free_busy_isnt_asked(db, http, user, fake_google):
-    set_jumuah(db, "user-a", [])
-    fetch(db, http, NOW)
-    refresh(db, http, user, NOW)
-    assert fake_google.freebusy_requests() == []
-    assert "Dhuhr at KMA" in [e["summary"] for e in on(google_events(fake_google), FRIDAY)]
+def test_free_busy_is_asked_for_someone_with_no_jumuah(db, http, fake_google):
+    # Every prayer moves around busy times now, not just Jumuah. Praying at home means no Jumuah.
+    uid = add_user(fake_google, db, "user-b", masjid_name=None)
+    refresh(db, http, uid, NOW)
+    assert len(fake_google.freebusy_requests()) == 1
+    assert not [e for e in on(google_events(fake_google, "user-b"), FRIDAY) if "Jumuah" in e["summary"]]
 
 
 def test_a_user_without_access_gets_the_earliest_jumuah(db, http, user, fake_google):
@@ -147,3 +162,32 @@ def test_a_user_without_access_gets_the_earliest_jumuah(db, http, user, fake_goo
     refresh(db, http, user, NOW)
     assert clock(titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")) == "13:30"
     assert fake_google.freebusy_requests() == []
+
+
+def test_every_jumuah_clashing_gives_the_1st_jumuah_and_says_so(db, http, user, fake_google, ors_key):
+    pick(db, user, 2)
+    fake_google.busy["user-a"] = [("2026-10-30T16:00:00Z", "2026-10-30T20:00:00Z")]
+    fetch(db, http, NOW)
+    refresh(db, http, user, NOW)
+    jumuah = titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")
+    assert clock(jumuah) == "13:30"
+    assert jumuah["description"] == "Every Jumuah clashes with your calendar, so this is the 1st Jumuah."
+
+
+def test_a_jumuah_at_the_pick_has_no_description(db, http, user, fake_google, ors_key):
+    pick(db, user, 2)
+    # Busy over the 1st Jumuah only. The pick (2nd) fits, so it's used, with no description.
+    fake_google.busy["user-a"] = [("2026-10-30T17:00:00Z", "2026-10-30T17:40:00Z")]
+    fetch(db, http, NOW)
+    refresh(db, http, user, NOW)
+    jumuah = titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")
+    assert clock(jumuah) == "14:30"
+    assert "description" not in jumuah
+
+
+def test_a_pick_that_isnt_on_this_friday_says_so(db, http, user, fake_google):
+    pick(db, user, 3)  # the made-up page only has 2 Jumuahs
+    fetch(db, http, NOW)
+    refresh(db, http, user, NOW)
+    jumuah = titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")
+    assert jumuah["description"] == "Your pick (3rd Jumuah) isn't on this Friday, so this is the earliest Jumuah that fits."

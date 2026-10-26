@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session as DbSession
 
-from app.models import Masjid, UserJumuahMasjid, UserSettings, WeeklyMasjidPrayers
+from app.models import Masjid, UserSettings, WeeklyMasjidPrayers
 from tests.conftest import new_client, sign_in
 from tests.setup_helpers import (
     HOME,
@@ -160,13 +160,12 @@ def test_masjid_suggestions_show_name_and_distance_closest_first(signed_in, osm)
 
     assert response.status_code == 200
     suggestions = response.json()["suggestions"]
-    # The one in Kanata first, the Toronto one with a similar name last.
-    assert [s["label"] for s in suggestions] == ["Kanata Muslim Association", "Kanata Masjid Toronto"]
+    # The one in Kanata. The Toronto one with a similar name is over 100 km away, so it's left out.
+    assert [s["label"] for s in suggestions] == ["Kanata Muslim Association"]
     assert suggestions[0] == {
         "index": 0, "kind": "masjid", "label": "Kanata Muslim Association",
         "detail": "351 Sandhill Road, Ottawa", "distance_km": 1.1,
     }
-    assert suggestions[1]["distance_km"] > 300
     # Suggesting saves nothing.
     assert signed_in.get("/settings").json()["main_masjid_choice"] is None
 
@@ -308,22 +307,13 @@ def test_weekly_grid_needs_each_day_once(signed_in, weekdays):
 # ---- Jumuah ----
 
 
-def test_more_than_one_jumuah_masjid(signed_in, osm):
+def test_jumuah_is_at_the_main_masjid_with_its_1st_jumuah_picked(signed_in, osm):
     save_home(signed_in)
-    stittsville = pick_masjid(signed_in, "Stittsville", "Stittsville Masjid")
-    jamia = pick_masjid(signed_in, "Jamia", "Jamia Omar")
-
-    response = signed_in.put("/settings/jumuah", json={"masjid_ids": [stittsville["id"], jamia["id"]]})
-
+    kma = pick_masjid(signed_in, "Kanata", "Kanata Muslim Association")
+    response = signed_in.put("/settings/main-masjid", json={"choice": "masjid", "masjid_id": kma["id"]})
     settings = response.json()["settings"]
-    assert sorted(m["name"] for m in settings["jumuah_masjids"]) == ["Jamia Omar", "Stittsville Masjid"]
-    assert settings["jumuah_saved"] is True
-
-
-def test_no_jumuah_masjid_is_allowed(signed_in):
-    response = signed_in.put("/settings/jumuah", json={"masjid_ids": []})
-    assert response.json()["settings"]["jumuah_saved"] is True
-    assert response.json()["settings"]["jumuah_masjids"] == []
+    assert settings["jumuah_pick"] == {"masjid_id": kma["id"], "order": 1}
+    assert "jumuah_masjids" not in settings and "jumuah_saved" not in settings
 
 
 # ---- Finishing ----
@@ -341,15 +331,15 @@ def test_finish_needs_every_answer(signed_in, osm):
 
 
 def test_setup_is_4_questions(signed_in, osm, fake_google):
-    # No Jumuah step: the main masjid becomes the Jumuah masjid.
+    # No Jumuah step: Jumuah is always at the main masjid.
     response = setup_through_api(signed_in, osm)
 
     settings = response.json()["settings"]
     assert settings["setup_complete"] is True
-    assert [m["name"] for m in settings["jumuah_masjids"]] == ["Kanata Muslim Association"]
+    assert settings["jumuah_pick"] == {"masjid_id": settings["main_masjid"]["id"], "order": 1}
     assert osm.requests  # the location came from Photon
     events = fake_google.live_events(fake_google.calendars_of("user-a")[0].id)
-    assert events[0]["description"].startswith("Calculated (ISNA, standard Asr)")
+    assert not any("description" in e for e in events)
 
 
 def test_full_setup_fills_the_calendar(signed_in, osm, fake_google):
@@ -415,7 +405,7 @@ def test_settings_belong_to_one_user(fake_google, osm, set_today, db):
         bob_settings = bob.get("/settings").json()
         assert bob_settings["address"] is None
         assert bob_settings["weekly"] == []
-        assert bob_settings["jumuah_masjids"] == []
+        assert bob_settings["jumuah_pick"] is None
         assert bob_settings["setup_complete"] is False
 
         # Bob can't pick Alice's masjid.
@@ -423,19 +413,16 @@ def test_settings_belong_to_one_user(fake_google, osm, set_today, db):
         assert bob.put(
             "/settings/main-masjid", json={"choice": "masjid", "masjid_id": alice_masjid}
         ).status_code == 404
-        assert bob.put("/settings/jumuah", json={"masjid_ids": [alice_masjid]}).status_code == 404
 
     with DbSession(db) as session:
         assert len(session.scalars(select(UserSettings)).all()) == 2
         assert {r.user_id for r in session.scalars(select(WeeklyMasjidPrayers))} == {
             session.scalars(select(UserSettings.user_id).where(UserSettings.setup_completed_at.isnot(None))).one()
         }
-        # Only Alice's main masjid, added as her Jumuah masjid. Nothing for Bob.
-        alice_id = session.scalars(select(UserSettings.user_id).where(UserSettings.setup_completed_at.isnot(None))).one()
-        jumuah = session.scalars(select(UserJumuahMasjid)).all()
-        assert [(j.user_id, j.position) for j in jumuah] == [(alice_id, 0)]
-        alice_main = session.scalars(select(UserSettings.main_masjid_id).where(UserSettings.user_id == alice_id)).one()
-        assert jumuah[0].masjid_id == alice_main
+        # Only Alice has a Jumuah pick, at her main masjid. Nothing for Bob.
+        picks = {(r.main_masjid_id, r.jumuah_pick_masjid_id) for r in session.scalars(select(UserSettings))}
+        assert len([p for p in picks if p[1] is not None]) == 1
+        assert all(main == pick for main, pick in picks if pick is not None)
 
 
 def test_reading_settings_saves_nothing(signed_in, db):

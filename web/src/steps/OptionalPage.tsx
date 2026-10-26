@@ -11,7 +11,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api";
 import { ColourPicker } from "../ColourPicker";
 import {
-  DEFAULT_ARRIVE_EARLY, DEFAULT_COLOUR, DEFAULT_JUMUAH_ARRIVE_EARLY, EARLY_ERROR, MAX_EARLY, wholeMinutes,
+  DEFAULT_ARRIVE_EARLY, DEFAULT_COLOUR, DEFAULT_JUMUAH_ARRIVE_EARLY, EARLY_ERROR, MAX_EARLY, QUESTIONS, wholeMinutes,
 } from "../labels";
 import { MinutesField } from "../MinutesField";
 import type { OptionalAnswers, Settings } from "../types";
@@ -35,7 +35,8 @@ const DEFAULTS: OptionalAnswers = {
 
 export function OptionalPage({ settings, onFinishClick, onSaveFailed, onSaved }: Props) {
   const masjid = settings.main_masjid_choice === "masjid" ? settings.main_masjid : null;
-  const hasJumuah = settings.jumuah_masjids.length > 0;
+  // Jumuah is always at the main masjid, so praying at home means no Jumuah.
+  const hasJumuah = masjid !== null;
 
   const [shortName, setShortName] = useState(settings.main_masjid_short_name ?? "");
   const [early, setEarly] = useState(String(DEFAULT_ARRIVE_EARLY));
@@ -117,11 +118,11 @@ export function OptionalPage({ settings, onFinishClick, onSaveFailed, onSaved }:
         </>
       )}
 
-      <MinutesField id="arrive-early" label="How early do you want to arrive before iqamah (daily prayers)?" value={early}
+      <MinutesField id="arrive-early" label={QUESTIONS.early} value={early}
         onChange={setEarly} error={errors.early} min={0} max={MAX_EARLY} />
 
       {hasJumuah && (
-        <MinutesField id="jumuah-early" label="How early do you want to arrive before Jumuah (Friday prayer)?" value={jumuahEarly}
+        <MinutesField id="jumuah-early" label={QUESTIONS.jumuahEarly} value={jumuahEarly}
           onChange={setJumuahEarly} error={errors.jumuahEarly} min={0} max={MAX_EARLY} />
       )}
 

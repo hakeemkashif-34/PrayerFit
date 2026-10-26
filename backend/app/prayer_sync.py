@@ -107,7 +107,6 @@ def google_event(row: PrayerEvent) -> dict:
         "id": google_event_id(row),
         # Rows from before milestone 4 have no title or description saved.
         "summary": row.summary or PRAYER_TITLES[row.prayer],
-        "description": row.description or row.source_description,
         "start": {"dateTime": row.starts_at.astimezone(zone).isoformat(), "timeZone": row.time_zone},
         "end": {"dateTime": row.ends_at.astimezone(zone).isoformat(), "timeZone": row.time_zone},
         # "confirmed" brings an event back if the user had deleted it.
@@ -119,6 +118,10 @@ def google_event(row: PrayerEvent) -> dict:
         # Google events back to rows even if the event ID ever differs.
         "extendedProperties": {"private": {"appEventId": str(row.id)}},
     }
+    # Only moved and clashing prayers have a description. Updates replace
+    # the whole event, so an old description is removed from Google too.
+    if row.description:
+        event["description"] = row.description
     # Only added when set, so events from before milestone 5 hash the same
     # and aren't sent again.
     if row.color_id:

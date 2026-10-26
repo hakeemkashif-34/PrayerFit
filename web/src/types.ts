@@ -45,9 +45,6 @@ export type Settings = {
   main_masjid: Masjid | null;
   main_masjid_short_name: string | null;
   weekly: WeekdayPrayers[];
-  jumuah_saved: boolean;
-  // In the order the user listed them.
-  jumuah_masjids: Masjid[];
   // The optional step. Colours are Google's event colour IDs, "1" to "11". null uses the calendar's colour.
   arrive_early_minutes: number;
   jumuah_arrive_early_minutes: number;
@@ -55,6 +52,8 @@ export type Settings = {
   jumuah_pick: SlotKey | null;
   prayer_color_id: string | null;
   drive_color_id: string | null;
+  // "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
+  masjid_notices: string[];
 };
 
 export type OptionalAnswers = {
@@ -105,6 +104,8 @@ export type JumuahSlot = SlotKey & {
   // This week's times, as an example.
   starts_at: string;
   ends_at: string;
+  // When to leave home (the drive and the "how early" minutes). The arrival time if the drive is unknown.
+  leave_at: string;
   jumuah_minutes: number;
   length_estimated: boolean;
 };
@@ -115,4 +116,35 @@ export type JumuahChoices = {
   slots: JumuahSlot[];
   // The saved pick, or the 1st Jumuah.
   selected: SlotKey | null;
+  // Jumuah masjids with no Jumuah times yet, by the name the user sees.
+  no_times: string[];
 };
+
+// This week's events at their real times, for the "Adding your prayers" page.
+export type PreviewEvent = {
+  local_date: string; // "2026-10-26"
+  prayer: Prayer;
+  kind: "prayer" | "drive";
+  title: string;
+  starts_at: string;
+  ends_at: string;
+};
+
+export type Preview = {
+  time_zone: string;
+  prayer_color_id: string | null;
+  drive_color_id: string | null;
+  events: PreviewEvent[];
+};
+
+// The private /stats page. Counts only.
+export type Stats = {
+  total_users: number;
+  // One point per day, oldest first: signed up that day, and the total so far.
+  history: { day: string; signed_up: number; total: number }[];
+  // Masjids with at least 1 user, most users first. Not linked means no MAWAQIT times.
+  masjids: { name: string; users: number; mawaqit_linked: boolean }[];
+};
+
+// DELETE /api/account. False: Google couldn't be reached, so the Prayers calendar may still be there.
+export type AccountDeleted = { google_cleaned: boolean };

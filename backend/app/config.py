@@ -48,7 +48,7 @@ class OsmSettings:
     @property
     def user_agent(self) -> str:
         # A stock library User-Agent doesn't say who to contact.
-        return f"MuslimCalendar/0.4 (+mailto:{self.contact_email})"
+        return f"PrayerFit/0.4 (+mailto:{self.contact_email})"
 
 
 @lru_cache
@@ -93,3 +93,9 @@ def get_app_settings() -> AppSettings:
         cookie_secure=_optional("COOKIE_SECURE", "true").lower() != "false",
         session_days=int(_optional("SESSION_DAYS", "30")),
     )
+
+
+def admin_email() -> str | None:
+    """The one email allowed to open /stats. Empty means nobody can."""
+    value = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+    return value or None

@@ -26,6 +26,7 @@ from app.http_client import log_failure, transport_reason
 
 AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
+REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 
 CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.app.created"
 # calendar.app.created only lets the app see and change calendars it created
@@ -140,6 +141,28 @@ def exchange_code(http: httpx2.Client, code: str, code_verifier: str) -> TokenRe
         error = response.json().get("error", "unknown_error")
         raise GoogleError(f"Google refused the sign-in code: {error}")
     return _token_response(response.json())
+
+
+def revoke_token(http: httpx2.Client, token: str) -> None:
+    """Take back the app's access to the user's Google account, for "Delete my account".
+
+    Revoking the refresh token also ends every access token made from it.
+    Google answers 400 invalid_token when it's already revoked, which is
+    the same outcome, so that counts as done.
+    """
+    started = time.monotonic()
+    try:
+        response = http.post(REVOKE_URL, data={"token": token})
+    except httpx2.TransportError as error:
+        reason = transport_reason(error)
+        log_failure("Google revoke", reason, started)
+        raise GoogleTemporaryError(f"Couldn't reach Google: {reason}") from error
+    if response.status_code == 200:
+        return
+    if response.status_code == 400 and response.json().get("error") == "invalid_token":
+        return
+    log_failure("Google revoke", f"status {response.status_code}", started)
+    raise GoogleError(f"Google refused to revoke the token: {response.status_code}")
 
 
 def refresh_access_token(http: httpx2.Client, refresh_token: str) -> TokenResponse:

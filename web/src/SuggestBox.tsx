@@ -22,11 +22,18 @@ type Props<T extends { index: number }> = {
   onPick: (item: T, query: string) => void;
   emptyText: string;
   disabled?: boolean;
+  // What the box shows once a suggestion is picked, instead of what was typed.
+  // Left out, the typed text stays.
+  fillOnPick?: (item: T) => string;
+  // Text the box starts with, like the saved address. It isn't searched until the user types.
+  initialText?: string;
 };
 
 export function SuggestBox<T extends { index: number }>(props: Props<T>) {
-  const { label, placeholder, search, renderOption, optionName, onPick, emptyText, disabled = false } = props;
-  const [query, setQuery] = useState("");
+  const { label, placeholder, search, renderOption, optionName, onPick, emptyText, disabled = false, fillOnPick, initialText } = props;
+  const [query, setQuery] = useState(initialText ?? "");
+  // True while the box shows a picked (or saved) answer, so that text isn't searched.
+  const [filled, setFilled] = useState(Boolean(initialText));
   const [items, setItems] = useState<T[] | null>(null);
   // The text the suggestions are for. Picking sends this back, not whatever is typed now.
   const [resultsFor, setResultsFor] = useState("");
@@ -38,7 +45,7 @@ export function SuggestBox<T extends { index: number }>(props: Props<T>) {
 
   useEffect(() => {
     const text = query.trim();
-    if (text.length < MIN_LENGTH) {
+    if (filled || text.length < MIN_LENGTH) {
       setItems(null);
       setSearching(false);
       return;
@@ -65,10 +72,14 @@ export function SuggestBox<T extends { index: number }>(props: Props<T>) {
       controller.abort();
     };
     // search is a new function on every render, so it's left out on purpose.
-  }, [query]);
+  }, [query, filled]);
 
   function pick(item: T) {
     setItems(null);
+    if (fillOnPick) {
+      setFilled(true);
+      setQuery(fillOnPick(item));
+    }
     onPick(item, resultsFor);
   }
 
@@ -88,7 +99,7 @@ export function SuggestBox<T extends { index: number }>(props: Props<T>) {
     }
   }
 
-  const open = items !== null && query.trim().length >= MIN_LENGTH;
+  const open = items !== null && !filled && query.trim().length >= MIN_LENGTH;
 
   return (
     <div className="suggest-box">
@@ -105,7 +116,10 @@ export function SuggestBox<T extends { index: number }>(props: Props<T>) {
           aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
           autoComplete="off"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setFilled(false);
+            setQuery(e.target.value);
+          }}
           onKeyDown={onKeyDown}
           placeholder={placeholder}
           maxLength={200}

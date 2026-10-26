@@ -24,7 +24,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.auth.tokens import get_access_token
-from app.busy_times import busy_on
+from app.busy_times import busy_between
 from app.drive_times import drive_seconds
 from app.geo.timezones import masjid_time_zone
 from app.event_plan import MasjidContext, PlannedEvent, drive_event_id, plan_day
@@ -69,10 +69,8 @@ class MasjidInputs:
 
 
 def masjid_inputs(db: Session, http: httpx2.Client, setup: Setup, dates: list[date], now: datetime) -> MasjidInputs:
-    masjids: list[Masjid] = []
-    for masjid in ([setup.masjid] if setup.masjid else []) + list(setup.jumuah_masjids):
-        if all(m.id != masjid.id for m in masjids):
-            masjids.append(masjid)
+    # Jumuah is at the main masjid too, so it's the only one.
+    masjids: list[Masjid] = [setup.masjid] if setup.masjid else []
     times = load_masjid_times(db, [m.id for m in masjids], dates, now)
     drives = drive_seconds(db, http, setup.user_id, (setup.latitude, setup.longitude), masjids, now)
 
@@ -88,22 +86,54 @@ def masjid_inputs(db: Session, http: httpx2.Client, setup: Setup, dates: list[da
 
     return MasjidInputs(
         main=context(setup.masjid) if setup.masjid else None,
-        jumuah=[context(m) for m in setup.jumuah_masjids],
+        jumuah=[context(setup.jumuah_masjid)] if setup.jumuah_masjid else [],
     )
 
 
+def with_next_day(dates: list[date]) -> list[date]:
+    """The dates plus the one after, since the last day's Isha ends at the next day's midnight."""
+    return [*dates, dates[-1] + timedelta(days=1)]
+
+
 def plan_window(
-    setup: Setup, dates: list[date], inputs: MasjidInputs, busy: list[tuple[datetime, datetime]] | None = None
+    setup: Setup,
+    dates: list[date],
+    inputs: MasjidInputs,
+    busy: list[tuple[datetime, datetime]] | None = None,
+    now: datetime | None = None,
 ) -> list[PlannedEvent]:
     # MAWAQIT's Jumuah times are only for this one Friday (today, if it's Friday).
     upcoming_friday = next_friday(dates[0])
-    planned = []
-    for local_date in dates:
-        day = calculate_prayer_times(
+    days = {
+        local_date: calculate_prayer_times(
             setup.latitude, setup.longitude, local_date, setup.time_zone, setup.method, setup.asr_method
         )
-        planned.extend(plan_day(setup, local_date, day, inputs.main, inputs.jumuah, busy, upcoming_friday))
+        for local_date in with_next_day(dates)
+    }
+    planned = []
+    for local_date in dates:
+        next_day = days[local_date + timedelta(days=1)]
+        planned.extend(
+            plan_day(setup, local_date, days[local_date], inputs.main, inputs.jumuah, busy, upcoming_friday, next_day, now)
+        )
     return planned
+
+
+PREVIEW_DAYS = 7
+
+
+def preview_week(db: Session, http: httpx2.Client, user_id: uuid.UUID, now: datetime) -> tuple[Setup, list[PlannedEvent]]:
+    """This week's events, planned but not saved or sent. For the "Adding your prayers" animation.
+
+    No busy times (so no Google calls), so prayers are at their normal times.
+    Raises SetupIncomplete when a required answer is missing.
+    """
+    setup = load_setup(db, user_id, preview=True)
+    if setup is None:
+        raise SetupIncomplete()
+    dates = window_dates(now.astimezone(ZoneInfo(setup.time_zone)).date(), PREVIEW_DAYS)
+    inputs = masjid_inputs(db, http, setup, with_next_day(dates), now)
+    return setup, plan_window(setup, dates, inputs, None, now)
 
 
 def _insert(db: Session, user_id: uuid.UUID, planned: PlannedEvent, row_id: uuid.UUID) -> None:
@@ -141,16 +171,37 @@ def _drop_drive_block(row: PrayerEvent) -> None:
     row.sync_status = "delete_pending" if row.google_calendar_id is not None else "deleted"
 
 
-def save_window(db: Session, user_id: uuid.UUID, planned: list[PlannedEvent], dates: list[date], now: datetime) -> None:
-    """Save the planned events. Only changed future rows become pending. Commits."""
+def save_window(
+    db: Session,
+    user_id: uuid.UUID,
+    planned: list[PlannedEvent],
+    dates: list[date],
+    now: datetime,
+    keep_moved: bool = False,
+) -> None:
+    """Save the planned events. Only changed future rows become pending. Commits.
+
+    keep_moved: free/busy failed, so the plan treats the day as free. Rows
+    that busy times moved (or flagged as a clash) stay exactly as they
+    are, with their drive blocks, so a move is never undone by not knowing.
+    """
     existing = {(r.local_date, r.prayer, r.kind): r for r in rows_for_dates(db, user_id, dates)}
 
+    def trip_started(key: tuple[date, str]) -> bool:
+        """The drive to the masjid has started, so the prayer is underway too."""
+        drive = existing.get((*key, "drive"))
+        return drive is not None and drive.sync_status != "deleted" and drive.starts_at <= now
+
     # 1. Prayer blocks.
+    kept: set[tuple[date, str]] = set()
     for event in (p for p in planned if p.kind == "prayer"):
-        row = existing.get((event.local_date, event.prayer, "prayer"))
-        if row is None:
+        key = (event.local_date, event.prayer)
+        row = existing.get((*key, "prayer"))
+        if keep_moved and row is not None and row.fit in ("moved", "clash"):
+            kept.add(key)
+        elif row is None:
             _insert(db, user_id, event, uuid.uuid4())
-        elif row.starts_at > now:  # already started means it's the past. Leave it alone.
+        elif row.starts_at > now and not trip_started(key):  # started means it's the past. Leave it alone.
             _update(row, event)
     db.flush()
 
@@ -158,7 +209,7 @@ def save_window(db: Session, user_id: uuid.UUID, planned: list[PlannedEvent], da
     prayer_ids = {
         (r.local_date, r.prayer): r.id for r in rows_for_dates(db, user_id, dates) if r.kind == "prayer"
     }
-    wanted = {(p.local_date, p.prayer): p for p in planned if p.kind == "drive"}
+    wanted = {(p.local_date, p.prayer): p for p in planned if p.kind == "drive" and (p.local_date, p.prayer) not in kept}
     for key, event in wanted.items():
         row = existing.get((*key, "drive"))
         if row is None:
@@ -167,7 +218,8 @@ def save_window(db: Session, user_id: uuid.UUID, planned: list[PlannedEvent], da
         elif row.starts_at > now:
             _update(row, event)
     for (local_date, prayer, kind), row in existing.items():
-        if kind == "drive" and (local_date, prayer) not in wanted and row.starts_at > now:
+        key = (local_date, prayer)
+        if kind == "drive" and key not in wanted and key not in kept and row.starts_at > now:
             _drop_drive_block(row)
     db.commit()
 
@@ -185,6 +237,8 @@ def user_lock(db: Session, user_id: uuid.UUID):
 class RefreshResult:
     rows: list[PrayerEvent]  # every row in the window, except deleted drive blocks
     sent: int  # how many went to Google
+    # A busy check stopped because free/busy didn't answer. Nothing was changed.
+    busy_unknown: bool = False
 
 
 def refresh_calendar(
@@ -194,8 +248,13 @@ def refresh_calendar(
     now: datetime,
     days: int = WINDOW_DAYS,
     first_day: date | None = None,
+    busy_check: bool = False,
 ) -> RefreshResult:
     """Bring the user's calendar up to date for today plus days - 1.
+
+    busy_check: the 5-minute check (busy_checks.py). It stops without
+    changing anything if free/busy doesn't answer, and skips every other
+    Google call when nothing changed.
 
     Raises SetupIncomplete, ReauthRequired, CalendarAccessMissing, or
     SyncIncomplete (Google failed partway; the rest stay pending).
@@ -207,16 +266,18 @@ def refresh_calendar(
         if first_day is None:
             first_day = now.astimezone(ZoneInfo(setup.time_zone)).date()
         dates = window_dates(first_day, days)
-        inputs = masjid_inputs(db, http, setup, dates, now)
-        # Busy times are only needed for Jumuah, and only the coming Friday
-        # has Jumuah times. One free/busy call, nothing saved.
-        friday = next_friday(dates[0])
-        busy = (
-            busy_on(db, http, user_id, friday, setup.time_zone).busy
-            if setup.jumuah_masjids and friday in dates
-            else []
-        )
-        save_window(db, user_id, plan_window(setup, dates, inputs, busy), dates, now)
+        inputs = masjid_inputs(db, http, setup, with_next_day(dates), now)
+        # One free/busy call for the whole window. Nothing is saved.
+        busy = busy_between(db, http, user_id, dates[0], dates[-1], setup.time_zone)
+        if busy_check and not busy.checked:
+            return RefreshResult(rows=[], sent=0, busy_unknown=True)
+        planned = plan_window(setup, dates, inputs, busy.busy, now)
+        save_window(db, user_id, planned, dates, now, keep_moved=busy.status == "failed")
+        if busy_check:
+            saved = rows_for_dates(db, user_id, dates)
+            if not any(r.sync_status in ("pending", "delete_pending") for r in saved):
+                # Nothing changed, so a quiet check costs Google one free/busy call.
+                return RefreshResult(rows=[r for r in saved if r.sync_status != "deleted"], sent=0)
 
         # Get (or refresh) the token first, so a dead sign-in is reported
         # before any Google call. The rows above stay saved either way.

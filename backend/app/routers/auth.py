@@ -7,14 +7,15 @@ from typing import Annotated
 import httpx2
 from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
+from app.account import delete_account
 from app.auth import google_oauth
 from app.auth.crypto import decrypt, encrypt
-from app.auth.sessions import current_user, end_session, start_session
+from app.auth.sessions import SESSION_COOKIE, current_user, end_session, start_session
 from app.auth.tokens import save_tokens
 from app.config import get_app_settings
 from app.db import get_db
@@ -113,6 +114,25 @@ def callback(
     start_session(db, user.id, response)
     db.commit()
     response.delete_cookie(FLOW_COOKIE, path=FLOW_COOKIE_PATH)
+    return response
+
+
+class AccountDeleted(BaseModel):
+    # False: Google couldn't be reached, so the website says how to remove the Prayers calendar by hand.
+    google_cleaned: bool
+
+
+@router.delete("/account", response_model=AccountDeleted)
+def delete_my_account(
+    user: Annotated[User, Depends(current_user)],
+    db: Annotated[DbSession, Depends(get_db)],
+    http: Annotated[httpx2.Client, Depends(get_http)],
+) -> Response:
+    """Delete my account: the Prayers calendar, the app's Google access, and everything stored."""
+    deleted = delete_account(db, http, user.id)
+    response = JSONResponse({"google_cleaned": deleted.google_cleaned})
+    # The session row went with the user. This clears the cookie too.
+    response.delete_cookie(SESSION_COOKIE, path="/")
     return response
 
 

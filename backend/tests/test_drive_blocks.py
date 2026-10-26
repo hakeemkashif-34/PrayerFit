@@ -56,7 +56,7 @@ def test_the_example_from_the_plan(db, http, fetched, fake_google):
     evening = [e for e in on(events, MONDAY) if e["summary"] == "Drive to KMA"][1]
     assert (clock(evening), clock(evening, end=True)) == ("19:56", "20:10")
     assert (clock(isha), clock(isha, end=True)) == ("20:15", "20:30")
-    assert evening["description"] == "14 min drive (OpenRouteService, no live traffic). Arriving 5 min before iqamah."
+    assert "description" not in evening
 
 
 @pytest.mark.parametrize("early, leave, arrive", [(0, "20:01", "20:15"), (30, "19:31", "19:45")])
@@ -65,8 +65,6 @@ def test_0_and_30_minutes_early(db, http, fetched, fake_google, early, leave, ar
     refresh(db, http, fetched, NOW)
     evening = [e for e in on(google_events(fake_google), MONDAY) if e["summary"] == "Drive to KMA"][1]
     assert (clock(evening), clock(evening, end=True)) == (leave, arrive)
-    expected = "Arriving at iqamah time." if early == 0 else "Arriving 30 min before iqamah."
-    assert evening["description"].endswith(expected)
     assert clock(titled(google_events(fake_google), MONDAY, "Isha at KMA")) == "20:15"
 
 
@@ -80,7 +78,7 @@ def test_without_iqamah_the_target_is_the_calculated_start(db, http, user, fake_
     start = datetime.fromisoformat(isha["start"]["dateTime"])
     assert datetime.fromisoformat(drive["end"]["dateTime"]) == start - timedelta(minutes=10)
     assert datetime.fromisoformat(drive["start"]["dateTime"]) == (start - timedelta(minutes=24)).replace(second=0)
-    assert drive["description"].endswith("Arriving 10 min before the calculated start.")
+    assert "description" not in drive
 
 
 def test_no_drive_block_for_home_prayers_or_unknown_drive_times(db, http, fetched, fake_google, fake_ors):
@@ -143,7 +141,9 @@ def test_changing_how_early_updates_only_drive_blocks(db, http, fetched, fake_go
     set_settings(db, fetched, arrive_early_minutes=10)
     refresh(db, http, fetched, NOW)
     changed = fake_google.writes()[before:]
-    assert len(changed) == 20
+    # 2 masjid prayers a weekday for 2 weeks, but the coming Friday's Dhuhr is
+    # Jumuah, which has its own "how early": 19 drive blocks.
+    assert len(changed) == 19
     assert {w.body["summary"] for w in changed} == {"Drive to KMA"}
 
 
@@ -337,3 +337,33 @@ def test_old_at_home_titles_are_renamed_in_place(db, http, fetched, fake_google,
     assert monday == ["Fajr", "Drive to KMA", "Dhuhr at KMA", "Asr", "Maghrib", "Drive to KMA", "Isha at KMA"]
     # Past events weren't touched, so this morning's Fajr keeps its old title.
     assert titled(list(new.values()), date(2026, 10, 25), "Fajr at home")
+
+
+def test_old_descriptions_are_removed_in_place(db, http, fetched, fake_google, monkeypatch):
+    from app import prayer_sync
+
+    # Before this change, every event had a description, drive blocks too.
+    real_event = prayer_sync.google_event
+
+    def old_event(row):
+        return {**real_event(row), "description": "KMA iqamah (MAWAQIT, updated Oct 25, 2026)"}
+
+    monkeypatch.setattr(prayer_sync, "google_event", old_event)
+    refresh(db, http, fetched, NOW)
+    old = {e["id"]: e for e in google_events(fake_google)}
+    assert all("description" in e for e in old.values())
+    monkeypatch.setattr(prayer_sync, "google_event", real_event)
+    before = len(fake_google.writes())
+
+    later = datetime(2026, 10, 25, 13, 30, tzinfo=TORONTO)  # the same Sunday, after Dhuhr
+    refresh(db, http, fetched, later)
+    changed = fake_google.writes()[before:]
+
+    # The same IDs, updated in place, and only future events.
+    new = {e["id"]: e for e in google_events(fake_google)}
+    assert set(new) == set(old)
+    assert {w.method for w in changed} == {"PUT"}
+    assert all(datetime.fromisoformat(w.body["start"]["dateTime"]) > later for w in changed)
+    assert not any("description" in e for e in new.values() if datetime.fromisoformat(e["start"]["dateTime"]) > later)
+    # This morning's Fajr already happened, so it keeps its old description.
+    assert "description" in titled(list(new.values()), date(2026, 10, 25), "Fajr")

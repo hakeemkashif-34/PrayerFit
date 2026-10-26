@@ -141,16 +141,6 @@ def test_changing_the_short_name_renames_the_events(set_up, fake_google):
     assert "Isha at Kanata" in titles and "Isha at KMA" not in titles
 
 
-def test_jumuah_masjids_keep_the_order_they_were_listed_in(set_up):
-    stittsville = pick_masjid(set_up, "Stittsville", "Stittsville Masjid")
-    jamia = pick_masjid(set_up, "Jamia Omar", "Jamia Omar")
-    kma = set_up.get("/settings").json()["main_masjid"]
-    order = [jamia["id"], kma["id"], stittsville["id"]]
-    response = set_up.put("/settings/jumuah", json={"masjid_ids": order})
-    assert [m["id"] for m in response.json()["settings"]["jumuah_masjids"]] == order
-    assert [m["id"] for m in set_up.get("/settings").json()["jumuah_masjids"]] == order
-
-
 def test_a_save_while_an_update_runs_says_its_waiting(set_up, db):
     with Session(db) as session:
         job = session.get(UpdateJob, f"update:{user_id(db, 'user-a')}")
@@ -167,7 +157,7 @@ def test_the_masjid_shows_where_its_times_come_from(set_up, db, http, fake_mawaq
     assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == "Linked to MAWAQIT. Its times haven't been read yet"
     fetch(db, http, NOW - timedelta(days=2))
     assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == (
-        "MAWAQIT times may be out of date (last updated Oct 22, 2026)"
+        "MAWAQIT times couldn't be confirmed since Oct 22, 2026, so the last times read are used"
     )
     # Read again 2 days later, the page now covers Friday Oct 30's Jumuah, which is a change.
     fetch(db, http, NOW)
@@ -176,8 +166,45 @@ def test_the_masjid_shows_where_its_times_come_from(set_up, db, http, fake_mawaq
         session.get(MasjidSource, kma).last_success_at = NOW - timedelta(days=8)
         session.commit()
     assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == (
-        "MAWAQIT times are more than 7 days old, so calculated times are used"
+        "MAWAQIT times couldn't be confirmed since Oct 16, 2026, so calculated times are used"
     )
+
+
+def test_a_notice_shows_when_masjid_times_cant_be_confirmed(set_up, db, http, fake_mawaqit, set_today):
+    kma = masjid_id(db, "Kanata Muslim Association")
+    link(db, kma, "kma-kanata", fake_mawaqit, at=NOW - timedelta(days=3))
+    # Linked, never read, but under 24 hours since nothing could be read: no notice yet.
+    with Session(db) as session:
+        session.get(MasjidSource, kma).linked_at = NOW - timedelta(hours=2)
+        session.commit()
+    assert set_up.get("/settings").json()["masjid_notices"] == []
+
+    fetch(db, http, NOW - timedelta(hours=23))
+    assert set_up.get("/settings").json()["masjid_notices"] == []
+
+    # 2 days: the last times read are still used, and the notice says when that stops.
+    with Session(db) as session:
+        session.get(MasjidSource, kma).last_success_at = NOW - timedelta(days=2)
+        session.commit()
+    assert set_up.get("/settings").json()["masjid_notices"] == [
+        "KMA's times couldn't be confirmed since Oct 22, 2026. Your calendar is still using the last times read "
+        "from MAWAQIT, and switches to calculated times on Oct 29, 2026 if they still can't be read."
+    ]
+
+    # Over 7 days: calculated times.
+    with Session(db) as session:
+        session.get(MasjidSource, kma).last_success_at = NOW - timedelta(days=8)
+        session.commit()
+    assert set_up.get("/settings").json()["masjid_notices"] == [
+        "KMA's times couldn't be confirmed since Oct 16, 2026. Your calendar is using calculated times until they're back."
+    ]
+
+
+def test_a_masjid_never_read_for_a_day_gets_a_notice_from_when_it_was_linked(set_up, db, fake_mawaqit, set_today):
+    link(db, masjid_id(db, "Kanata Muslim Association"), "kma-kanata", fake_mawaqit, at=NOW - timedelta(days=3))
+    assert set_up.get("/settings").json()["masjid_notices"] == [
+        "KMA's times couldn't be confirmed since Oct 21, 2026. Your calendar is using calculated times until they're back."
+    ]
 
 
 def test_nothing_reaches_google_until_setup_finishes(signed_in, fake_photon, fake_google):

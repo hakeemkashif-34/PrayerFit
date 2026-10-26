@@ -97,6 +97,10 @@ class FakeGoogle:
         self.busy: dict[str, list[tuple[str, str]]] = {}
         # Set to a status code (like 500) to make free/busy fail.
         self.freebusy_failure: int | None = None
+        # True: every call fails like Google can't be reached.
+        self.unreachable = False
+        # Tokens sent to the revoke endpoint, in order.
+        self.revoked: list[str] = []
 
     # ---- Things tests call to set up a scene ----
 
@@ -138,11 +142,30 @@ class FakeGoogle:
 
     def handle(self, request: httpx2.Request) -> httpx2.Response:
         url = request.url
+        if self.unreachable:
+            raise httpx2.ConnectError("fake: Google can't be reached", request=request)
         if url.host == "oauth2.googleapis.com" and url.path == "/token":
             return self._token(request)
+        if url.host == "oauth2.googleapis.com" and url.path == "/revoke":
+            return self._revoke(request)
         if url.host == "www.googleapis.com" and url.path.startswith(CALENDAR_API):
             return self._calendar_api(request)
         raise AssertionError(f"The app called a URL the fake Google doesn't know: {url}")
+
+    # ---- Revoke endpoint ----
+
+    def _revoke(self, request: httpx2.Request) -> httpx2.Response:
+        """Like Google: the refresh token and every access token for that user stop working."""
+        token = parse_qs(request.content.decode()).get("token", [""])[0]
+        self.revoked.append(token)
+        for account in self.accounts.values():
+            if token in account.refresh_tokens:
+                account.refresh_tokens.discard(token)
+                for access, sub in list(self.access_tokens.items()):
+                    if sub == account.sub:
+                        del self.access_tokens[access]
+                return httpx2.Response(200)
+        return httpx2.Response(400, json={"error": "invalid_token"})
 
     # ---- Token endpoint ----
 
@@ -231,6 +254,11 @@ class FakeGoogle:
         # calendar.app.created can only reach calendars this app made for this user.
         if calendar is None or calendar.deleted or calendar.owner_sub != sub:
             return httpx2.Response(404, json={"error": {"code": 404, "message": "Not Found"}})
+
+        # DELETE /calendars/{id}: the calendar and every event in it.
+        if request.method == "DELETE" and len(parts) == 2:
+            calendar.deleted = True
+            return httpx2.Response(204)
 
         # GET /calendars/{id}
         if request.method == "GET" and len(parts) == 2:

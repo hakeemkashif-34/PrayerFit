@@ -8,11 +8,13 @@ import { googleCalendarUrl } from "./googleCalendar";
 import { SettingsPage } from "./SettingsPage";
 import { Setup } from "./Setup";
 import { SignIn } from "./SignIn";
+import { StatsPage } from "./StatsPage";
 import type { CalendarUpdate, Me, Settings } from "./types";
 
 type View =
   | { kind: "loading" }
-  | { kind: "signed-out" }
+  // deleted: just deleted their account. "manual" means Google couldn't be reached.
+  | { kind: "signed-out"; deleted?: "done" | "manual" }
   | { kind: "expired" }
   | { kind: "setup"; settings: Settings }
   | {
@@ -34,6 +36,8 @@ const ADDING: CalendarUpdate = {
 export function App() {
   // The new tab opened on Finish (see finishTab.ts) is its own small page.
   if (window.location.pathname === "/adding") return <AddingPage />;
+  // The private stats page. It isn't linked from anywhere.
+  if (window.location.pathname === "/stats") return <StatsPage />;
   return <Main />;
 }
 
@@ -97,7 +101,7 @@ function Main() {
     case "loading":
       return <main className="page narrow"><p className="hint">Loading…</p></main>;
     case "signed-out":
-      return <SignIn errorCode={errorCode} />;
+      return <SignIn errorCode={errorCode} deleted={view.deleted} />;
     case "expired":
       return <SignIn expired />;
     case "error":
@@ -120,6 +124,7 @@ function Main() {
           tabBlocked={view.tabBlocked ?? false}
           onRetry={view.retryFinish}
           onSignedOut={() => setView({ kind: "signed-out" })}
+          onDeleted={(googleCleaned) => setView({ kind: "signed-out", deleted: googleCleaned ? "done" : "manual" })}
         />
       );
   }

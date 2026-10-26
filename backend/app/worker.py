@@ -3,7 +3,8 @@
 Every minute it runs, in order:
 1. Nightly jobs that are due (3:00 am in each user's time zone).
 2. MAWAQIT fetches that are due (each linked masjid, once every 6 hours).
-3. Queued calendar updates, like the ones a masjid time change adds.
+3. Busy time checks that are due (each user, once every 5 minutes).
+4. Queued calendar updates, like the ones a masjid time change adds.
 Each step has its own try, so one failing doesn't stop the others.
 
     python -m app.worker                 checks every minute for due jobs (the service)
@@ -16,8 +17,10 @@ import logging
 import time
 from datetime import UTC, datetime
 
+from app.busy_checks import run_due_checks
 from app.db import get_engine
 from app.http_client import new_http_client
+from app.masjid_times.auto_link import load_list_on_start
 from app.masjid_times.scheduler import run_due_fetches
 from app.nightly import run_due_jobs, run_now
 from app.update_jobs import run_due_updates
@@ -30,6 +33,7 @@ CHECK_EVERY_SECONDS = 60
 STEPS = (
     ("nightly jobs", run_due_jobs),
     ("masjid times", run_due_fetches),
+    ("busy checks", run_due_checks),
     ("calendar updates", run_due_updates),
 )
 
@@ -45,6 +49,8 @@ def run_once() -> None:
 
 def loop() -> None:
     logger.info("Worker started. Checking for due jobs every %d seconds.", CHECK_EVERY_SECONDS)
+    # The backend loads it too. Loading it twice adds nothing, and the list is there even if only the worker restarted.
+    load_list_on_start(get_engine())
     while True:
         run_once()
         time.sleep(CHECK_EVERY_SECONDS)

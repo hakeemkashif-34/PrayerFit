@@ -13,18 +13,20 @@ type Props = {
   // True when the user is signed in here but Google's sign-in has expired.
   expired?: boolean;
   errorCode?: string | null;
+  // The user just deleted their account. "manual": Google couldn't be reached.
+  deleted?: "done" | "manual";
 };
 
-export function SignIn({ expired = false, errorCode = null }: Props) {
+export function SignIn({ expired = false, errorCode = null, deleted }: Props) {
   const error = errorCode ? (SIGN_IN_ERRORS[errorCode] ?? SIGN_IN_ERRORS.google) : "";
   return (
     <main className="landing">
       <section className="welcome">
-        <h1>Welcome to Muslim Calendar</h1>
-        <p className="lead">Keep your prayer times up to date, every day.</p>
+        <h1>Welcome to PrayerFit</h1>
+        <p className="lead">An app that syncs your daily prayers and masjid times to your Google Calendar, based on your location and planned around your day.</p>
         <figure className="hadith">
           <blockquote>
-            <p>The Prophet ﷺ was asked which deed is most beloved to Allah, and he said praying on time.</p>
+            <p>The Prophet ﷺ was asked which deed is most beloved to Allah, and he said <strong className="on-time">praying on time</strong>.</p>
           </blockquote>
           <figcaption>Sahih al-Bukhari 527</figcaption>
         </figure>
@@ -40,6 +42,17 @@ export function SignIn({ expired = false, errorCode = null }: Props) {
           </>
         ) : (
           <>
+            {deleted && (
+              <div className="notice deleted" role="status">
+                <p>Your account has been deleted.</p>
+                {deleted === "manual" && (
+                  <p>
+                    We couldn't reach Google, so the "Prayers" calendar may still be in your Google Calendar.
+                    You can delete it there yourself.
+                  </p>
+                )}
+              </div>
+            )}
             <h2>Get started</h2>
             <a className="button google" href={SIGN_IN_URL}>
               Sign in with Google

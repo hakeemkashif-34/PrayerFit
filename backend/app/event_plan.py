@@ -6,12 +6,23 @@ It never calls a database or a website, so every case is easy to test.
 
 Which time each prayer uses:
 1. At the masjid: the masjid's iqamah. If there's none that day, or the
-   masjid's times are over 7 days old, the calculated start time, and the
-   description says so. An iqamah is never made up.
+   masjid's times couldn't be confirmed in the last 24 hours, the
+   calculated start time. An iqamah is never made up.
 2. At home: the main masjid's adhan time, if it's linked and its times are
-   usable. Otherwise the calculated time, as before.
+   usable. Otherwise the calculated time.
 3. Friday with Jumuah masjids: Dhuhr becomes Jumuah at the slot the
    Jumuah picker chose. If no slot is picked, Dhuhr follows the weekly grid.
+
+Busy times come first. It works in 2 passes:
+1. Masjid prayers: at the masjid only if the drive, the "how early"
+   minutes, and the prayer block are all free.
+2. Every other prayer: at its normal time if that's free. Otherwise in the
+   earliest free gap of at least 10 minutes before its time ends, avoiding
+   the events pass 1 planned. No gap means a clash (see fit_prayers.py).
+
+Events have no description, except a moved prayer, a clash, and a Jumuah
+that couldn't be at the user's pick. Where each time came from is saved in
+source_description and shown on the Settings page instead.
 
 Every masjid prayer gets 2 events: a drive block from the leave time to
 the arrival time, then the prayer block at the target time. Fajr, Asr, and
@@ -22,25 +33,16 @@ No drive time means no drive block.
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from app.event_times import drive_minutes, trip
+from app.event_times import trip
+from app.fit_prayers import Fit, PrayerWindow, fit_prayer, masjid_is_free, prayer_windows
 from app.jumuah import DEFAULT_JUMUAH_MINUTES, JumuahChoice, JumuahSlot, choose_jumuah
-from app.masjid_times.freshness import Freshness
 from app.masjid_times.store import MasjidTimes
 from app.models import Masjid
-from app.prayer_sync import (
-    ASR_NAMES,
-    METHOD_NAMES,
-    PRAYER_LENGTHS,
-    PRAYER_TITLES,
-    PRAYERS,
-    event_end,
-    source_description,
-)
-from app.prayer_times import DailyPrayerTimes, PrayerTime
-from app.prayer_times.methods import METHODS
+from app.prayer_sync import ASR_NAMES, METHOD_NAMES, PRAYER_LENGTHS, PRAYER_TITLES, PRAYERS, event_end, source_description
+from app.prayer_times import DailyPrayerTimes, PrayerTime, calculate_prayer_times
 from app.user_settings import Setup
 
 FRIDAY = 4
@@ -73,6 +75,8 @@ class PlannedEvent:
     kind: str = "prayer"
     color_id: str | None = None
     reminder_minutes: int | None = None
+    # "normal", "moved", or "clash". Saved, but not sent to Google.
+    fit: str = "normal"
 
     def values(self) -> dict:
         return {
@@ -86,25 +90,14 @@ class PlannedEvent:
             "description": self.description,
             "color_id": self.color_id,
             "reminder_minutes": self.reminder_minutes,
+            "fit": self.fit,
         }
 
 
-def _clock(moment: datetime) -> str:
-    """12:46:57 pm"""
+def _short_clock(moment: datetime) -> str:
+    """7:23 pm"""
     hour = moment.hour % 12 or 12
-    return f"{hour}:{moment.minute:02}:{moment.second:02} {'am' if moment.hour < 12 else 'pm'}"
-
-
-def dhuhr_note(day: DailyPrayerTimes) -> str:
-    """Why Dhuhr is a minute or so after solar noon."""
-    offset = METHODS[day.method].dhuhr_minutes_after_noon
-    noon = (day.dhuhr.exact_time - timedelta(minutes=offset)).astimezone(ZoneInfo(day.timezone))
-    if offset == 0:
-        return f"Starts at solar noon ({_clock(noon)}), rounded up to the minute."
-    return (
-        f"Starts {offset} minute after solar noon ({_clock(noon)}), once the whole sun "
-        "has passed overhead, then rounded up to the minute."
-    )
+    return f"{hour}:{moment.minute:02} {'am' if moment.hour < 12 else 'pm'}"
 
 
 def method_text(prayer: PrayerTime) -> str:
@@ -132,14 +125,32 @@ def _updated(times: MasjidTimes, user_zone: str) -> str:
     return date_text(changed, user_zone)
 
 
-def _stale_note(times: MasjidTimes | None, user_zone: str) -> list[str]:
-    if times is None:
-        return []
-    if times.freshness is Freshness.STALE:
-        return [f"{times.source_label} times may be out of date (last updated {date_text(times.last_success_at, user_zone)})"]
-    if times.freshness is Freshness.TOO_OLD:
-        return [f"{times.source_label} times are more than 7 days old, so they aren't used."]
-    return []
+def duration_text(minutes: int) -> str:
+    """"42 minutes", "1 hour", "1 hour 12 minutes"."""
+    hours, rest = divmod(minutes, 60)
+    parts = []
+    if hours:
+        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+    if rest or not hours:
+        parts.append(f"{rest} minute{'s' if rest != 1 else ''}")
+    return " ".join(parts)
+
+
+def moved_text(title: str, start: datetime, placed: datetime) -> str:
+    """How far after the prayer's start time it was placed. The app only knows
+    when the user is busy, never what the event is."""
+    minutes = round((placed.astimezone(UTC) - start.astimezone(UTC)).total_seconds() / 60)
+    if minutes == 0:
+        when = f"at {title}'s start time"
+    elif minutes > 0:
+        when = f"{duration_text(minutes)} after {title}'s start time"
+    else:
+        when = f"{duration_text(-minutes)} before {title}'s start time"
+    return f"Moved because of an event in your calendar ({when})."
+
+
+def clash_text(title: str) -> str:
+    return f"Your event covers all of {title}'s time today, so figure out a way to fit it in."
 
 
 @dataclass(frozen=True)
@@ -166,18 +177,18 @@ def _masjid_events(
     title: str,
     where: MasjidContext,
     target: datetime,
-    lines: list[str],
-    aim: str,
+    source: str,
     user_zone: str,
     length: timedelta | None = None,
     early: int | None = None,
+    fit: str = "normal",
+    description: str = "",
 ) -> list[PlannedEvent]:
     """The drive block (when the drive time is known) and the prayer block."""
     events = []
     early = setup.arrive_early_minutes if early is None else early
     planned = trip(target, early, where.drive_seconds)
     if planned.leave_at is not None and planned.leave_at < planned.arrive_at:
-        arriving = f"Arriving {early} min before {aim}." if early else f"Arriving at {aim} time."
         events.append(
             PlannedEvent(
                 local_date=local_date,
@@ -190,9 +201,7 @@ def _masjid_events(
                 place="masjid",
                 masjid_id=where.masjid.id,
                 summary=f"Drive to {where.label}",
-                description=(
-                    f"{drive_minutes(where.drive_seconds)} min drive (OpenRouteService, no live traffic). {arriving}"
-                ),
+                description="",
                 color_id=setup.drive_color_id,
                 # A popup when it's time to leave.
                 reminder_minutes=0,
@@ -205,12 +214,13 @@ def _masjid_events(
             starts_at=target,
             ends_at=event_end(target, length or PRAYER_LENGTHS[prayer]),
             time_zone=user_zone,
-            source_description=lines[0],
+            source_description=source,
             place="masjid",
             masjid_id=where.masjid.id,
             summary=f"{title} at {where.label}",
-            description="\n".join(lines),
+            description=description,
             color_id=setup.prayer_color_id,
+            fit=fit,
         )
     )
     return events
@@ -248,27 +258,90 @@ def _jumuah(
     user_zone: str,
     busy: list[tuple[datetime, datetime]],
     upcoming_friday: date | None,
-) -> tuple[list[PlannedEvent] | None, str | None]:
-    """Friday's Jumuah events, or (None, why not) when there's no Jumuah to put in."""
+) -> list[PlannedEvent] | None:
+    """Friday's Jumuah events, or None when there's no Jumuah to put in.
+
+    MAWAQIT only holds this week's Jumuah times, so only the coming Friday
+    gets them. Other Fridays follow the weekly grid for Dhuhr.
+    """
     if local_date != upcoming_friday:
-        # MAWAQIT only holds this week's Jumuah times. A later read covers this Friday.
-        return None, "This Friday's Jumuah times aren't published yet, so this follows your weekly prayers."
+        return None
     choice = choose(setup, local_date, jumuah, busy)
     if choice.window is None:
-        return None, "Jumuah times aren't available for your Jumuah masjids, so this follows your weekly prayers."
+        return None
     where = next(c for c in jumuah if c.masjid.id == choice.window.slot.masjid_id)
-    lines = [
-        f"{where.label} Jumuah ({where.times.source_label}, updated {_updated(where.times, user_zone)})",
-        *_stale_note(where.times, user_zone),
-        choice.reason,
-    ]
-    if where.jumuah_minutes is None:
-        lines.append(f"End time is estimated ({DEFAULT_JUMUAH_MINUTES} minutes).")
-    events = _masjid_events(
-        setup, local_date, "dhuhr", "Jumuah", where, choice.window.slot.starts_at, lines, "Jumuah", user_zone,
-        timedelta(minutes=where.jumuah_length), early=setup.jumuah_arrive_early_minutes,
+    source = f"{where.label} Jumuah ({where.times.source_label}, updated {_updated(where.times, user_zone)})"
+    # Only when the user's pick couldn't be used: it clashes, it isn't on this
+    # Friday, or every Jumuah clashes. A Jumuah at the pick has no description.
+    pick = setup.jumuah_pick
+    at_pick = pick is not None and (choice.window.slot.masjid_id, choice.window.slot.order) == (pick.masjid_id, pick.order)
+    description = choice.reason if choice.fit == "clash" or (pick is not None and not at_pick) else ""
+    return _masjid_events(
+        setup, local_date, "dhuhr", "Jumuah", where, choice.window.slot.starts_at, source, user_zone,
+        timedelta(minutes=where.jumuah_length), early=setup.jumuah_arrive_early_minutes, fit=choice.fit,
+        description=description,
     )
-    return events, None
+
+
+def _home_time(
+    name: str, local_date: date, day: DailyPrayerTimes, main: MasjidContext | None, main_day
+) -> tuple[datetime, str]:
+    """A prayer's start at home, and where it came from."""
+    if main_day is not None:
+        target = at_local(local_date, main_day.adhan[name], main.time_zone)
+        return target, f"{main.label} adhan time ({main.times.source_label})"
+    calculated: PrayerTime = getattr(day, name)
+    return calculated.time, source_description(calculated)
+
+
+def _masjid_time(
+    name: str, local_date: date, day: DailyPrayerTimes, main: MasjidContext, main_day, user_zone: str
+) -> tuple[datetime, str]:
+    """A masjid prayer's target (the iqamah, or the calculated start), and where it came from."""
+    calculated: PrayerTime = getattr(day, name)
+    iqamah = main_day.iqamah.get(name) if main_day else None
+    if iqamah is not None:
+        source = f"{main.label} iqamah ({main.times.source_label}, updated {_updated(main.times, user_zone)})"
+        return at_local(local_date, iqamah, main.time_zone), source
+    return calculated.time, f"Calculated start time ({method_text(calculated)}). {main.label}'s iqamah time isn't available."
+
+
+def _windows(
+    local_date: date,
+    day: DailyPrayerTimes,
+    next_day: DailyPrayerTimes | None,
+    main: MasjidContext | None,
+    main_day,
+) -> dict[str, PrayerWindow]:
+    """Each prayer's window, from the same start times home prayers use."""
+    starts = {name: _home_time(name, local_date, day, main, main_day)[0] for name in PRAYERS}
+    next_date = local_date + timedelta(days=1)
+    if next_day is None:
+        next_day = calculate_prayer_times(day.latitude, day.longitude, next_date, day.timezone, day.method, day.asr_method)
+    next_main = main.times.usable_day(next_date) if main and main.times else None
+    next_fajr = _home_time("fajr", next_date, next_day, main, next_main)[0]
+    # MAWAQIT's sunrise isn't saved, so Fajr ends at the calculated sunrise
+    # (rounded down, the safe side).
+    return prayer_windows(starts, day.sunrise.time, next_fajr)
+
+
+def _home_event(
+    setup: Setup, local_date: date, name: str, fit: Fit, source: str, summary: str, description: str, user_zone: str
+) -> PlannedEvent:
+    return PlannedEvent(
+        local_date=local_date,
+        prayer=name,
+        starts_at=fit.starts_at,
+        ends_at=event_end(fit.starts_at, fit.length),
+        time_zone=user_zone,
+        source_description=source,
+        place="home",
+        masjid_id=None,
+        summary=summary,
+        description=description,
+        color_id=setup.prayer_color_id,
+        fit=fit.kind,
+    )
 
 
 def plan_day(
@@ -279,74 +352,66 @@ def plan_day(
     jumuah: list[MasjidContext],
     busy: list[tuple[datetime, datetime]] | None = None,
     upcoming_friday: date | None = None,
+    next_day: DailyPrayerTimes | None = None,
+    now: datetime | None = None,
 ) -> list[PlannedEvent]:
-    """Every event for one day: 5 prayer blocks, plus a drive block before each masjid prayer."""
+    """Every event for one day: 5 prayer blocks, plus a drive block before each masjid prayer.
+
+    busy: the user's busy times. Empty means nothing moves.
+    next_day: tomorrow's calculated times, for when Isha ends.
+    now: a moved prayer never starts before it.
+    """
     user_zone = day.timezone
+    busy = busy or []
     main_day = main.times.usable_day(local_date) if main and main.times else None
-    events: list[PlannedEvent] = []
+    windows = _windows(local_date, day, next_day, main, main_day) if busy else None
 
-    jumuah_note = None
+    friday: list[PlannedEvent] = []
     if local_date.weekday() == FRIDAY and jumuah:
-        friday, jumuah_note = _jumuah(setup, local_date, jumuah, user_zone, busy or [], upcoming_friday)
-        if friday is not None:
-            events.extend(friday)
+        friday = _jumuah(setup, local_date, jumuah, user_zone, busy, upcoming_friday) or []
+    names = [n for n in PRAYERS if not (n == "dhuhr" and friday)]  # Jumuah took Dhuhr's place
 
-    for name in PRAYERS:
-        if name == "dhuhr" and any(e.prayer == "dhuhr" for e in events):
-            continue  # Jumuah took its place
-        calculated: PrayerTime = getattr(day, name)
-        place = setup.place_for(local_date.weekday(), name)
-        extra = [jumuah_note] if name == "dhuhr" and jumuah_note else []
-
-        if place == "masjid":
-            iqamah = main_day.iqamah.get(name) if main_day else None
-            if iqamah is not None:
-                target = at_local(local_date, iqamah, main.time_zone)
-                lines = [
-                    f"{main.label} iqamah ({main.times.source_label}, updated {_updated(main.times, user_zone)})",
-                    *_stale_note(main.times, user_zone),
-                ]
-                aim = "iqamah"
-            else:
-                target = calculated.time
-                lines = [
-                    f"Calculated start time ({method_text(calculated)}). {main.label}'s iqamah time isn't available.",
-                    *_stale_note(main.times, user_zone),
-                ]
-                if name == "dhuhr":
-                    lines.append(dhuhr_note(day))
-                aim = "the calculated start"
-            events.extend(
-                _masjid_events(
-                    setup, local_date, name, PRAYER_TITLES[name], main, target, lines + extra, aim, user_zone
-                )
-            )
+    # Pass 1: masjid prayers whose whole trip is free.
+    at_masjid: dict[str, list[PlannedEvent]] = {}
+    # The normal time (the iqamah, or the start), and where it came from.
+    not_at_masjid: dict[str, tuple[datetime, str]] = {}
+    for name in names:
+        if setup.place_for(local_date.weekday(), name) != "masjid":
             continue
-
-        if main_day is not None:
-            target = at_local(local_date, main_day.adhan[name], main.time_zone)
-            lines = [f"{main.label} adhan time ({main.times.source_label})", *_stale_note(main.times, user_zone)]
+        target, source = _masjid_time(name, local_date, day, main, main_day, user_zone)
+        length = PRAYER_LENGTHS[name]
+        if masjid_is_free(target, setup.arrive_early_minutes, main.drive_seconds, length, busy):
+            at_masjid[name] = _masjid_events(setup, local_date, name, PRAYER_TITLES[name], main, target, source, user_zone)
         else:
-            # The same as before milestone 5, so these events don't change.
-            target = calculated.time
-            lines = [source_description(calculated)]
-            if name == "dhuhr":
-                lines.append(dhuhr_note(day))
-        lines += extra
-        events.append(
-            PlannedEvent(
-                local_date=local_date,
-                prayer=name,
-                starts_at=target,
-                ends_at=event_end(target, PRAYER_LENGTHS[name]),
-                time_zone=user_zone,
-                source_description=lines[0],
-                place="home",
-                masjid_id=None,
-                # Just the prayer's name. Only masjid prayers say where.
-                summary=PRAYER_TITLES[name],
-                description="\n".join(lines),
-                color_id=setup.prayer_color_id,
-            )
-        )
-    return events
+            not_at_masjid[name] = (target, source)
+
+    # Pass 2: every other prayer. A moved one avoids the app's own events too.
+    taken = [(e.starts_at, e.ends_at) for e in friday + [e for events in at_masjid.values() for e in events]]
+    placed: dict[str, PlannedEvent] = {}
+    for name in names:
+        if name in at_masjid:
+            continue
+        length = PRAYER_LENGTHS[name]
+        if name in not_at_masjid:
+            normal, source = not_at_masjid[name]
+        else:
+            normal, source = _home_time(name, local_date, day, main, main_day)
+        fit = fit_prayer(windows[name], normal, length, busy, taken, now) if windows else Fit("normal", normal, length)
+        title = PRAYER_TITLES[name]
+        if fit.kind == "normal" and name not in not_at_masjid:
+            # Just the prayer's name. Only masjid prayers say where.
+            event = _home_event(setup, local_date, name, fit, source, title, "", user_zone)
+        elif fit.kind == "clash":
+            event = _home_event(setup, local_date, name, fit, source, f"{title} (clash)", clash_text(title), user_zone)
+        else:
+            # Moved in time, or a masjid prayer prayed at home instead.
+            moved = Fit("moved", fit.starts_at, fit.length)
+            description = moved_text(title, windows[name].starts_at, fit.starts_at)
+            event = _home_event(setup, local_date, name, moved, source, title, description, user_zone)
+        taken.append((event.starts_at, event.ends_at))
+        placed[name] = event
+
+    planned = list(friday)
+    for name in names:
+        planned.extend(at_masjid.get(name) or [placed[name]])
+    return planned

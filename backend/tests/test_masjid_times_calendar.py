@@ -1,4 +1,4 @@
-"""Which time each prayer uses, and what its description says.
+"""Which time each prayer uses, and where it says the time came from.
 
 KMA is linked to MAWAQIT. Its made-up page has Fajr 05:30, Dhuhr 12:30
 (iqamah 13:00), Asr 15:30, Maghrib 18:00, Isha 19:30 (iqamah 20:15), and
@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.models import MasjidSource
 from app.nightly import run_now
 from app.update_jobs import run_due_updates
-from tests.calendar_helpers import clock, fetch, google_events, on, refresh, titled
+from tests.calendar_helpers import clock, fetch, google_events, on, refresh, source, titled
 from tests.masjid_helpers import add_user, link, masjid_id
 from tests.mawaqit_pages import conf, page, set_day
 
@@ -38,7 +38,7 @@ def test_masjid_prayers_use_the_iqamah(db, http, user, fake_google):
     refresh(db, http, user, NOW)
     isha = titled(google_events(fake_google), MONDAY, "Isha at KMA")
     assert clock(isha) == "20:15" and clock(isha, end=True) == "20:30"
-    assert isha["description"] == "KMA iqamah (MAWAQIT, updated Oct 25, 2026)"
+    assert source(db, isha) == "KMA iqamah (MAWAQIT, updated Oct 25, 2026)"
     dhuhr = titled(google_events(fake_google), MONDAY, "Dhuhr at KMA")
     assert clock(dhuhr) == "13:00"
 
@@ -48,7 +48,7 @@ def test_home_prayers_use_the_masjids_adhan(db, http, user, fake_google):
     refresh(db, http, user, NOW)
     fajr = titled(google_events(fake_google), MONDAY, "Fajr")
     assert clock(fajr) == "05:30"
-    assert fajr["description"] == "KMA adhan time (MAWAQIT)"
+    assert source(db, fajr) == "KMA adhan time (MAWAQIT)"
     # Sunday: every prayer at home, all from KMA's page.
     sunday = [e for e in on(google_events(fake_google), date(2026, 11, 1)) if " at " not in e["summary"]]
     assert [clock(e) for e in sunday] == ["05:30", "12:30", "15:30", "18:00", "19:30"]
@@ -59,9 +59,9 @@ def test_home_prayers_are_calculated_without_a_link(db, http, fake_google):
                    at_masjid=WEEKDAYS_AT_KMA)
     refresh(db, http, uid, NOW)
     fajr = titled(google_events(fake_google), MONDAY, "Fajr")
-    assert fajr["description"].startswith("Calculated (ISNA, standard Asr)")
+    assert source(db, fajr).startswith("Calculated (ISNA, standard Asr)")
     isha = titled(google_events(fake_google), MONDAY, "Isha at KMA")
-    assert isha["description"] == "Calculated start time (ISNA, standard Asr). KMA's iqamah time isn't available."
+    assert source(db, isha) == "Calculated start time (ISNA, standard Asr). KMA's iqamah time isn't available."
 
 
 def test_a_missing_iqamah_uses_the_calculated_time_and_says_so(db, http, user, fake_google, fake_mawaqit):
@@ -69,33 +69,43 @@ def test_a_missing_iqamah_uses_the_calculated_time_and_says_so(db, http, user, f
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
     isha = titled(google_events(fake_google), MONDAY, "Isha at KMA")
-    assert isha["description"] == "Calculated start time (ISNA, standard Asr). KMA's iqamah time isn't available."
+    assert source(db, isha) == "Calculated start time (ISNA, standard Asr). KMA's iqamah time isn't available."
     assert clock(isha) != "20:15" and clock(isha) != "19:30"  # not the iqamah, and not KMA's adhan
 
 
-def test_stale_times_are_used_with_a_note(db, http, user, fake_google, fake_mawaqit):
-    fetch(db, http, NOW - timedelta(days=2))
-    fake_mawaqit.failure = 403  # MAWAQIT blocks us after that
+def test_times_read_7_days_ago_are_still_used(db, http, user, fake_google, fake_mawaqit):
+    # The last good read was exactly 7 days ago, and MAWAQIT blocks us after that.
+    # That read saved 30 days, so Monday's iqamah is still there and still used.
+    fetch(db, http, NOW - timedelta(days=7))
+    fake_mawaqit.failure = 403
     refresh(db, http, user, NOW)
-    isha = titled(google_events(fake_google), MONDAY, "Isha at KMA")
-    assert clock(isha) == "20:15"
-    assert isha["description"] == (
-        "KMA iqamah (MAWAQIT, updated Oct 23, 2026)\nMAWAQIT times may be out of date (last updated Oct 23, 2026)"
-    )
-    fajr = titled(google_events(fake_google), MONDAY, "Fajr")
-    assert fajr["description"] == "KMA adhan time (MAWAQIT)\nMAWAQIT times may be out of date (last updated Oct 23, 2026)"
+    assert clock(titled(google_events(fake_google), MONDAY, "Isha at KMA")) == "20:15"
 
 
-def test_times_over_7_days_old_are_not_used(db, http, user, fake_google):
-    # Fetched 8 days ago, so the window still has dates the page covered.
-    fetch(db, http, NOW - timedelta(days=8))
+def test_times_over_7_days_old_are_not_used(db, http, user, fake_google, fake_mawaqit):
+    fetch(db, http, NOW - timedelta(days=7, minutes=1))
+    fake_mawaqit.failure = 403
     refresh(db, http, user, NOW)
     isha = titled(google_events(fake_google), MONDAY, "Isha at KMA")
     assert clock(isha) != "20:15"
-    assert isha["description"].startswith("Calculated start time (ISNA, standard Asr). KMA's iqamah time isn't available.")
-    assert "more than 7 days old" in isha["description"]
+    assert source(db, isha) == "Calculated start time (ISNA, standard Asr). KMA's iqamah time isn't available."
     fajr = titled(google_events(fake_google), MONDAY, "Fajr")
-    assert fajr["description"].startswith("Calculated (ISNA, standard Asr)")
+    assert source(db, fajr).startswith("Calculated (ISNA, standard Asr)")
+
+
+def test_times_confirmed_under_24_hours_ago_are_used(db, http, user, fake_google, fake_mawaqit):
+    fetch(db, http, NOW - timedelta(hours=23, minutes=59))
+    fake_mawaqit.failure = 403
+    refresh(db, http, user, NOW)
+    assert clock(titled(google_events(fake_google), MONDAY, "Isha at KMA")) == "20:15"
+
+
+def test_events_have_no_description(db, http, user, fake_google, ors_key):
+    fetch(db, http, NOW)
+    refresh(db, http, user, NOW)
+    events = google_events(fake_google)
+    assert {e["summary"] for e in events} >= {"Fajr", "Isha at KMA", "Drive to KMA", "Jumuah at KMA"}
+    assert not any("description" in e for e in events)
 
 
 @pytest.mark.parametrize(
@@ -178,4 +188,4 @@ def test_unlinking_goes_back_to_calculated_times(db, http, user, fake_google):
         assert session.get(MasjidSource, masjid_id(db, "Kanata Muslim Association")) is None
     run_due_updates(db, http, NOW)
     isha = titled(google_events(fake_google), MONDAY, "Isha at KMA")
-    assert isha["description"].startswith("Calculated start time")
+    assert source(db, isha).startswith("Calculated start time")

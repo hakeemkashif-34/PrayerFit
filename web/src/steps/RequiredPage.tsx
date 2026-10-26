@@ -3,8 +3,9 @@
 //
 // Picking a location saves it straight away, since the masjid search needs
 // it to sort masjids by distance. Next saves the masjid, the grid, and the
-// Jumuah pick. The Jumuah question is skipped when there's nothing to pick
-// from (praying at home, or no Jumuah times yet), and the 1st Jumuah is saved.
+// Jumuah pick. The Jumuah question shows as soon as a masjid is picked. If
+// that masjid has no Jumuah times yet, it says so, and the 1st Jumuah is saved.
+// Someone who prays at home has no Jumuah masjid, so there's no question.
 // Nothing goes to Google Calendar until the user presses Finish or Skip on
 // page 2.
 
@@ -36,7 +37,7 @@ export function RequiredPage({ settings, onChange, onNext }: Props) {
   const [error, setError] = useState("");
   const hasLocation = settings.place_name !== null;
   const atMasjid = choice === "masjid" && picked !== null;
-  const jumuahIds = picked && atMasjid ? jumuahAfterSaving(settings, picked) : [];
+
 
   function toggle(weekday: number, prayer: Prayer) {
     setDays((current) => current.map((d) => (d.weekday === weekday ? { ...d, [prayer]: !d[prayer] } : d)));
@@ -59,11 +60,11 @@ export function RequiredPage({ settings, onChange, onNext }: Props) {
         choice === "masjid" && picked ? { choice: "masjid", masjid_id: picked.id } : { choice: "home" },
       );
       if (atMasjid) saved = await api.saveWeekly(days);
-      // The pick from the question, or the 1st Jumuah when it was skipped.
-      const jumuah = saved.settings.jumuah_masjids;
-      const chosen = slotCount > 0 && pick && jumuah.some((m) => m.id === pick.masjid_id) ? pick : null;
-      if (chosen || jumuah.length > 0) {
-        saved = await api.saveJumuahPick(chosen ?? { masjid_id: jumuah[0].id, order: 1 });
+      // Jumuah is always at the main masjid: the pick from the question, or its
+      // 1st Jumuah when it has no Jumuah times yet. Praying at home means no Jumuah.
+      if (atMasjid && picked) {
+        const chosen = slotCount > 0 && pick?.masjid_id === picked.id ? pick : { masjid_id: picked.id, order: 1 };
+        saved = await api.saveJumuahPick(chosen);
       }
       onNext(saved.settings);
     } catch (e) {
@@ -122,9 +123,9 @@ export function RequiredPage({ settings, onChange, onNext }: Props) {
         </section>
       )}
 
-      {jumuahIds.length > 0 && (
+      {atMasjid && picked && (
         <div className="page-section">
-          <JumuahChooser masjidIds={jumuahIds} selected={pick} onSelect={setPick} onLoaded={setSlotCount} />
+          <JumuahChooser masjidId={picked.id} selected={pick} onSelect={setPick} onLoaded={setSlotCount} />
         </div>
       )}
 
@@ -140,15 +141,4 @@ export function RequiredPage({ settings, onChange, onNext }: Props) {
       </div>
     </div>
   );
-}
-
-// The Jumuah masjids once Next saves this masjid, the same rule as the
-// backend: the main masjid is the first Jumuah masjid, unless the user
-// changed the Jumuah list themselves on Settings.
-function jumuahAfterSaving(settings: Settings, picked: Masjid): string[] {
-  const listed = settings.jumuah_masjids.map((m) => m.id);
-  const oldMain = settings.main_masjid_choice === "masjid" ? settings.main_masjid?.id : undefined;
-  if (oldMain === picked.id) return listed;
-  const onlyOldMain = listed.length === 1 && listed[0] === oldMain;
-  return listed.length === 0 || onlyOldMain ? [picked.id] : listed;
 }
