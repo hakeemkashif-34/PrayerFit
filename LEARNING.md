@@ -975,7 +975,7 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 2. **`backend/app/event_plan.py`**: `plan_day` now works in 2 passes and uses `fit_prayers.py`.
 3. **`backend/app/busy_times.py`**: `busy_between` reads busy times for the whole window in one call.
 4. **`backend/app/calendar_window.py`**: keeps moved prayers when free/busy fails, and leaves a masjid prayer alone once its drive has started.
-5. **`backend/app/busy_checks.py`**: the 15-minute check for today and tomorrow.
+5. **`backend/app/busy_checks.py`**: the 5-minute check for today and tomorrow (every 15 minutes at first, see section 25).
 6. **`backend/alembic/versions/0007_prayer_event_fit.py`** adds `prayer_events.fit`. **`0008_busy_check_jobs.py`** adds the `busy_check_jobs` table.
 
 ### 2. The main rule: events come first
@@ -1064,7 +1064,7 @@ for each prayer, each day:
 2. **No access** (the user didn't tick free/busy): busy times are empty, so nothing moves. Everything works as it did before.
 3. **Failed** (a Google error, a timeout, a bad answer): the busy times are unknown, not empty. If the update treated that as "free", every moved prayer would jump back to its normal time, right into the user's class. So:
    a) The nightly job and settings updates still run, since a new day or a changed setting still needs to go out. But `save_window(keep_moved=True)` leaves every future row with `fit` of `moved` or `clash` exactly as it is, drive block and all.
-   b) The 15-minute check stops before saving anything. The next block tries again.
+   b) The 5-minute check stops before saving anything. The next block tries again.
 4. A move is never undone because busy times are unknown. `test_a_free_busy_failure_never_undoes_a_move` checks it.
 
 ### 10. Events that already started
@@ -1072,13 +1072,13 @@ for each prayer, each day:
 1. A row that already started is never changed, the same as before.
 2. New: a masjid prayer whose drive block has started is left alone too, even though the prayer itself hasn't started. The user is already on the road. Without this, an event added at 7:31 pm would move Isha home while the user is driving to KMA.
 
-### 11. The 15-minute check
+### 11. The 5-minute check
 
 1. **Why**: the nightly job runs at 3:00 am. An event added at noon should move that evening's Isha before Isha, not the next night.
-2. **What**: every 15 minutes, for each user with setup done, the free/busy scope, and a working sign-in, update today and tomorrow (`refresh_calendar(days=2, busy_check=True)`). Only changed events go to Google.
-3. **Stable IDs**: `busy:<user id>:<15-minute block in UTC>`, like `busy:...:2026-10-26T13:00`. The worker runs every minute, but each block's check is saved before it runs (`INSERT ... ON CONFLICT DO NOTHING`) and claimed with one `UPDATE ... WHERE status = 'pending'`, the same pattern as the nightly job. A test starts 2 workers at once and checks free/busy was called once.
-4. **Quiet checks are cheap**: when nothing changed, the check returns before even looking up the Prayers calendar. So most checks are 1 free/busy call. 1,000 users would be about 100,000 calls a day, well under Google Calendar's free daily quota. It stays $0.
-5. **Cleanup**: check rows older than 2 days are deleted on each run, so the table stays small (96 rows per user per day before cleanup).
+2. **What**: every 5 minutes, for each user with setup done, the free/busy scope, and a working sign-in, update today and tomorrow (`refresh_calendar(days=2, busy_check=True)`). Only changed events go to Google.
+3. **Stable IDs**: `busy:<user id>:<5-minute block in UTC>`, like `busy:...:2026-10-26T13:05`. The worker runs every minute, but each block's check is saved before it runs (`INSERT ... ON CONFLICT DO NOTHING`) and claimed with one `UPDATE ... WHERE status = 'pending'`, the same pattern as the nightly job. A test starts 2 workers at once and checks free/busy was called once.
+4. **Quiet checks are cheap**: when nothing changed, the check returns before even looking up the Prayers calendar. So most checks are 1 free/busy call. Section 25 has the quota numbers. It stays $0.
+5. **Cleanup**: check rows older than 2 days are deleted on each run, so the table stays small (288 rows per user per day before cleanup).
 6. The worker now runs 4 steps every minute: nightly jobs, MAWAQIT reads, busy checks, then queued updates.
 7. The nightly job still covers all 14 days, and asks free/busy for the whole window in one call (from the first day's midnight to the end of the day after the last day, so the last day's Isha is covered).
 
@@ -1125,7 +1125,7 @@ for each prayer, each day:
    f) Started events and a started drive aren't moved.
    g) Never in the past.
    h) Who gets checked.
-   i) One check per 15 minutes.
+   i) One check per 5 minutes.
    j) 2 workers at once.
    k) Old checks deleted.
 4. **Jumuah**: `test_jumuah_picker.py` covers the pick fitting, the pick clashing, and every slot clashing (now the 1st Jumuah). `test_busy_times.py` checks the same through the calendar.
@@ -1138,8 +1138,8 @@ for each prayer, each day:
 2. **For real**, with the test Google account:
    a) Start everything with `docker compose up -d`, so the worker runs.
    b) Add an event to the test account's main calendar that covers one of today's or tomorrow's prayers.
-   c) Within 15 minutes, that prayer moves in the Prayers calendar, and its description says something like "Moved because of an event in your calendar (42 minutes after Dhuhr's start time)."
-   d) Delete the event. Within 15 minutes, the prayer is back at its normal time.
+   c) Within 5 minutes, that prayer moves in the Prayers calendar, and its description says something like "Moved because of an event in your calendar (42 minutes after Dhuhr's start time)."
+   d) Delete the event. Within 5 minutes, the prayer is back at its normal time.
    e) `SELECT id, status, events_sent FROM busy_check_jobs ORDER BY block_start DESC LIMIT 5` shows the checks.
 3. **Checks I couldn't do here**: real free/busy answers from Google. The cloud environment I built this in can't reach Google, so the steps above are the real test.
 
@@ -1150,8 +1150,8 @@ for each prayer, each day:
    a) The minutes are from the prayer's start time (the adhan) to where it was placed, worked out in UTC like everything else.
    b) Over an hour it reads "1 hour 12 minutes". Right at the adhan it reads "(at Dhuhr's start time)". `duration_text` and `moved_text` in `event_plan.py` do this, and a test checks 1, 59, 60, 61, 72, 120, and 125 minutes.
    c) A masjid prayer prayed at home at its iqamah counts too, for example "(17 minutes after Isha's start time)".
-   d) Jumuah has no adhan of its own, so a Jumuah moved to a later slot counts from the day's 1st Jumuah.
-3. **Clash**: "Your event covers all of Asr's time today, so figure out a way to fit it in." The title stays `Asr (clash)`. When every Jumuah clashes, it's the same sentence with "Jumuah".
+   d) Jumuah has its own descriptions (section 28).
+3. **Clash**: "Your event covers all of Asr's time today, so figure out a way to fit it in." The title stays `Asr (clash)`.
 4. **Nothing else, ever.** The app only knows busy times, never event names, so a description can't say what the event is.
 5. **Where times come from didn't go away.** It's still saved in `prayer_events.source_description` for every event, and the Settings page shows it: each masjid's "Times from MAWAQIT, updated Oct 25, 2026", and "Calculated times use ISNA with standard Asr." under Location. CLAUDE.md's accuracy rule says this now.
 6. **Old events lose their descriptions in place.** `google_event` only adds `description` when there is one. An update replaces the whole event (PUT), so leaving the field out removes it from Google. The event body changed, so its hash changed, so every future event is sent once, with the same event ID. Past events keep theirs. `test_old_descriptions_are_removed_in_place` checks this with no inserts at all.
@@ -1222,7 +1222,7 @@ for each prayer, each day:
 1. **Counts only.** `app/stats.py` counts:
    a) Signed up: rows in `users`.
    b) Finished setup.
-   c) Active: users with a nightly job, settings update, or 15-minute check that finished "done" in the last 2 days.
+   c) Active: users with a nightly job, settings update, or 5-minute check that finished "done" in the last 2 days.
    d) New this week: users created in the last 7 days. Not "since Monday", so it doesn't drop to 0 every week.
 2. **The command**: `python -m app.admin stats` prints the 4 lines. A test checks nothing in the output has an "@".
 3. **A daily snapshot**: the worker's 5th step saves the 4 numbers in `usage_stats` once a day, after 4:00 am Toronto time (after the 3:00 am nightly jobs, so "active" counts last night). The date is the row's ID, so the worker running every minute still saves one row a day. Migration `0009`.
@@ -1254,3 +1254,69 @@ for each prayer, each day:
    f) The Adding page: size at 6 widths, real times, captions, colours, the loop, the retries, and reduced motion.
    g) The Settings notice.
    h) The /stats page for the admin, someone else, and nobody signed in.
+
+### 25. Checking busy times every 5 minutes
+
+1. `CHECK_EVERY_MINUTES` in `busy_checks.py` went from 15 to 5, so a new event in my calendar moves a prayer within 5 minutes, and deleting it puts the prayer back within 5. The job ID is now the 5-minute block, like `busy:<user id>:2026-10-26T13:05`.
+2. **The quota, checked first.** Google's Calendar API docs say:
+   a) No charge under 1,000,000 requests a day per project.
+   b) 10,000 requests a minute per project.
+   c) 600 requests a minute per user.
+   d) Full billing details come later in 2026, with at least 90 days' notice.
+3. **For 1,000 users**:
+   a) Busy checks: 12 an hour, so 288 a day each, and 288,000 a day in all. A quiet check is 1 free/busy call (section 11).
+   b) Everything else: the nightly job (1 free/busy call, the calendar lookup, and the new day's events per user), moved prayers, and settings changes. Roughly 20,000 a day.
+   c) Total: about 310,000 a day, about 31% of the free 1,000,000.
+   d) Per minute: 1,000 checks per 5 minutes is about 200 a minute, far under 10,000. Each user makes about 1 call every 5 minutes, far under 600 a minute.
+   e) The free 1,000,000 would run out at around 3,200 users at this rate. Token refreshes go to Google's sign-in server, not the Calendar API, so they don't count.
+4. **A limit to know about**: the worker runs the checks one user at a time. If each takes about 0.3 seconds, 1,000 users is about 5 minutes, the whole block. That's fine at today's size, but well before 1,000 users the checks would need to run in parallel (more workers, or a few at a time).
+5. Settings says "Updates and changes are reflected on your calendar every 5 minutes." under the email at the top.
+
+### 26. Jumuah is always at the main masjid
+
+1. **No more Jumuah masjids.** The "Jumuah masjids" item on Settings, its editor (`JumuahStep.tsx`), and `PUT /settings/jumuah` are gone. Jumuah at a different masjid is a stretch goal in CLAUDE.md now.
+2. **Everything uses the main masjid**:
+   a) `Setup.jumuah_masjid` is just the main masjid. `masjid_inputs` builds 1 masjid context, used for both the daily prayers and Jumuah.
+   b) `POST /jumuah/slots` takes one `masjid_id` (the main masjid setup hasn't saved yet), or none for the saved main masjid.
+   c) Drive times are only asked for the main masjid.
+   d) MAWAQIT reads and queued updates only look at main masjids (`users_of_masjid`, `_has_users`).
+3. **No Jumuah** when the user prays at home, or the main masjid has no Jumuah times, as before.
+4. **The pick follows the main masjid.** `PUT /settings/jumuah-pick` only accepts the main masjid. Saving a new main masjid resets the pick to its 1st Jumuah. Saving the same one keeps the pick. Choosing "I pray at home" clears it.
+5. **Migration `0010`** for existing users:
+   a) A pick at the main masjid stays.
+   b) Any other pick, or no pick, becomes the main masjid's 1st Jumuah.
+   c) A user who prays at home has their pick cleared.
+   d) The `user_jumuah_masjids` table and the `jumuah_saved` column are dropped, since nothing uses them any more.
+   e) Its downgrade puts the table back with each main masjid in it, the way it was before.
+   f) `test_migration_0010_keeps_jumuah_at_the_main_masjid` checks all 4 kinds of user.
+6. The older migration tests (0004 to 0006) now upgrade only to their own migration before checking, so 0010 dropping the table doesn't break them.
+7. `test_main_masjid_jumuah.py` tested the old "main masjid joins the Jumuah list" rule, so I removed it. The pick rules are tested in `test_jumuah_pick_and_chooser.py`.
+
+### 27. Settings: the question, then just the answer
+
+1. Each Settings item now shows its setup question as the label, and only the answer as the value:
+   a) "What's your location?"
+   b) "Which masjid do you usually go to?"
+   c) "Which prayers do you usually pray at the masjid?"
+   d) The Jumuah question.
+   e) "How early do you want to arrive before iqamah (daily prayers)?" with "5 minutes".
+   f) "How early do you want to arrive before Jumuah (Friday prayer)?" with "5 minutes".
+2. Short name and the colours never had a question in setup, so they keep their labels.
+3. The "Arrive 5 min before iqamah" wording is gone. `minutesText` gives "5 minutes" (or "1 minute").
+4. The questions live in one place, `QUESTIONS` in `labels.ts`, so setup, the editors, and Settings can't drift apart.
+5. `Row` has a short `title` too, like "How early for prayers". Screen readers and the Edit button use it ("Edit how early for prayers"), since reading out a whole question on every button would be a lot.
+6. The Jumuah pick's value is just "2nd Jumuah", since it's always at the main masjid.
+
+### 28. Jumuah descriptions
+
+1. A Jumuah only gets a description when the pick couldn't be used:
+   a) The pick clashes: "Your pick (1st Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits."
+   b) The pick isn't on this Friday: "Your pick (3rd Jumuah) isn't on this Friday, so this is the earliest Jumuah that fits."
+   c) Every Jumuah clashes: "Every Jumuah clashes with your calendar, so this is the 1st Jumuah."
+2. A Jumuah at the pick has no description. These are the picker's own reasons (`choose_jumuah`), so the description and the rule can't disagree.
+3. This replaced the "Moved because of an event in your calendar (1 hour after Jumuah's start time)" and "covers all of Jumuah's time" texts from section 15.
+
+### 29. How to check it works
+
+1. **Tests**: `pytest` in `backend` (`745 passed`) and `npx playwright test` in `web` (`216 passed`).
+2. **For real**, the steps in section 14 now take up to 5 minutes, not 15.

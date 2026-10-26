@@ -67,6 +67,7 @@ Stretch goals, only after the 7 milestones work:
 Two-way sync: notice edits made in Google Calendar, and keep the website and Google Calendar in sync both ways
 Edit page: change prayers on the website
 Notifications: alert users when something changes
+Jumuah at a different masjid: let a user pray Jumuah somewhere other than their main masjid. For now Jumuah is always at the main masjid
 AI timetable reading: an AI reads a masjid's timetable from a photo, poster, or website when it changes. It runs once per masjid, not per user, so a free AI tier should cover it. A masjid admin confirms every time it reads before anyone's calendar changes.
 University jama'ah hub: from Muslim_Calendar_App.md.
 
