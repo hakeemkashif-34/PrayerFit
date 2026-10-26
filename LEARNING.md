@@ -1320,7 +1320,7 @@ Section 32 changed this again: the last MAWAQIT times are used for up to 7 days,
 
 ### 29. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`832 passed`) and `npx playwright test` in `web` (`230 passed`).
+1. **Tests**: `pytest` in `backend` (`832 passed`) and `npx playwright test` in `web` (`238 passed`).
 2. **For real**, the steps in section 14 now take up to 5 minutes, not 15.
 
 ### 30. Small fixes after review
@@ -1404,4 +1404,25 @@ Section 32 changed this again: the last MAWAQIT times are used for up to 7 days,
    a) `test_freshness.py`: still used at exactly 24 hours and exactly 7 days, and not used at 7 days and 1 second.
    b) `test_masjid_times_calendar.py`: a read 7 days ago still gives Isha at KMA's 8:15 pm iqamah, and a read 7 days and 1 minute ago gives the calculated start.
    c) `test_optional_settings.py`: both notice texts, the switch date, and both masjid lines.
-8. **Counts**: `pytest` in `backend` gives `832 passed`, and `npx playwright test` in `web` gives `230 passed`.
+8. **Counts**: `pytest` in `backend` gives `832 passed`, and `npx playwright test` in `web` gave `230 passed` (238 after section 33).
+
+### 33. The hadith highlight and a simpler Jumuah question
+
+1. **"praying on time"** on the landing page is bold, with a soft gold highlight (`--gold-soft`, `#f6e2a6`).
+   a) It's a band behind the lower part of the words, like a highlighter pen (a `linear-gradient` background), not a box. Amiri's lines are tall, so a full box looked heavy.
+   b) The near-black text on the gold is 14.5:1.
+   c) It has `white-space: nowrap`, so the phrase is never split across 2 lines on a phone.
+2. **The Jumuah question** (`JumuahChooser.tsx`), on setup and Settings:
+   a) Shorter: 1.2px a minute instead of 2, so 11 AM to 4 PM is 360px tall instead of 600. The width is the same.
+   b) Each block covers just the Jumuah, from its start to its end. The "Leave 1:11 PM" part and the hint about it are gone. The API still sends `leave_at`, since the calendar's drive blocks use it.
+   c) All the blocks are in 1 column. `place()` puts each one at its time, but never shorter than 54px (`MIN_BLOCK_PX`), so its 2 lines always fit. If that would make it reach the next block, the next one moves down to keep a 6px gap (`GAP_PX`), and the day grows if a block moves past 4 PM.
+   d) Inside a block: "1st Jumuah" and "1:30 to 2:15 PM". No masjid name, since Jumuah is always at the main masjid.
+   e) The picked block is a light green (`--green-light`, `#b9e0c4`) with dark green text (7.1:1), and a small ✓ right after "1st Jumuah" instead of the word "Selected". The ✓ is hidden from screen readers, since the radio button already says it's picked.
+3. **Tests**:
+   a) The hint is exactly "This week's Friday, as an example."
+   b) A block starts at 1:30 and is 45 minutes tall, with no "Leave" and no masjid name.
+   c) 11 AM to 4 PM is 360px.
+   d) 3 Jumuahs only 20 minutes apart stay in 1 column with at least a 4px gap, and nothing in any block is cut off, on setup and on Settings.
+   e) The picked block's colours and tick.
+   f) The gold highlight on "praying on time".
+4. **Counts**: `npx playwright test` in `web` gives `238 passed`.
