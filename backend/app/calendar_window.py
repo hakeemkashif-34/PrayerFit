@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.tokens import get_access_token
 from app.busy_times import busy_on
-from app.drive_times import commute_times
+from app.drive_times import drive_seconds
 from app.geo.timezones import masjid_time_zone
 from app.event_plan import MasjidContext, PlannedEvent, drive_event_id, plan_day
 from app.google_calendar import GoogleCalendar
@@ -68,22 +68,13 @@ class MasjidInputs:
     jumuah: list[MasjidContext]
 
 
-def masjid_inputs(
-    db: Session,
-    http: httpx2.Client,
-    setup: Setup,
-    dates: list[date],
-    now: datetime,
-    commute_overrides: dict[uuid.UUID, int | None] | None = None,
-) -> MasjidInputs:
+def masjid_inputs(db: Session, http: httpx2.Client, setup: Setup, dates: list[date], now: datetime) -> MasjidInputs:
     masjids: list[Masjid] = []
     for masjid in ([setup.masjid] if setup.masjid else []) + list(setup.jumuah_masjids):
         if all(m.id != masjid.id for m in masjids):
             masjids.append(masjid)
     times = load_masjid_times(db, [m.id for m in masjids], dates, now)
-    commutes = commute_times(
-        db, http, setup.user_id, (setup.latitude, setup.longitude), masjids, now, commute_overrides
-    )
+    drives = drive_seconds(db, http, setup.user_id, (setup.latitude, setup.longitude), masjids, now)
 
     def context(masjid: Masjid) -> MasjidContext:
         return MasjidContext(
@@ -91,8 +82,7 @@ def masjid_inputs(
             label=setup.label_for(masjid),
             time_zone=masjid_time_zone(masjid),
             times=times.get(masjid.id),
-            drive_seconds=commutes[masjid.id].seconds,
-            commute_source=commutes[masjid.id].source or "ors",
+            drive_seconds=drives.get(masjid.id),
             jumuah_minutes=masjid.jumuah_minutes,
         )
 

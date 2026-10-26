@@ -1,4 +1,4 @@
-"""Add the Jumuah pick, Jumuah "how early", Jumuah length, and commute times. Remove the prayer time method.
+"""Add the Jumuah pick, Jumuah "how early", and Jumuah length. Remove the prayer time method.
 
 Existing data is kept:
 1. Each user's Jumuah "how early" starts as their current "how early".
@@ -39,18 +39,8 @@ def upgrade() -> None:
 
     op.add_column('masjids', sa.Column('jumuah_minutes', sa.SmallInteger(), nullable=True))
 
-    op.create_table('user_commute_times',
-    sa.Column('user_id', sa.Uuid(), nullable=False),
-    sa.Column('masjid_id', sa.Uuid(), nullable=False),
-    sa.Column('minutes', sa.SmallInteger(), nullable=False),
-    sa.ForeignKeyConstraint(['masjid_id'], ['masjids.id'], ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('user_id', 'masjid_id')
-    )
-
 
 def downgrade() -> None:
-    op.drop_table('user_commute_times')
     op.drop_column('masjids', 'jumuah_minutes')
     # The methods come back empty, which means ISNA and standard Asr.
     op.add_column('user_settings', sa.Column('asr_method', sa.String(length=16), nullable=True))

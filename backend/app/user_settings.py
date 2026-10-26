@@ -29,17 +29,6 @@ DEFAULT_JUMUAH_ARRIVE_EARLY_MINUTES = 5
 DEFAULT_COLOR_ID = "10"  # Basil, Google Calendar's green
 
 
-def user_masjids(db: Session, row: UserSettings) -> list[Masjid]:
-    """The main masjid (if any), then the Jumuah masjids, each once."""
-    found: list[Masjid] = []
-    if row.main_masjid_choice == "masjid" and row.main_masjid_id is not None:
-        found.append(db.get(Masjid, row.main_masjid_id))
-    for masjid in jumuah_masjids(db, row.user_id):
-        if all(m.id != masjid.id for m in found):
-            found.append(masjid)
-    return found
-
-
 def _empty(user_id: uuid.UUID) -> UserSettings:
     # Column defaults only apply on insert, so an unsaved row needs them set here.
     return UserSettings(

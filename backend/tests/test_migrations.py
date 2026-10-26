@@ -150,10 +150,8 @@ def test_migration_0006_keeps_data_and_copies_how_early(db):
             "ORDER BY u.google_sub"
         )).all()
         jumuah_minutes = connection.execute(text("SELECT jumuah_minutes FROM masjids")).scalars().all()
-        commute_times = connection.execute(text("SELECT count(*) FROM user_commute_times")).scalar()
     assert settings == [("early-0", None, 0, 0, None, None), ("early-12", "KMA", 12, 12, None, None)]
     # No Jumuah length yet, so 45 minutes (estimated) is used.
     assert jumuah_minutes == [None]
-    assert commute_times == 0
     columns = {c["name"] for c in inspect(db).get_columns("user_settings")}
     assert not {"method", "asr_method"} & columns

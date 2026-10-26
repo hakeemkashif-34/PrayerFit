@@ -350,25 +350,6 @@ class UserDriveTime(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class UserCommuteTime(Base):
-    """How long the user says their commute to one of their masjids takes.
-
-    When it's set, it's used instead of OpenRouteService's driving estimate,
-    and OpenRouteService isn't asked for that masjid.
-    """
-
-    __tablename__ = "user_commute_times"
-
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-    )
-    masjid_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("masjids.id", ondelete="CASCADE"), primary_key=True
-    )
-    # 1 to 120
-    minutes: Mapped[int] = mapped_column(SmallInteger)
-
-
 class UpdateJob(Base):
     """A queued calendar update for one user, outside the nightly run.
 

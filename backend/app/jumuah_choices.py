@@ -34,13 +34,11 @@ class SlotOut(BaseModel):
     order: int  # 1, 2, or 3
     order_label: str  # "1st Jumuah"
     starts_at: datetime
-    # Null when the commute time is unknown, so there's no commute block.
+    # Null when the drive time is unknown, so there's no drive block.
     leave_at: datetime | None
     arrive_at: datetime
     ends_at: datetime
-    commute_minutes: int | None
-    # "user" (their own time) or "ors" (OpenRouteService's driving estimate)
-    commute_source: str | None
+    drive_minutes: int | None
     jumuah_minutes: int
     # True when the masjid's Jumuah length isn't set, so it's 45 minutes.
     length_estimated: bool
@@ -72,7 +70,6 @@ def jumuah_choices(
     user_id: uuid.UUID,
     now: datetime,
     early_override: int | None = None,
-    commute_overrides: dict[uuid.UUID, int | None] | None = None,
 ) -> JumuahChoices:
     setup = load_setup(db, user_id, finished=False)
     if setup is None or not setup.jumuah_masjids:
@@ -80,7 +77,7 @@ def jumuah_choices(
     if early_override is not None:
         setup = replace(setup, jumuah_arrive_early_minutes=early_override)
     friday = next_friday(now.astimezone(ZoneInfo(setup.time_zone)).date())
-    inputs = masjid_inputs(db, http, setup, [friday], now, commute_overrides)
+    inputs = masjid_inputs(db, http, setup, [friday], now)
     slots = jumuah_slots(inputs.jumuah, friday)
     if not slots:
         return JumuahChoices(friday=friday, time_zone=setup.time_zone)
@@ -121,8 +118,7 @@ def jumuah_choices(
             leave_at=window.trip.leave_at,
             arrive_at=window.trip.arrive_at,
             ends_at=window.ends_at,
-            commute_minutes=drive_minutes(context.drive_seconds) if context.drive_seconds is not None else None,
-            commute_source=context.commute_source if context.drive_seconds is not None else None,
+            drive_minutes=drive_minutes(context.drive_seconds) if context.drive_seconds is not None else None,
             jumuah_minutes=context.jumuah_length,
             length_estimated=context.jumuah_minutes is None,
             fits=window.fits,

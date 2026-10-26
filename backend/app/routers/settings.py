@@ -28,7 +28,7 @@ from app.http_client import get_http
 from app.event_plan import date_text
 from app.masjid_times.freshness import Freshness, freshness
 from app.jumuah_choices import JumuahChoices, jumuah_choices
-from app.models import Masjid, MasjidSource, PrayerEvent, User, UserCommuteTime, UserJumuahMasjid, WeeklyMasjidPrayers
+from app.models import Masjid, MasjidSource, PrayerEvent, User, UserJumuahMasjid, WeeklyMasjidPrayers
 from app.prayer_sync import SyncIncomplete
 from app.prayer_times import DEFAULT_TIMEZONE
 from app.update_jobs import queue_update, run_update
@@ -39,7 +39,6 @@ from app.user_settings import (
     DEFAULT_JUMUAH_ARRIVE_EARLY_MINUTES,
     find_settings,
     follow_main_masjid,
-    user_masjids,
     get_settings,
     jumuah_masjids,
     missing_steps,
@@ -95,12 +94,6 @@ class JumuahPickOut(BaseModel):
     order: int
 
 
-class CommuteTimeOut(BaseModel):
-    masjid_id: uuid.UUID
-    masjid_name: str
-    minutes: int | None
-
-
 class SettingsOut(BaseModel):
     setup_complete: bool
     # Setup questions not answered yet, in order: address, masjid, weekly, optional.
@@ -120,8 +113,6 @@ class SettingsOut(BaseModel):
     jumuah_arrive_early_minutes: int
     # The Jumuah the user picked, or null for the earliest that fits.
     jumuah_pick: JumuahPickOut | None
-    # The main masjid and the Jumuah masjids. minutes is null when OpenRouteService's estimate is used.
-    commute_times: list[CommuteTimeOut]
     prayer_color_id: ColorId | None
     drive_color_id: ColorId | None
 
@@ -166,16 +157,6 @@ def _masjid_out(db: Session, masjid: Masjid, home: tuple[float, float] | None, n
     )
 
 
-def _commute_times_out(db: Session, row) -> list[CommuteTimeOut]:
-    if row.user_id is None:
-        return []
-    own = {c.masjid_id: c.minutes for c in db.scalars(select(UserCommuteTime).where(UserCommuteTime.user_id == row.user_id))}
-    return [
-        CommuteTimeOut(masjid_id=m.id, masjid_name=m.name or m.address or "Your masjid", minutes=own.get(m.id))
-        for m in user_masjids(db, row)
-    ]
-
-
 def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
     row = find_settings(db, user_id)
     zone = row.time_zone or DEFAULT_TIMEZONE
@@ -204,7 +185,6 @@ def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
             if row.jumuah_pick_masjid_id is not None and row.jumuah_pick_order is not None
             else None
         ),
-        commute_times=_commute_times_out(db, row),
         prayer_color_id=row.prayer_color_id,
         drive_color_id=row.drive_color_id,
     )
@@ -586,41 +566,6 @@ def save_optional(request: OptionalRequest, user: UserDep, db: DbDep, http: Http
     return _saved(db, http, user, now)
 
 
-# ---- Commute times ----
-
-
-# Whole minutes, 1 to 120. strict: 2.5, "10", and true are refused, not converted.
-CommuteMinutes = Annotated[int, Field(ge=1, le=120, strict=True)]
-
-
-class CommuteTimeIn(BaseModel):
-    masjid_id: uuid.UUID
-    # null clears it, so OpenRouteService's driving estimate is used.
-    minutes: CommuteMinutes | None = None
-
-
-class CommuteTimesRequest(BaseModel):
-    times: list[CommuteTimeIn] = Field(max_length=11)
-
-
-@router.put("/settings/commute-times", response_model=SaveResponse)
-def save_commute_times(request: CommuteTimesRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> SaveResponse:
-    """The user's own commute time to each of their masjids (main and Jumuah)."""
-    allowed = {m.id for m in user_masjids(db, get_settings(db, user.id))}
-    for time in request.times:
-        if time.masjid_id not in allowed:
-            raise HTTPException(status_code=404, detail={"message": "That isn't one of your masjids."})
-        saved = db.get(UserCommuteTime, (user.id, time.masjid_id))
-        if time.minutes is None:
-            if saved is not None:
-                db.delete(saved)
-        elif saved is None:
-            db.add(UserCommuteTime(user_id=user.id, masjid_id=time.masjid_id, minutes=time.minutes))
-        else:
-            saved.minutes = time.minutes
-    return _saved(db, http, user, now)
-
-
 # ---- The Jumuah pick ----
 
 
@@ -650,17 +595,15 @@ class ChoicesRequest(BaseModel):
     """Answers the user is still filling in on the optional page, so the chooser can show them before they're saved."""
 
     jumuah_arrive_early_minutes: int | None = Field(default=None, ge=0, le=60, strict=True)
-    # Masjid ID -> minutes, the same rules as PUT /settings/commute-times. null means OpenRouteService.
-    commute_minutes: dict[uuid.UUID, CommuteMinutes | None] = Field(default_factory=dict, max_length=11)
 
 
 @router.post("/jumuah/choices", response_model=JumuahChoices)
 def jumuah_choices_for_user(request: ChoicesRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> JumuahChoices:
     """This Friday's Jumuah slots, the user's busy times, and which slot fits. Saves nothing.
 
-    It's a POST because the commute times it works out are cached, and a GET must never change data.
+    It's a POST because the drive times it works out are cached, and a GET must never change data.
     """
-    return jumuah_choices(db, http, user.id, now, request.jumuah_arrive_early_minutes, request.commute_minutes)
+    return jumuah_choices(db, http, user.id, now, request.jumuah_arrive_early_minutes)
 
 
 # ---- Finishing setup, and retrying Google ----
