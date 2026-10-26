@@ -3,8 +3,9 @@
 //
 // Picking a location saves it straight away, since the masjid search needs
 // it to sort masjids by distance. Next saves the masjid, the grid, and the
-// Jumuah pick. The Jumuah question is skipped when there's nothing to pick
-// from (praying at home, or no Jumuah times yet), and the 1st Jumuah is saved.
+// Jumuah pick. The Jumuah question shows as soon as a masjid is picked. If
+// that masjid has no Jumuah times yet, it says so, and the 1st Jumuah is saved.
+// Someone who prays at home has no Jumuah masjid, so there's no question.
 // Nothing goes to Google Calendar until the user presses Finish or Skip on
 // page 2.
 
