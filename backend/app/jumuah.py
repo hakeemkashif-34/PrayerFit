@@ -3,7 +3,7 @@
 A pure function: it gets everything it needs as arguments and changes
 nothing, so every case is easy to test.
 
-Each slot has a window: from the leave time (the commute plus the Jumuah
+Each slot has a window: from the leave time (the drive plus the Jumuah
 "how early" minutes) to the end of the masjid's Jumuah. A slot fits when
 its window doesn't overlap any busy time in the user's calendar.
 
@@ -48,7 +48,7 @@ class SlotWindow:
 
     @property
     def starts_at(self) -> datetime:
-        """When the window starts: leaving home, or arriving if the commute is unknown."""
+        """When the window starts: leaving home, or arriving if the drive time is unknown."""
         return self.trip.leave_at or self.trip.arrive_at
 
 

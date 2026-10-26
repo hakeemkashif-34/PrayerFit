@@ -43,7 +43,7 @@ def test_the_pick_is_used_when_it_fits():
 def test_a_clashing_pick_gives_the_earliest_that_fits():
     # Busy 12:30 to 1:00: KMA's 12:45 clashes, and so does the pick (1st).
     choice = choose(pick=JumuahPick(KMA, 1), busy=[(at(12, 30), at(13, 0))])
-    assert chosen(choice) == (KMA, 2)  # Stittsville 1:15's commute starts at 12:50, so it clashes too
+    assert chosen(choice) == (KMA, 2)  # Stittsville 1:15's drive starts at 12:50, so it clashes too
     assert choice.reason == "Your pick (1st Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits."
 
 
@@ -89,22 +89,22 @@ def test_no_slots():
     assert choice.window is None
 
 
-def test_the_window_counts_the_commute_how_early_and_the_jumuah_length():
+def test_the_window_counts_the_drive_how_early_and_the_jumuah_length():
     kma_first = [SLOTS[0]]
     window = slot_windows(kma_first, DRIVES, 5, LENGTHS, [])[0]
-    # 12:45 Jumuah, 5 minutes early, 10 minute commute: leave 12:30. 40 minutes long: ends 1:25.
+    # 12:45 Jumuah, 5 minutes early, 10 minute drive: leave 12:30. 40 minutes long: ends 1:25.
     assert (window.starts_at, window.ends_at) == (at(12, 30), at(13, 25))
     # Busy until exactly 12:30, or from exactly 1:25: it still fits.
     assert slot_windows(kma_first, DRIVES, 5, LENGTHS, [(at(12, 0), at(12, 30))])[0].fits
     assert slot_windows(kma_first, DRIVES, 5, LENGTHS, [(at(13, 25), at(14, 0))])[0].fits
-    # One minute into the commute, or one minute before the end: it clashes.
+    # One minute into the drive, or one minute before the end: it clashes.
     assert not slot_windows(kma_first, DRIVES, 5, LENGTHS, [(at(12, 0), at(12, 31))])[0].fits
     assert not slot_windows(kma_first, DRIVES, 5, LENGTHS, [(at(13, 24), at(14, 0))])[0].fits
     # A longer "how early" moves the start back.
     assert slot_windows(kma_first, DRIVES, 20, LENGTHS, [])[0].starts_at == at(12, 15)
 
 
-def test_an_unknown_commute_starts_the_window_at_arrival():
+def test_an_unknown_drive_time_starts_the_window_at_arrival():
     window = slot_windows([SLOTS[0]], {}, 5, LENGTHS, [])[0]
     assert window.trip.leave_at is None
     assert window.starts_at == at(12, 40)

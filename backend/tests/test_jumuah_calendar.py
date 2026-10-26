@@ -60,7 +60,7 @@ def test_jumuah_replaces_friday_dhuhr_at_the_earliest_slot(db, http, user, fake_
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
     assert friday(fake_google) == [
-        "Fajr at home", "Commute to KMA", "Jumuah at KMA", "Asr at home", "Maghrib at home", "Commute to KMA", "Isha at KMA",
+        "Fajr at home", "Drive to KMA", "Jumuah at KMA", "Asr at home", "Maghrib at home", "Drive to KMA", "Isha at KMA",
     ]
     jumuah = titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")
     # No length set for KMA, so 45 minutes, and the description says it's estimated.
@@ -70,10 +70,10 @@ def test_jumuah_replaces_friday_dhuhr_at_the_earliest_slot(db, http, user, fake_
         "The earliest Jumuah that fits your calendar.\n"
         "End time is estimated (45 minutes)."
     )
-    # The Jumuah "how early" (5 by default) and the 14 minute commute: leave 1:11.
-    commute = on(google_events(fake_google), FRIDAY)[1]
-    assert (clock(commute), clock(commute, end=True)) == ("13:11", "13:25")
-    assert commute["description"].endswith("Arriving 5 min before Jumuah.")
+    # The Jumuah "how early" (5 by default) and the 14 minute drive: leave 1:11.
+    drive = on(google_events(fake_google), FRIDAY)[1]
+    assert (clock(drive), clock(drive, end=True)) == ("13:11", "13:25")
+    assert drive["description"].endswith("Arriving 5 min before Jumuah.")
 
 
 def test_a_set_jumuah_length_is_used(db, http, user, fake_google):
@@ -91,9 +91,9 @@ def test_the_jumuah_how_early_is_separate_from_prayers(db, http, user, fake_goog
     set_settings(db, user, arrive_early_minutes=0, jumuah_arrive_early_minutes=20)
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
-    commutes = [e for e in on(google_events(fake_google), FRIDAY) if e["summary"] == "Commute to KMA"]
+    drives = [e for e in on(google_events(fake_google), FRIDAY) if e["summary"] == "Drive to KMA"]
     # Jumuah at 1:30 with 20 minutes early. Isha at 8:15 with 0.
-    assert [(clock(e), clock(e, end=True)) for e in commutes] == [("12:56", "13:10"), ("20:01", "20:15")]
+    assert [(clock(e), clock(e, end=True)) for e in drives] == [("12:56", "13:10"), ("20:01", "20:15")]
 
 
 def test_the_users_pick_is_used(db, http, user, fake_google):
@@ -192,7 +192,7 @@ def test_only_jumuah_is_longer_than_15_minutes(db, http, user, fake_google):
         start = datetime.fromisoformat(event["start"]["dateTime"])
         return int((datetime.fromisoformat(event["end"]["dateTime"]) - start).total_seconds() // 60)
 
-    prayers = [e for e in google_events(fake_google) if not e["summary"].startswith("Commute")]
+    prayers = [e for e in google_events(fake_google) if not e["summary"].startswith("Drive")]
     assert {minutes(e) for e in prayers if e["summary"].startswith("Jumuah")} == {45}
     assert {minutes(e) for e in prayers if not e["summary"].startswith("Jumuah")} == {15}
     # Only the coming Friday has Jumuah.

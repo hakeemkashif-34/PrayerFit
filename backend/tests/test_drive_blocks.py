@@ -1,4 +1,4 @@
-"""Commute blocks: leave and arrival times, stable IDs, deletes, colours, reminders, and privacy.
+"""Drive blocks: leave and arrival times, stable IDs, deletes, colours, reminders, and privacy.
 
 KMA's made-up MAWAQIT page has Isha iqamah at 20:15 and Dhuhr iqamah at
 13:00. The fake OpenRouteService says every drive is 14 minutes.
@@ -51,19 +51,19 @@ def test_the_example_from_the_plan(db, http, fetched, fake_google):
     events = google_events(fake_google)
     isha = titled(events, MONDAY, "Isha at KMA")
     assert [e["summary"] for e in on(events, MONDAY)] == [
-        "Fajr at home", "Commute to KMA", "Dhuhr at KMA", "Asr at home", "Maghrib at home", "Commute to KMA", "Isha at KMA",
+        "Fajr at home", "Drive to KMA", "Dhuhr at KMA", "Asr at home", "Maghrib at home", "Drive to KMA", "Isha at KMA",
     ]
-    evening = [e for e in on(events, MONDAY) if e["summary"] == "Commute to KMA"][1]
+    evening = [e for e in on(events, MONDAY) if e["summary"] == "Drive to KMA"][1]
     assert (clock(evening), clock(evening, end=True)) == ("19:56", "20:10")
     assert (clock(isha), clock(isha, end=True)) == ("20:15", "20:30")
-    assert evening["description"] == "14 min commute (driving estimate from OpenRouteService, no live traffic). Arriving 5 min before iqamah."
+    assert evening["description"] == "14 min drive (OpenRouteService, no live traffic). Arriving 5 min before iqamah."
 
 
 @pytest.mark.parametrize("early, leave, arrive", [(0, "20:01", "20:15"), (30, "19:31", "19:45")])
 def test_0_and_30_minutes_early(db, http, fetched, fake_google, early, leave, arrive):
     set_settings(db, fetched, arrive_early_minutes=early)
     refresh(db, http, fetched, NOW)
-    evening = [e for e in on(google_events(fake_google), MONDAY) if e["summary"] == "Commute to KMA"][1]
+    evening = [e for e in on(google_events(fake_google), MONDAY) if e["summary"] == "Drive to KMA"][1]
     assert (clock(evening), clock(evening, end=True)) == (leave, arrive)
     expected = "Arriving at iqamah time." if early == 0 else "Arriving 30 min before iqamah."
     assert evening["description"].endswith(expected)
@@ -87,7 +87,7 @@ def test_no_drive_block_for_home_prayers_or_unknown_drive_times(db, http, fetche
     fake_ors.failure = "no_route"
     refresh(db, http, fetched, NOW)
     events = google_events(fake_google)
-    assert not [e for e in events if e["summary"].startswith("Commute")]
+    assert not [e for e in events if e["summary"].startswith("Drive")]
     assert titled(events, MONDAY, "Isha at KMA")
 
 
@@ -98,7 +98,7 @@ def test_no_drive_block_without_a_key(db, http, fake_google, fake_mawaqit, monke
     get_ors_settings.cache_clear()
     uid = add_user(fake_google, db, "user-a", masjid_name="KMA", at_masjid={0: {"isha"}})
     refresh(db, http, uid, NOW)
-    assert not [e for e in google_events(fake_google) if e["summary"].startswith("Commute")]
+    assert not [e for e in google_events(fake_google) if e["summary"].startswith("Drive")]
 
 
 def test_drive_blocks_have_stable_ids_and_never_duplicate(db, http, fetched, fake_google, fake_ors):
@@ -123,7 +123,7 @@ def test_drive_blocks_get_a_popup_and_prayer_blocks_dont(db, http, fetched, fake
     refresh(db, http, fetched, NOW)
     events = google_events(fake_google)
     for event in events:
-        if event["summary"].startswith("Commute"):
+        if event["summary"].startswith("Drive"):
             assert event["reminders"] == {"useDefault": False, "overrides": [{"method": "popup", "minutes": 0}]}
         else:
             assert "reminders" not in event
@@ -134,7 +134,7 @@ def test_colours_go_on_the_right_blocks(db, http, fetched, fake_google):
     set_settings(db, fetched, prayer_color_id="7", drive_color_id="11")
     refresh(db, http, fetched, NOW)
     for event in google_events(fake_google):
-        assert event["colorId"] == ("11" if event["summary"].startswith("Commute") else "7")
+        assert event["colorId"] == ("11" if event["summary"].startswith("Drive") else "7")
 
 
 def test_changing_how_early_updates_only_drive_blocks(db, http, fetched, fake_google):
@@ -144,7 +144,7 @@ def test_changing_how_early_updates_only_drive_blocks(db, http, fetched, fake_go
     refresh(db, http, fetched, NOW)
     changed = fake_google.writes()[before:]
     assert len(changed) == 20
-    assert {w.body["summary"] for w in changed} == {"Commute to KMA"}
+    assert {w.body["summary"] for w in changed} == {"Drive to KMA"}
 
 
 def test_changing_a_colour_updates_only_those_blocks(db, http, fetched, fake_google):
@@ -153,14 +153,14 @@ def test_changing_a_colour_updates_only_those_blocks(db, http, fetched, fake_goo
     set_settings(db, fetched, drive_color_id="5")
     refresh(db, http, fetched, NOW)
     changed = fake_google.writes()[before:]
-    assert {w.body["summary"] for w in changed} == {"Commute to KMA"}
+    assert {w.body["summary"] for w in changed} == {"Drive to KMA"}
     before = len(fake_google.writes())
     set_settings(db, fetched, prayer_color_id="2")
     refresh(db, http, fetched, NOW)
     changed = fake_google.writes()[before:]
     # Every prayer block, 5 a day for 14 days, except today's Fajr: it's in the past.
     assert len(changed) == 69
-    assert all(not w.body["summary"].startswith("Commute") for w in changed)
+    assert all(not w.body["summary"].startswith("Drive") for w in changed)
 
 
 def test_switching_a_prayer_home_deletes_only_its_future_drive_block(db, http, fetched, fake_google):
@@ -201,10 +201,10 @@ def test_a_deleted_drive_block_comes_back_when_needed(db, http, fetched, fake_go
         session.commit()
     refresh(db, http, fetched, NOW)  # the drive time is unknown now
     assert len(fake_google.deletes()) == 20
-    assert not [e for e in google_events(fake_google) if e["summary"].startswith("Commute")]
+    assert not [e for e in google_events(fake_google) if e["summary"].startswith("Drive")]
     fake_ors.failure = None
     refresh(db, http, fetched, NOW)
-    drives = [e for e in google_events(fake_google) if e["summary"].startswith("Commute")]
+    drives = [e for e in google_events(fake_google) if e["summary"].startswith("Drive")]
     assert len(drives) == 20
     assert len({e["id"] for e in drives}) == 20
 
@@ -238,26 +238,26 @@ def test_leave_times_across_daylight_saving(target, drive, leave):
 def test_every_event_is_private(db, http, fetched, fake_google):
     refresh(db, http, fetched, NOW)
     events = google_events(fake_google)
-    assert {e["summary"].split()[0] for e in events} >= {"Commute", "Isha", "Fajr"}
+    assert {e["summary"].split()[0] for e in events} >= {"Drive", "Isha", "Fajr"}
     assert all(e["visibility"] == "private" for e in events)
 
 
-def test_old_drive_blocks_are_renamed_and_made_private_in_place(db, http, fetched, fake_google, monkeypatch):
+def test_commute_blocks_are_renamed_and_made_private_in_place(db, http, fetched, fake_google, monkeypatch):
     from app import prayer_sync
 
-    # Before this change: "Drive to KMA", and events weren't private.
+    # Made by an earlier version of this branch: "Commute to KMA", and events weren't private.
     real_event = prayer_sync.google_event
 
     def old_event(row):
         body = real_event(row)
         body.pop("visibility")
-        body["summary"] = body["summary"].replace("Commute to", "Drive to")
+        body["summary"] = body["summary"].replace("Drive to", "Commute to")
         return body
 
     monkeypatch.setattr(prayer_sync, "google_event", old_event)
     refresh(db, http, fetched, NOW)
     old = {e["id"]: e for e in google_events(fake_google)}
-    assert any(e["summary"] == "Drive to KMA" for e in old.values())
+    assert any(e["summary"] == "Commute to KMA" for e in old.values())
     monkeypatch.setattr(prayer_sync, "google_event", real_event)
     before = len(fake_google.writes())
 
@@ -269,10 +269,11 @@ def test_old_drive_blocks_are_renamed_and_made_private_in_place(db, http, fetche
     new = {e["id"]: e for e in google_events(fake_google)}
     assert set(new) == set(old)
     assert {w.method for w in changed} == {"PUT"}
-    # Every future event became private, and drive blocks became commute blocks.
+    # Every future event became private, and commute blocks became drive blocks.
     future = [e for e in new.values() if datetime.fromisoformat(e["start"]["dateTime"]) > later]
     assert future and all(e["visibility"] == "private" for e in future)
-    assert not [e for e in future if e["summary"].startswith("Drive")]
+    assert not [e for e in future if e["summary"].startswith("Commute")]
+    assert any(e["summary"] == "Drive to KMA" for e in future)
     # Past events weren't touched.
     past = [e for e in new.values() if datetime.fromisoformat(e["start"]["dateTime"]) <= later]
     assert past and all("visibility" not in e for e in past)

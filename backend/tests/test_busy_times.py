@@ -102,7 +102,7 @@ def test_a_busy_first_jumuah_moves_to_the_earliest_that_fits(db, http, user, fak
     assert len(fake_google.freebusy_requests()) == 1
 
 
-def test_a_new_busy_time_sends_only_the_jumuah_and_its_commute(db, http, user, fake_google, ors_key):
+def test_a_new_busy_time_sends_only_the_jumuah_and_its_drive_block(db, http, user, fake_google, ors_key):
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
     assert clock(titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")) == "13:30"
@@ -111,7 +111,7 @@ def test_a_new_busy_time_sends_only_the_jumuah_and_its_commute(db, http, user, f
     fake_google.busy["user-a"] = [("2026-10-30T17:00:00Z", "2026-10-30T17:40:00Z")]
     refresh(db, http, user, NOW + timedelta(minutes=5))
     sent = fake_google.writes()[writes:]
-    assert sorted(w.body["summary"] for w in sent) == ["Commute to KMA", "Jumuah at KMA"]
+    assert sorted(w.body["summary"] for w in sent) == ["Drive to KMA", "Jumuah at KMA"]
     assert clock(titled(google_events(fake_google), FRIDAY, "Jumuah at KMA")) == "14:30"
 
 

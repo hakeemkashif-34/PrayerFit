@@ -150,8 +150,6 @@ class MasjidContext:
     time_zone: str  # the masjid's own time zone, for its published times
     times: MasjidTimes | None  # None when it isn't linked to a source
     drive_seconds: int | None
-    # "user" (the user's own commute time) or "ors" (OpenRouteService's driving estimate).
-    commute_source: str = "ors"
     # How long this masjid's Jumuah takes. None means unknown, so 45 is used.
     jumuah_minutes: int | None = None
 
@@ -173,16 +171,12 @@ def _masjid_events(
     length: timedelta = EVENT_LENGTH,
     early: int | None = None,
 ) -> list[PlannedEvent]:
-    """The commute block (when the commute time is known) and the prayer block."""
+    """The drive block (when the drive time is known) and the prayer block."""
     events = []
     early = setup.arrive_early_minutes if early is None else early
     planned = trip(target, early, where.drive_seconds)
     if planned.leave_at is not None and planned.leave_at < planned.arrive_at:
         arriving = f"Arriving {early} min before {aim}." if early else f"Arriving at {aim} time."
-        source = (
-            "your time" if where.commute_source == "user"
-            else "driving estimate from OpenRouteService, no live traffic"
-        )
         events.append(
             PlannedEvent(
                 local_date=local_date,
@@ -191,11 +185,13 @@ def _masjid_events(
                 starts_at=planned.leave_at,
                 ends_at=planned.arrive_at,
                 time_zone=user_zone,
-                source_description="Your commute time" if where.commute_source == "user" else "OpenRouteService",
+                source_description="OpenRouteService",
                 place="masjid",
                 masjid_id=where.masjid.id,
-                summary=f"Commute to {where.label}",
-                description=f"{drive_minutes(where.drive_seconds)} min commute ({source}). {arriving}",
+                summary=f"Drive to {where.label}",
+                description=(
+                    f"{drive_minutes(where.drive_seconds)} min drive (OpenRouteService, no live traffic). {arriving}"
+                ),
                 color_id=setup.drive_color_id,
                 # A popup when it's time to leave.
                 reminder_minutes=0,
