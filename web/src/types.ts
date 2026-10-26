@@ -145,3 +145,6 @@ export type Stats = {
   // Masjids with at least 1 user, most users first. Not linked means no MAWAQIT times.
   masjids: { name: string; users: number; mawaqit_linked: boolean }[];
 };
+
+// DELETE /api/account. False: Google couldn't be reached, so the Prayers calendar may still be there.
+export type AccountDeleted = { google_cleaned: boolean };

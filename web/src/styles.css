@@ -32,6 +32,7 @@
   /* Greyed out parts of the Jumuah day view. */
   --greyed: #dfe5e0;
   --error: #a32020;
+  --error-soft: #fbe9e9;
   --focus: #17663f;
   --shadow: rgb(11 21 16 / 0.14);
 
@@ -587,6 +588,59 @@ button.secondary {
 button.secondary:hover:not(:disabled) {
   background: var(--green-soft);
   color: var(--green-dark);
+}
+
+/* Delete my account: red, and outlined, so it looks careful rather than inviting. */
+button.danger-outline {
+  background: transparent;
+  color: var(--error);
+  border-color: var(--error);
+}
+
+button.danger-outline:hover:not(:disabled) {
+  background: var(--error-soft);
+}
+
+/* The confirm button, once they've asked to delete. */
+button.danger {
+  background: var(--error);
+  color: #ffffff;
+  border-color: var(--error);
+}
+
+button.danger:hover:not(:disabled) {
+  background: #821818;
+  border-color: #821818;
+}
+
+.delete-account {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.delete-account.confirm {
+  padding: 20px 24px;
+  background: var(--card);
+  border: 2px solid var(--error);
+  border-radius: 14px;
+}
+
+.delete-account.confirm h2 {
+  font-size: 1.25rem;
+  margin: 0 0 8px;
+}
+
+.notice.deleted {
+  margin-bottom: 20px;
+}
+
+.notice.deleted p {
+  margin: 0;
+}
+
+.notice.deleted p + p {
+  margin-top: 8px;
 }
 
 button.small {

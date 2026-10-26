@@ -31,9 +31,11 @@ type Props = {
   // Replaces Try again when finishing setup itself failed.
   onRetry?: () => void;
   onSignedOut: () => void;
+  // After "Delete my account". False: Google couldn't be reached.
+  onDeleted: (googleCleaned: boolean) => void;
 };
 
-export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabBlocked = false, onRetry, onSignedOut }: Props) {
+export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabBlocked = false, onRetry, onSignedOut, onDeleted }: Props) {
   const [settings, setSettings] = useState(initial);
   const [calendar, setCalendar] = useState(initialCalendar);
 
@@ -200,9 +202,59 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
             Sign out
           </button>
         </div>
+
+        <DeleteAccount onDeleted={onDeleted} />
       </main>
       <OsmFooter />
     </div>
+  );
+}
+
+export const DELETE_WARNING =
+  "This deletes your PrayerFit account, your settings, and the Prayers calendar from your Google Calendar. This can't be undone.";
+
+// At the very bottom, with a red outline so it looks careful, not inviting.
+// It asks first, with Cancel focused, so a stray Enter doesn't delete anything.
+function DeleteAccount({ onDeleted }: { onDeleted: (googleCleaned: boolean) => void }) {
+  const [asking, setAsking] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function confirm() {
+    setDeleting(true);
+    setError("");
+    try {
+      const answer = await api.deleteAccount();
+      onDeleted(answer.google_cleaned);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't delete your account. Try again.");
+      setDeleting(false);
+    }
+  }
+
+  if (!asking) {
+    return (
+      <div className="delete-account">
+        <button type="button" className="danger-outline" onClick={() => setAsking(true)}>
+          Delete my account
+        </button>
+      </div>
+    );
+  }
+  return (
+    <section className="delete-account confirm" role="alertdialog" aria-labelledby="delete-title" aria-describedby="delete-text">
+      <h2 id="delete-title">Delete my account?</h2>
+      <p id="delete-text">{DELETE_WARNING}</p>
+      {error && <p className="error" role="alert">{error}</p>}
+      <div className="actions">
+        <button type="button" className="danger" onClick={() => void confirm()} disabled={deleting}>
+          {deleting ? "Deleting…" : "Delete my account"}
+        </button>
+        <button type="button" className="secondary" autoFocus onClick={() => setAsking(false)} disabled={deleting}>
+          Cancel
+        </button>
+      </div>
+    </section>
   );
 }
 

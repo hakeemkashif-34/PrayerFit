@@ -13,9 +13,11 @@ type Props = {
   // True when the user is signed in here but Google's sign-in has expired.
   expired?: boolean;
   errorCode?: string | null;
+  // The user just deleted their account. "manual": Google couldn't be reached.
+  deleted?: "done" | "manual";
 };
 
-export function SignIn({ expired = false, errorCode = null }: Props) {
+export function SignIn({ expired = false, errorCode = null, deleted }: Props) {
   const error = errorCode ? (SIGN_IN_ERRORS[errorCode] ?? SIGN_IN_ERRORS.google) : "";
   return (
     <main className="landing">
@@ -40,6 +42,17 @@ export function SignIn({ expired = false, errorCode = null }: Props) {
           </>
         ) : (
           <>
+            {deleted && (
+              <div className="notice deleted" role="status">
+                <p>Your account has been deleted.</p>
+                {deleted === "manual" && (
+                  <p>
+                    We couldn't reach Google, so the "Prayers" calendar may still be in your Google Calendar.
+                    You can delete it there yourself.
+                  </p>
+                )}
+              </div>
+            )}
             <h2>Get started</h2>
             <a className="button google" href={SIGN_IN_URL}>
               Sign in with Google

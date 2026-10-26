@@ -2,10 +2,7 @@
 // The session cookie is HttpOnly, so this code never sees it. The browser
 // sends it because the website and the API are the same site.
 
-import type {
-  CalendarUpdate, JumuahChoices, Masjid, MasjidSuggestion, Me, OptionalAnswers, Preview, SaveResponse, Settings,
-  SlotKey, Stats, Suggestions,
-} from "./types";
+import type { AccountDeleted, CalendarUpdate, JumuahChoices, Masjid, MasjidSuggestion, Me, OptionalAnswers, Preview, SaveResponse, Settings, SlotKey, Stats, Suggestions } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -84,6 +81,8 @@ export const api = {
   syncCalendar: () => request<CalendarUpdate>("POST", "/api/calendar/sync"),
   // /auth/ goes straight to the backend, like the sign-in links.
   signOut: () => request<void>("POST", "/auth/logout"),
+  // Deletes the Prayers calendar, the app's Google access, and everything stored. Signs out too.
+  deleteAccount: () => request<AccountDeleted>("DELETE", "/api/account"),
 };
 
 export const SIGN_IN_URL = "/auth/google/login";

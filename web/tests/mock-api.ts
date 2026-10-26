@@ -123,6 +123,8 @@ export class MockApi {
   jumuahLength: Record<string, number> = {};
   // Drive minutes by masjid ID, like OpenRouteService. Missing means unknown.
   driveMinutes: Record<string, number> = { [KMA.id]: 14, [STITTSVILLE.id]: 20 };
+  // False: "Delete my account" couldn't reach Google to remove the Prayers calendar.
+  googleReachable = true;
   // The one email that can open /stats, like ADMIN_EMAIL. null: nobody.
   adminEmail: string | null = null;
   stats: Stats = {
@@ -288,6 +290,10 @@ export class MockApi {
     switch (key) {
       case "GET /api/me":
         return json(200, this.me);
+      case "DELETE /api/account":
+        // Like the backend: everything is gone, and the session with it.
+        this.me = null;
+        return json(200, { google_cleaned: this.googleReachable });
       case "GET /api/settings":
         s.missing = this.missing();
         return json(200, s);
