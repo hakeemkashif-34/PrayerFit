@@ -588,7 +588,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
    b) Pick home or masjid for each prayer from the weekly grid.
    c) Save each event, then send the ones that changed to Google.
 2. **Days, not hours**: the dates are `today + timedelta(days=n)`. Adding days to a date moves the calendar date. On November 1, 2026 (a 25-hour day), adding 24 hours to midnight would land on 11 pm the same day, and a day would repeat. The tests check the window across November 1 and March 8.
-3. **Titles**: `Fajr at home` or `Dhuhr at KMA`.
+3. **Titles**: `Fajr at home` or `Dhuhr at KMA`. (Milestone 5 changed home prayers to just `Fajr`, see section 24 there.)
    a) The masjid part is the short name if there is one, then the OpenStreetMap name, then "the masjid".
    b) The short name is per user, so one person's "KMA" doesn't change anyone else's calendar.
 4. **Descriptions**:
@@ -846,7 +846,7 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 
 ### 15. How to check it works
 
-1. **Tests**: `pytest` in `backend` (`682 passed`) and `npx playwright test` in `web` (`142 passed`).
+1. **Tests**: `pytest` in `backend` (`683 passed`) and `npx playwright test` in `web` (`142 passed`).
 2. **Google Cloud Console**: in **Google Auth Platform > Data Access**, add `https://www.googleapis.com/auth/calendar.freebusy`. Then sign out and in again, and the banner on Settings goes away.
 3. **For real**: get a free ORS key and put it in `.env`. Then follow "Masjid times from MAWAQIT" in the README to link KMA, and run `run-now --force`. In Google Calendar: masjid prayers at KMA's iqamah, home prayers at KMA's adhan, each with its source, a drive block with a reminder before each masjid prayer, Jumuah on the coming Friday if KMA is a Jumuah masjid, every event private, and the colours I picked.
 4. **Jumuah and busy times**: pick KMA's 1st Jumuah, then put a test event in my main calendar over it on the coming Friday. Run `run-now --force` and check Jumuah moved to the 2nd in Google Calendar, with "Your pick (1st Jumuah) clashes with your calendar" in its description.
@@ -920,3 +920,10 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 3. Drive blocks are their own length: from leaving home to arriving.
 4. **Existing users**: a block's end time is part of its hash, so the next update sends only the future Fajr, Asr, and Maghrib blocks, now 5 minutes shorter. They keep their IDs, so they're updated in place. Past events and Dhuhr and Isha aren't sent. `test_old_15_minute_blocks_are_shortened_in_place` checks this.
 5. The tests write the lengths out themselves instead of importing `PRAYER_LENGTHS`, so a wrong change in the app makes them fail.
+
+### 24. Event titles
+
+1. Prayers at the masjid say where: `Dhuhr at KMA`. Every other prayer is just its name: `Fajr`, not `Fajr at home`. The calendar is already called "Prayers", so "at home" didn't add anything.
+2. Drive blocks stay `Drive to KMA`, and Jumuah stays `Jumuah at KMA`.
+3. **Renamed, not duplicated**: event IDs don't depend on the title, so the next update changes each future home prayer's title in place. Past events keep their old title. `test_old_at_home_titles_are_renamed_in_place` checks this, with no inserts at all.
+

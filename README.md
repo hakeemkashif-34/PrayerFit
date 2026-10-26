@@ -129,7 +129,7 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 7. Press **Finish** (or **Skip**). Nothing is written to Google Calendar before this. A new tab opens and says "Adding your prayers to Google Calendar..." while the calendar fills, in about 10 to 20 seconds, then shows Google Calendar for the account you signed in with. The first tab goes to the Settings page. If the update fails, the new tab shows the error with a link back to Settings, and Settings shows it too, with **Try again**. If your browser blocks the new tab, Settings says so, and **Open Google Calendar** is right there.
 8. Calculated times always use ISNA with standard Asr. Your main masjid becomes your Jumuah masjid. On the Settings page you can remove it or add others. Praying at home means no Jumuah masjids.
 9. Every event the app makes is private, so people you share your calendar with only see "busy".
-10. In Google Calendar, the **Prayers** calendar has today and the next 13 days, like `Fajr at home` and `Dhuhr at KMA`. Each description says where the time came from. Until your masjid is linked to MAWAQIT (below), masjid prayers use the calculated time and say the iqamah isn't available.
+10. In Google Calendar, the **Prayers** calendar has today and the next 13 days, like `Fajr` and `Dhuhr at KMA`. Prayers at the masjid say where. Every other prayer is just its name. Each description says where the time came from. Until your masjid is linked to MAWAQIT (below), masjid prayers use the calculated time and say the iqamah isn't available.
 
 ### 4. Change a setting
 
@@ -263,11 +263,11 @@ export DATABASE_URL=postgresql://muslim_calendar:change-me@localhost:5432/muslim
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `682 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `683 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`357 passed, 325 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`357 passed, 326 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
