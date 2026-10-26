@@ -310,14 +310,15 @@ test("Jumuah masjids are added with the masjid search and can be removed", async
 
   await page.getByRole("button", { name: "Edit jumuah masjids" }).click();
   await page.getByRole("button", { name: "Remove Stittsville Masjid" }).click();
-  await page.getByRole("combobox").pressSequentially("Toronto", { delay: 30 });
-  await page.getByRole("option", { name: /^Kanata Masjid Toronto/ }).click();
+  // A masjid that isn't on the map, found by its address.
+  await page.getByRole("combobox").pressSequentially("3500 Fallowfield", { delay: 30 });
+  await page.getByRole("option", { name: /^3500 Fallowfield Road/ }).click();
   await page.getByRole("button", { name: "Save", exact: true }).click();
 
   expect((await api.sent("PUT", "/api/settings/jumuah", 1))[0].body).toEqual({
-    masjid_ids: ["11111111-1111-1111-1111-111111111111", "33333333-3333-3333-3333-333333333333"],
+    masjid_ids: ["11111111-1111-1111-1111-111111111111", "44444444-4444-4444-4444-444444444444"],
   });
-  await expect(page.getByRole("region", { name: "Jumuah masjids" })).toContainText("Kanata Masjid Toronto");
+  await expect(page.getByRole("region", { name: "Jumuah masjids" })).toContainText("3500 Fallowfield Road");
 });
 
 test("Jumuah masjids keep the order they were added in, each with where its times come from", async ({ page }) => {
@@ -508,3 +509,27 @@ test("an item opens and closes smoothly, and not at all with motion turned off",
   expect(await easing()).toBe(0);
 });
 
+
+test("a notice at the top says when a masjid's times couldn't be confirmed", async ({ page }) => {
+  const notice = "KMA's times couldn't be confirmed since Oct 24, 2026. Your calendar is using calculated times until they're back.";
+  await new MockApi().signedIn({ ...finishedSettings(), masjid_notices: [notice] }).install(page);
+  await page.goto("/");
+  const shown = page.getByRole("status").filter({ hasText: notice });
+  await expect(shown).toBeVisible();
+  // Above both cards.
+  const [box, card] = await Promise.all([shown.boundingBox(), page.locator(".settings-card.required").boundingBox()]);
+  expect(box!.y).toBeLessThan(card!.y);
+});
+
+test("no notice when every masjid's times are fresh", async ({ page }) => {
+  await new MockApi().signedIn(finishedSettings()).install(page);
+  await page.goto("/");
+  await expect(page.getByText(/couldn't be confirmed/)).toHaveCount(0);
+});
+
+test("where calculated times come from is on Settings, since events don't say it", async ({ page }) => {
+  await new MockApi().signedIn(finishedSettings()).install(page);
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: "Location" })).toContainText("Calculated times use ISNA with standard Asr.");
+  await expect(page.getByRole("region", { name: "Main masjid" })).toContainText("Times from MAWAQIT, updated Oct 25, 2026");
+});

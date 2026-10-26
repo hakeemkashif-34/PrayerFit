@@ -41,7 +41,8 @@ export function LocationStep({ current, page = false, onSaved, onKeep, keepLabel
     <section aria-labelledby="location-title">
       <Heading id="location-title">What's your location?</Heading>
       {example && <p className="hint example">{example}</p>}
-      {current && (
+      {/* Settings shows the saved place with its Cancel button. Setup shows it in the box instead. */}
+      {current && onKeep && (
         <div className="current">
           <p>
             Saved: <strong>{current}</strong>
@@ -60,10 +61,14 @@ export function LocationStep({ current, page = false, onSaved, onKeep, keepLabel
         renderOption={(s) => s.label}
         optionName={(s) => s.label}
         onPick={pick}
+        // The picked address replaces what was typed. Labels never have a postal code.
+        fillOnPick={(s) => s.label}
+        initialText={onKeep ? undefined : current ?? undefined}
         emptyText="No places found. Try adding the city."
         disabled={saving}
       />
       {saving && <p className="hint">Saving…</p>}
+      {!saving && current && !onKeep && <p className="hint saved-line">✓ Saved</p>}
       {error && (
         <p className="error" role="alert">
           {error}

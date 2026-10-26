@@ -1,6 +1,6 @@
-// The masjid search box: masjids from Photon as the user types, closest
-// to home first, each with its distance. A masjid that isn't on the map
-// can be found by typing its address.
+// The masjid search box: masjids within 100 km from Photon as the user
+// types, closest to home first, each with its distance. A masjid that isn't
+// on the map can be found by typing its address.
 
 import { useState } from "react";
 import { api, ApiError } from "../api";
@@ -48,7 +48,7 @@ export function MasjidSearch({ onPicked, placeholder = "Start typing the masjid'
         )}
         optionName={(s) => `${s.label}, ${s.distance_km} km away`}
         onPick={pick}
-        emptyText="No masjids found. Try its address instead."
+        emptyText="No masjid found near you. Check the spelling, or type the masjid's address instead."
         disabled={saving || disabled}
       />
       <p className="hint small-line">Can't find it? Type its address.</p>

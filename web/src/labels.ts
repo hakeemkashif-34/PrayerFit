@@ -82,6 +82,13 @@ export function timeText(iso: string, timeZone: string): string {
   return `${part("hour")}:${part("minute")} ${part("dayPeriod").toUpperCase()}`;
 }
 
+// "1:30 to 2:15 PM", or "11:30 AM to 12:15 PM" when AM and PM differ.
+export function spanText(startIso: string, endIso: string, timeZone: string): string {
+  const start = timeText(startIso, timeZone);
+  const end = timeText(endIso, timeZone);
+  return start.slice(-2) === end.slice(-2) ? `${start.slice(0, -3)} to ${end}` : `${start} to ${end}`;
+}
+
 // "5" -> 5. Anything that isn't a whole number from min to max is null.
 export function wholeMinutes(text: string, min: number, max: number): number | null {
   if (!/^\d{1,3}$/.test(text.trim())) return null;
@@ -91,3 +98,17 @@ export function wholeMinutes(text: string, min: number, max: number): number | n
 
 export const MAX_EARLY = 60;
 export const EARLY_ERROR = `Enter a whole number of minutes from 0 to ${MAX_EARLY}.`;
+
+// Minutes since midnight on the clock in that time zone: "1:30 PM" -> 810.
+export function minutesIntoDay(iso: string, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", hourCycle: "h23", timeZone })
+    .formatToParts(new Date(iso));
+  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return part("hour") * 60 + part("minute");
+}
+
+// 660 -> "11 AM", 720 -> "12 PM".
+export function hourText(minutes: number): string {
+  const hour = Math.floor(minutes / 60) % 24;
+  return `${hour % 12 || 12} ${hour < 12 ? "AM" : "PM"}`;
+}

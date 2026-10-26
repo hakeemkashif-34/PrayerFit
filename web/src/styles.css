@@ -1,45 +1,42 @@
 /* The look of the whole website.
 
-   A calm tool for praying on time, so the interface stays quiet: one deep
-   masjid green for anything you can press, ink for values, slate for
-   labels, and a cool off-white page. The one bold thing is the hadith on
-   the landing page, in Amiri with a brass bar. Brass is used nowhere else.
+   Light only: white, black, and green, on a light green page. It looks the
+   same whatever the device's dark mode setting is. Green is for anything
+   you can press. Text is near-black, and the quieter grey-green text is
+   still at least 5.6:1 on the light green, so it's easy to read.
 
-   Every colour is a token here, so dark mode only changes the tokens.
+   Every colour is a token here.
    Mobile first: one column and large tap targets, two columns on wider screens. */
 
 :root {
-  /* Masjid green: buttons, links, focus, the picked Jumuah. */
-  --green: #1f5f4a;
-  --green-hover: #174a39;
-  --green-dark: #164536;
-  --green-soft: #e7f2ed;
-  /* Text on a solid green button or dot. */
+  /* Green: buttons, links, focus, the picked Jumuah. White text on it is 7:1. */
+  --green: #17663f;
+  --green-hover: #0f4a2d;
+  --green-dark: #0f4a2d;
+  /* A pale green for picked answers and the hovered suggestion. */
+  --green-soft: #d7ecdc;
   --on-green: #ffffff;
-  /* Ink for values and headings, slate for labels and hints. */
-  --text: #17201c;
-  --muted: #5c6862;
-  --faint: #8a948f;
-  --line: #dde3e0;
-  /* Mist for the page, paper for the main surfaces, and text boxes. */
-  --background: #f5f7f6;
+  /* Near-black for values and headings, grey-green for labels and hints. */
+  --text: #0b1510;
+  --muted: #33463a;
+  --faint: #4f6357;
+  --line: #b9d4bf;
+  /* The light green page, and white cards and text boxes. */
+  --background: #e8f3ea;
   --card: #ffffff;
   --field: #ffffff;
+  /* Greyed out parts of the Jumuah day view. */
+  --greyed: #dfe5e0;
   --error: #a32020;
-  --warning-bg: #fff4dc;
-  --focus: #1f5f4a;
-  --shadow: rgb(23 32 28 / 0.12);
-  /* Brass, only for the hadith. */
-  --quote-bg: #fbf4e2;
-  --quote-accent: #b07d1c;
-  --quote-text: #3a2c0f;
-  --quote-source: #7a5a1c;
+  --focus: #17663f;
+  --shadow: rgb(11 21 16 / 0.14);
 
   /* Both fonts are served from our own site (see main.tsx). */
   --font: "Plus Jakarta Sans Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --serif: "Amiri", Georgia, "Times New Roman", serif;
   --radius: 12px;
-  color-scheme: light dark;
+  /* Light only, so the browser's own parts (scrollbars, checkboxes) stay light too. */
+  color-scheme: light;
   font-family: var(--font);
   /* Bigger than the browser's 16px, and bigger again on wider screens. */
   font-size: 17px;
@@ -53,31 +50,6 @@
 @media (min-width: 760px) {
   :root {
     font-size: 18px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --green: #4cb38a;
-    --green-hover: #63c79d;
-    --green-dark: #a9e2c8;
-    --green-soft: #17342a;
-    --on-green: #0b1712;
-    --text: #e6ece9;
-    --muted: #a6b3ad;
-    --faint: #7f8c86;
-    --line: #2d3a35;
-    --background: #0f1513;
-    --card: #161e1b;
-    --field: #1c2622;
-    --error: #ff8f85;
-    --warning-bg: #3a2f12;
-    --focus: #7fd3ae;
-    --shadow: rgb(0 0 0 / 0.5);
-    --quote-bg: #2b2414;
-    --quote-accent: #e3b552;
-    --quote-text: #f6e8c4;
-    --quote-source: #d9b56a;
   }
 }
 
@@ -266,12 +238,12 @@ strong {
   margin-bottom: 28px;
 }
 
-/* The hadith: Amiri, large, in a warm block with a brass bar on the left. */
+/* The hadith: Amiri, large, on white with a green bar on the left. */
 .hadith {
   margin: 0;
   padding: 24px 24px 22px;
-  background: var(--quote-bg);
-  border-left: 6px solid var(--quote-accent);
+  background: var(--card);
+  border-left: 6px solid var(--green);
   border-radius: 4px 18px 18px 4px;
 }
 
@@ -284,7 +256,7 @@ strong {
   font-family: var(--serif);
   font-size: 1.875rem;
   line-height: 1.45;
-  color: var(--quote-text);
+  color: var(--text);
   text-wrap: pretty;
 }
 
@@ -292,7 +264,7 @@ strong {
   margin-top: 14px;
   font-size: 0.9375rem;
   font-weight: 650;
-  color: var(--quote-source);
+  color: var(--green-dark);
 }
 
 .card.sign-in {
@@ -652,15 +624,17 @@ button.link:hover:not(:disabled) {
 }
 
 .notice {
-  background: var(--green-soft);
+  background: var(--card);
   color: var(--text);
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--green);
   border-radius: var(--radius);
   padding: 14px 18px;
-  margin-bottom: 20px;
+  margin: 0 0 20px;
 }
 
 .notice.warning {
-  background: var(--warning-bg);
+  border-left-color: var(--error);
 }
 
 /* The banner asking older users to sign in again. */
@@ -699,6 +673,8 @@ button.link:hover:not(:disabled) {
   margin-top: 20px;
 }
 
+/* In the page's flow, not floating over it: an open list pushes what's
+   below it down, so it never covers the next question. */
 ul.suggestions {
   list-style: none;
   margin: 6px 0 0;
@@ -706,11 +682,7 @@ ul.suggestions {
   background: var(--field);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  box-shadow: 0 16px 32px -16px var(--shadow);
-  position: absolute;
-  left: 0;
-  right: 0;
-  z-index: 10;
+  box-shadow: 0 10px 24px -18px var(--shadow);
 }
 
 ul.suggestions li {
@@ -848,6 +820,7 @@ button.colour-button:hover {
   color: var(--muted);
 }
 
+/* Like the suggestions, it pushes the page down instead of covering it. */
 ul.colour-list {
   list-style: none;
   margin: 6px 0 0;
@@ -855,11 +828,7 @@ ul.colour-list {
   background: var(--field);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  box-shadow: 0 16px 32px -16px var(--shadow);
-  position: absolute;
-  left: 0;
-  right: 0;
-  z-index: 10;
+  box-shadow: 0 10px 24px -18px var(--shadow);
 }
 
 ul.colour-list li {
@@ -1048,188 +1017,485 @@ ul.colour-list li[aria-selected="true"] {
   font-size: 1.0625rem;
 }
 
-/* ---- The Jumuah question's midday calendar ---- */
+/* ---- The Jumuah question: a Friday in a day calendar ---- */
 
 .chooser {
   margin-top: 8px;
 }
 
-.day-view {
-  display: grid;
-  column-gap: 6px;
+.chooser .notice {
   margin-top: 12px;
-  padding: 10px 0;
-  position: relative;
 }
 
-/* A line every half hour. Height 0, so the time label never makes its row taller. */
-.day-line {
+.friday {
+  margin-top: 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.friday-head {
+  padding: 10px 16px 10px 72px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Times down the side, with a line across every hour. */
+.friday-body {
+  position: relative;
+  margin: 12px 0;
+}
+
+.friday-hour {
+  position: absolute;
+  left: 0;
+  right: 0;
   height: 0;
   border-top: 1px solid var(--line);
-  position: relative;
-  z-index: 0;
 }
 
-.day-time {
+.friday-hour span {
   position: absolute;
-  top: -0.7em;
-  left: 0;
+  top: -0.65em;
+  left: 8px;
+  width: 56px;
   font-size: 0.75rem;
   line-height: 1.2;
   color: var(--muted);
-  background: var(--background);
-  padding-right: 4px;
-}
-
-.card .day-time {
   background: var(--card);
 }
 
-.settings-card.optional .day-time {
-  background: var(--background);
+/* The day itself. Everything that isn't a Jumuah block stays greyed out. */
+.friday-day {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 68px;
+  right: 8px;
+  background: repeating-linear-gradient(
+    135deg, var(--greyed) 0 6px, color-mix(in srgb, var(--greyed) 70%, var(--card)) 6px 12px
+  );
+  border-radius: 8px;
 }
 
-.slot {
-  z-index: 2;
+.friday-slot {
+  position: absolute;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 1px;
   margin: 0;
-  padding: 7px 10px;
+  border: 2px solid var(--green);
   border-radius: 10px;
-  border: 1.5px solid var(--line);
-  background: var(--field);
+  background: var(--card);
   color: var(--text);
   font-size: 0.875rem;
   font-weight: 500;
-  line-height: 1.35;
+  line-height: 1.3;
   cursor: pointer;
-  overflow-wrap: anywhere;
-  transition: border-color 0.15s, background-color 0.15s;
+  overflow: hidden;
+  box-shadow: 0 2px 6px -3px var(--shadow);
+  transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
 }
 
-.slot:hover {
-  border-color: var(--green);
+.friday-slot:hover {
+  box-shadow: 0 0 0 2px var(--green);
 }
 
-.slot.selected {
-  background: var(--green-soft);
-  border-color: var(--green);
-  box-shadow: 0 0 0 1.5px var(--green);
+/* From leaving home to Jumuah: a lighter part at the top of the block. */
+.slot-leave {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: 0.75rem;
+  font-weight: 650;
   color: var(--green-dark);
+  background: var(--green-soft);
+  border-bottom: 1px dashed var(--green);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
-.slot:has(input:focus-visible) {
+.slot-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  min-height: 0;
+}
+
+/* Each line keeps its own height. Without this, the name (which hides its
+   overflow) is the first line squeezed to nothing in a short block. */
+.slot-main > * {
+  flex: none;
+}
+
+.slot-name {
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The picked block: solid green with white text, and a tick. */
+.friday-slot.selected {
+  background: var(--green);
+  color: var(--on-green);
+  box-shadow: 0 0 0 3px var(--green-soft), 0 6px 14px -6px var(--shadow);
+}
+
+.friday-slot.selected .slot-leave {
+  background: var(--green-dark);
+  color: var(--on-green);
+  border-bottom-color: var(--on-green);
+}
+
+.slot-picked {
+  margin-top: 2px;
+  font-weight: 800;
+}
+
+.friday-slot:has(input:focus-visible) {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 
-.slot-name {
-  font-size: 0.9375rem;
-}
-
-.slot-fit {
-  font-weight: 700;
-}
-
 /* ---- The "Adding your prayers" page ---- */
 
-.page.adding {
-  max-width: 960px;
+/* Most of the screen on any device: big text, then the week below it. */
+main.adding {
+  /* Exactly the screen's height, so the week below fills what's left and never runs off the bottom. */
+  height: 100vh;
+  height: 100dvh;
+  min-height: 560px;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 16px;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
-/* One line each, never wrapping. The heading shrinks with the screen instead:
-   it's about 20 of its own font sizes wide, so dividing the space left after
-   the page's side padding (32px on a phone, 64px wider) by 20.5 always fits. */
+main.adding h1 {
+  font-size: clamp(2rem, min(6vw, 7vh), 3.75rem);
+  line-height: 1.1;
+  margin: 8px 0 12px;
+}
+
 .one-line {
   white-space: nowrap;
 }
 
-.adding h1.one-line {
-  font-size: min(2rem, calc((100vw - 40px) / 20.5));
+/* "This can take up to a minute." always fits on one line: it's about 15 of
+   its own font sizes wide, so the screen's width minus the padding, divided by 16, fits. */
+.adding-wait {
+  font-size: min(1.75rem, calc((100vw - 32px) / 16));
+  color: var(--muted);
+  margin: 0 0 16px;
 }
 
-@media (min-width: 760px) {
-  .adding h1.one-line {
-    font-size: min(2rem, calc((min(100vw, 960px) - 72px) / 20.5));
+.adding-caption {
+  font-size: clamp(1.125rem, 3vw, 1.75rem);
+  font-weight: 700;
+  color: var(--green-dark);
+  margin: 8px 0 12px;
+  min-height: 1.4em;
+}
+
+.week-filling {
+  --prayer: var(--green);
+  --drive: var(--green-dark);
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.week {
+  flex: 1;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px 12px 16px 0;
+}
+
+.week-head,
+.week-body {
+  display: grid;
+  grid-template-columns: 52px repeat(7, minmax(0, 1fr));
+  column-gap: 6px;
+}
+
+.week-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-weight: 700;
+  font-size: clamp(0.8125rem, 1.6vw, 1.0625rem);
+  padding: 4px 0 10px;
+  border-radius: 10px;
+  color: var(--muted);
+  transition: color 0.3s, background-color 0.3s;
+}
+
+.week-day small {
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+/* The day being filled in. */
+.week-day.now {
+  color: var(--on-green);
+  background: var(--green);
+}
+
+.week-body {
+  position: relative;
+  flex: 1;
+  grid-template-rows: 1fr;
+  margin-top: 8px;
+}
+
+.week-hour {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px solid var(--line);
+}
+
+.week-hour span {
+  position: absolute;
+  top: -0.65em;
+  left: 4px;
+  font-size: 0.6875rem;
+  color: var(--muted);
+  background: var(--card);
+  padding-right: 4px;
+}
+
+.week-column {
+  position: relative;
+  grid-row: 1;
+  height: 100%;
+}
+
+.week-block {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-radius: 5px;
+  background: var(--prayer);
+  box-shadow: 0 2px 6px -2px var(--shadow);
+  /* Prayer blocks grow down from their start time, over most of a second. */
+  transform-origin: top;
+  animation: prayer-in 0.8s ease-out both;
+}
+
+/* Drive blocks are narrower, so the prayer under them still shows, and slide in from the left. */
+.week-block.drive {
+  left: 18%;
+  background: var(--drive);
+  animation: drive-in 0.8s ease-out both;
+}
+
+@keyframes prayer-in {
+  from {
+    opacity: 0;
+    transform: scaleY(0.2);
   }
 }
 
-/* A week of prayer blocks: 7 days across, 5 prayers down. Each block drops in
-   on its turn (--i), day by day, then they all fade in the same order and it
-   starts again. Every block has the same 7 second cycle, so they stay in step. */
-.mini-week {
-  --prayer: var(--green);
+@keyframes drive-in {
+  from {
+    opacity: 0;
+    transform: translateX(-120%);
+  }
+}
+
+/* ---- The private /stats page ---- */
+
+.page.stats-page {
+  max-width: 980px;
+}
+
+.stat-tiles {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  grid-template-rows: auto repeat(5, 16px);
-  gap: 6px;
-  width: min(100%, 340px);
-  margin: 28px 0 0;
-  padding: 14px 16px 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0 24px;
+}
+
+@media (min-width: 760px) {
+  .stat-tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 14px;
 }
 
-.mini-day {
-  text-align: center;
-  font-size: 0.75rem;
-  font-weight: 700;
+.stat-value {
+  font-size: 2.25rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.stat-name {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.stats-section {
+  margin-bottom: 20px;
+}
+
+.stats-graph {
+  margin: 0;
+}
+
+.stats-graph figcaption {
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.legend {
+  display: flex;
+  gap: 20px;
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+  font-size: 0.9375rem;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Line keys, the same shape as the marks. */
+.legend .key,
+.tip-key {
+  display: inline-block;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.graph-box {
+  position: relative;
+}
+
+.graph-box svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: pan-y;
+}
+
+.graph-box .grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.graph-box .tick,
+.graph-box .end-label {
+  fill: var(--muted);
+  font-size: 12px;
+}
+
+.graph-box .end-label {
+  fill: var(--text);
+  font-weight: 600;
+}
+
+.graph-box .series {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.graph-box .crosshair {
+  stroke: var(--faint);
+  stroke-width: 1;
+}
+
+.graph-box .dot {
+  stroke: var(--card);
+  stroke-width: 2;
+}
+
+.graph-tip {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 20px -12px var(--shadow);
+  font-size: 0.875rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tip-day {
   color: var(--muted);
 }
 
-.mini-cell {
-  border-radius: 4px;
-  background: var(--background);
+.graph-tip .tip-key {
+  margin-right: 6px;
+  vertical-align: middle;
 }
 
-.mini-block {
-  display: block;
-  height: 100%;
-  border-radius: 4px;
-  background: var(--prayer);
-  opacity: 0;
-  animation: mini-drop 7s ease-out infinite;
-  animation-delay: calc(var(--i) * 0.13s);
+.graph-table {
+  margin-top: 12px;
 }
 
-@keyframes mini-drop {
-  0% {
-    opacity: 0;
-    transform: translateY(-14px);
-  }
-  4% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  74% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  80%,
-  100% {
-    opacity: 0;
-    transform: translateY(0);
-  }
+.graph-table table {
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.graph-table th,
+.graph-table td {
+  padding: 6px 16px 6px 0;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.masjid-problems li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
 }
 
 .spinner {
   display: none;
 }
 
-/* Motion turned off on the device: no falling blocks, just a slow spinner,
+/* Motion turned off on the device: no week filling in, just a slow spinner,
    and no small movements anywhere else either. */
 @media (prefers-reduced-motion: reduce) {
-  .mini-week {
-    display: none;
-  }
-
   .spinner {
     display: block;
-    width: 40px;
-    height: 40px;
-    margin-top: 28px;
+    width: 64px;
+    height: 64px;
+    margin: 40px auto 0;
     border: 4px solid var(--line);
     border-top-color: var(--green);
     border-radius: 50%;
@@ -1238,7 +1504,7 @@ ul.colour-list li[aria-selected="true"] {
 
   button,
   .button,
-  .slot,
+  .friday-slot,
   input {
     transition: none;
   }
@@ -1253,4 +1519,11 @@ ul.colour-list li[aria-selected="true"] {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* "✓ Saved" under the location box in setup. */
+.hint.saved-line {
+  margin: 6px 0 0;
+  color: var(--green-dark);
+  font-weight: 600;
 }

@@ -51,21 +51,34 @@ for (const scheme of ["light", "dark"] as const) {
     expect(hadith.family).toContain("Amiri");
     expect(await page.evaluate(() => document.fonts.check('16px "Amiri"', "ﷺ"))).toBe(true);
     expect(hadith.size).toBeGreaterThan(heading.size);
-    // A quote block with its own background and an accent bar, set apart from the page.
-    expect(block.background).not.toBe(body.background);
+    // A white quote block with a green bar, set apart from the light green page. Near-black text, like the heading.
+    expect(block.background).toBe("rgb(255, 255, 255)");
+    expect(body.background).not.toBe(block.background);
     expect(parseFloat(block.border)).toBeGreaterThanOrEqual(4);
-    expect(hadith.colour).not.toBe(heading.colour);
+    expect(hadith.colour).toBe(heading.colour);
   });
 }
 
-test("dark mode changes the page colours", async ({ page }) => {
-  await page.emulateMedia({ colorScheme: "dark" });
+test("light only: the same white, black, and green on light green, even with dark mode turned on", async ({ page }) => {
+  const colours = async () => {
+    const body = await page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor);
+    const button = await page.getByRole("link", { name: "Sign in with Google" }).evaluate((el) => {
+      const s = getComputedStyle(el);
+      return [s.backgroundColor, s.color];
+    });
+    const heading = await page.locator("h1").evaluate((el) => getComputedStyle(el).color);
+    return { body, button, heading };
+  };
   await new MockApi().install(page);
+  await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/");
-  const background = await page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor);
-  // Dark: every channel is low.
-  const [r, g, b] = background.match(/\d+/g)!.map(Number);
-  expect(Math.max(r, g, b)).toBeLessThan(60);
+  const light = await colours();
+  // Light green page, a green button with white text, near-black headings.
+  expect(light).toEqual({
+    body: "rgb(232, 243, 234)", button: ["rgb(23, 102, 63)", "rgb(255, 255, 255)"], heading: "rgb(11, 21, 16)",
+  });
+  await page.emulateMedia({ colorScheme: "dark" });
+  expect(await colours()).toEqual(light);
 });
 
 test("text is bigger than the browser's 16px, and bigger again on a computer", async ({ page }, info) => {

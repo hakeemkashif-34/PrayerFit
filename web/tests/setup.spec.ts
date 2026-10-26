@@ -105,7 +105,9 @@ test("the full setup: required page, optional page, then a filled calendar", asy
   expect((await api.sent("POST", "/api/setup/location/suggest")).map((c) => c.body)).toEqual([{ query: "200 Kanata" }]);
   await options.first().click();
   expect((await api.sent("PUT", "/api/settings/location", 1))[0].body).toEqual({ query: "200 Kanata", index: 0 });
-  await expect(page.getByText(`Saved: ${HOME_PLACE}`)).toBeVisible();
+  // The box shows the address that was picked, not what was typed.
+  await expect(page.getByRole("combobox", { name: "Address" })).toHaveValue(HOME_PLACE);
+  await expect(page.getByText("✓ Saved")).toBeVisible();
   // Still on screen, so it's usable again once saved.
   await expect(page.getByText("Saving…")).toHaveCount(0);
   await expect(addressBox(page)).toBeEnabled();
@@ -114,10 +116,8 @@ test("the full setup: required page, optional page, then a filled calendar", asy
   await expect(page.getByText("Can't find it? Type its address.")).toBeVisible();
   await expect(page.getByRole("button", { name: "I pray at home" })).toBeVisible();
   await masjidBox(page).pressSequentially("Kanata", { delay: 30 });
-  await expect(page.getByRole("option")).toHaveText([
-    /^Kanata Muslim Association1\.1 km away · 351 Sandhill Rd/,
-    /^Kanata Masjid Toronto352\.1 km away/,
-  ]);
+  // Within 100 km only, so the Kanata Masjid in Toronto (352 km) isn't there.
+  await expect(page.getByRole("option")).toHaveText([/^Kanata Muslim Association1\.1 km away · 351 Sandhill Rd/]);
   await page.getByRole("option", { name: /^Kanata Muslim Association/ }).click();
   await expect(page.locator(".picked-masjid")).toContainText("Kanata Muslim Association1.1 km away");
 
@@ -134,7 +134,7 @@ test("the full setup: required page, optional page, then a filled calendar", asy
   await expect(page.getByRole("main").getByRole("heading", { level: 2 }).last()).toHaveText(
     "Generally speaking, which Jumuah would you like to attend?",
   );
-  await expect(page.getByRole("radio", { name: /^Kanata Muslim Association 1st Jumuah 1:30 PM to 2:15 PM/ })).toBeChecked();
+  await expect(page.getByRole("radio", { name: /Kanata Muslim Association 1st Jumuah 1:30 to 2:15 PM/ })).toBeChecked();
   // Nothing about the masjid, grid, or Jumuah is saved until Next.
   expect(api.calls("PUT", "/api/settings/main-masjid")).toHaveLength(0);
   await page.getByRole("button", { name: "Next" }).click();
@@ -210,7 +210,9 @@ test("Back goes to page 1 without losing anything on either page", async ({ page
 
   await page.getByRole("button", { name: "← Back" }).click();
   await expectPage(page, 1);
-  await expect(page.getByText(`Saved: ${HOME_PLACE}`)).toBeVisible();
+  // The box shows the address that was picked, not what was typed.
+  await expect(page.getByRole("combobox", { name: "Address" })).toHaveValue(HOME_PLACE);
+  await expect(page.getByText("✓ Saved")).toBeVisible();
   await expect(page.locator(".picked-masjid")).toContainText("Stittsville Masjid");
   await expect(page.getByLabel("Asr on Tuesday at the masjid")).toBeChecked();
 
@@ -300,7 +302,7 @@ test("I pray at home means every prayer at home, with no weekly grid", async ({ 
   expect(api.calls("PUT", "/api/settings/weekly")).toHaveLength(0);
   // No Jumuah masjid, so there's no Jumuah to ask about or save.
   expect(api.calls("PUT", "/api/settings/jumuah-pick")).toHaveLength(0);
-  expect(api.calls("GET", "/api/jumuah/slots")).toHaveLength(0);
+  expect(api.calls("POST", "/api/jumuah/slots")).toHaveLength(0);
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
 });
 
@@ -353,6 +355,57 @@ test("Change goes back to the masjid search box", async ({ page }) => {
   await pickMasjid(page, "Stittsville", "Stittsville Masjid");
 
   await expect(page.locator(".picked-masjid")).toContainText("Stittsville Masjid5.8 km away");
+});
+
+test("a typo with no masjid nearby says so", async ({ page }) => {
+  await new MockApi().signedIn().install(page);
+  await page.goto("/");
+  await pickHome(page);
+  await masjidBox(page).pressSequentially("Kanta M", { delay: 30 });
+  await expect(page.getByRole("listbox")).toHaveText(
+    "No masjid found near you. Check the spelling, or type the masjid's address instead.",
+  );
+});
+
+test("only masjids within 100 km are suggested", async ({ page }) => {
+  await new MockApi().signedIn().install(page);
+  await page.goto("/");
+  await pickHome(page);
+  await masjidBox(page).pressSequentially("Kanata", { delay: 30 });
+  // The Kanata Masjid in Toronto is 352 km away.
+  await expect(page.getByRole("option")).toHaveCount(1);
+  await expect(page.getByRole("option", { name: /^Kanata Muslim Association/ })).toBeVisible();
+});
+
+test("an open suggestion list pushes the next question down instead of covering it", async ({ page }) => {
+  await new MockApi().signedIn().install(page);
+  await page.goto("/");
+  const masjidHeading = page.getByRole("heading", { name: MASJID });
+  const before = (await masjidHeading.boundingBox())!.y;
+  await addressBox(page).pressSequentially("Kanata", { delay: 30 });
+  const list = page.getByRole("listbox");
+  await expect(list.getByRole("option")).not.toHaveCount(0);
+  const [listBox, after] = [(await list.boundingBox())!, (await masjidHeading.boundingBox())!.y];
+  expect(after).toBeGreaterThan(before);
+  expect(after).toBeGreaterThanOrEqual(listBox.y + listBox.height);
+  // Nothing under the list shows through: the list isn't floating over the page.
+  expect(await list.evaluate((el) => getComputedStyle(el).position)).toBe("static");
+});
+
+test("picking an address replaces what was typed, and doesn't search again", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  await api.install(page);
+  await page.goto("/");
+  await addressBox(page).pressSequentially("200 Kana", { delay: 30 });
+  await page.getByRole("option", { name: HOME_PLACE }).click();
+  await expect(addressBox(page)).toHaveValue(HOME_PLACE);
+  await expect(page.getByText("✓ Saved")).toBeVisible();
+  await page.waitForTimeout(600);
+  expect(api.calls("POST", "/api/setup/location/suggest")).toHaveLength(1);
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  // Typing again searches again.
+  await addressBox(page).fill("1 Robson");
+  await expect(page.getByRole("option", { name: /^1 Robson Street/ })).toBeVisible();
 });
 
 test("a failed masjid search shows its message and I pray at home still works", async ({ page }) => {

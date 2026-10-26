@@ -3,7 +3,9 @@
 // records every request so tests can check what the website sent.
 
 import type { Page, Route } from "@playwright/test";
-import type { JumuahChoices, JumuahSlot, Masjid, MasjidSuggestion, Me, Settings, SlotKey, Step } from "../src/types";
+import type {
+  JumuahChoices, JumuahSlot, Masjid, MasjidSuggestion, Me, Preview, PreviewEvent, Settings, SlotKey, Stats, Step,
+} from "../src/types";
 
 export const KMA: Masjid = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -59,6 +61,7 @@ export function emptySettings(): Settings {
     jumuah_pick: null,
     prayer_color_id: null,
     drive_color_id: null,
+    masjid_notices: [],
   };
 }
 
@@ -82,6 +85,7 @@ export function finishedSettings(): Settings {
     jumuah_pick: null,
     prayer_color_id: "7",
     drive_color_id: null,
+    masjid_notices: [],
   };
 }
 
@@ -121,6 +125,21 @@ export class MockApi {
   jumuahTimes: Record<string, string[]> = { [KMA.id]: ["13:30", "14:30"], [STITTSVILLE.id]: ["13:15"] };
   // Jumuah length by masjid ID. Missing means 45 minutes, estimated.
   jumuahLength: Record<string, number> = {};
+  // Drive minutes by masjid ID, like OpenRouteService. Missing means unknown.
+  driveMinutes: Record<string, number> = { [KMA.id]: 14, [STITTSVILLE.id]: 20 };
+  // The one email that can open /stats, like ADMIN_EMAIL. null: nobody.
+  adminEmail: string | null = null;
+  stats: Stats = {
+    signed_up: 42, finished_setup: 30, active: 25, new_this_week: 6,
+    history: [
+      { day: "2026-10-20", signed_up: 30, active: 18 }, { day: "2026-10-21", signed_up: 33, active: 20 },
+      { day: "2026-10-22", signed_up: 35, active: 21 }, { day: "2026-10-23", signed_up: 38, active: 23 },
+      { day: "2026-10-24", signed_up: 40, active: 24 }, { day: "2026-10-25", signed_up: 42, active: 25 },
+    ],
+    masjid_times: [],
+  };
+  // How many times POST /api/calendar/preview answers 409 before it works, like setup still saving.
+  previewNotReady = 0;
 
   signedIn(settings: Settings = emptySettings(), me: Partial<Me> = {}) {
     this.settings = settings;
@@ -166,10 +185,12 @@ export class MockApi {
       (this.jumuahTimes[masjid.id] ?? []).forEach((clock, i) => {
         const length = this.jumuahLength[masjid.id] ?? 45;
         const start = Date.parse(friday(clock));
+        // Like the backend: leave = start - "how early" - the drive. Without a drive time, the arrival.
+        const leave = start - (s.jumuah_arrive_early_minutes + (this.driveMinutes[masjid.id] ?? 0)) * MINUTE;
         slots.push({
-          masjid_id: masjid.id, masjid_label: masjid.id === s.main_masjid?.id && s.main_masjid_short_name ? s.main_masjid_short_name : masjid.name ?? "Your masjid",
+          masjid_id: masjid.id, masjid_label: this.label(masjid),
           order: i + 1, order_label: `${["1st", "2nd", "3rd"][i]} Jumuah`,
-          starts_at: iso(start), ends_at: iso(start + length * MINUTE),
+          starts_at: iso(start), ends_at: iso(start + length * MINUTE), leave_at: iso(leave),
           jumuah_minutes: length, length_estimated: !(masjid.id in this.jumuahLength),
         });
       });
@@ -180,7 +201,45 @@ export class MockApi {
     const pick = s.jumuah_pick;
     const picked = pick && slots.find((x) => x.masjid_id === pick.masjid_id && x.order === pick.order);
     const firsts = [...slots].sort((a, b) => listed.indexOf(a.masjid_id) - listed.indexOf(b.masjid_id) || a.order - b.order);
-    return { time_zone: "America/Toronto", slots, selected: picked ? key(picked) : firsts[0] ? key(firsts[0]) : null };
+    const noTimes = masjids.filter((m) => !(this.jumuahTimes[m.id] ?? []).length).map((m) => this.label(m));
+    return {
+      time_zone: "America/Toronto", slots, selected: picked ? key(picked) : firsts[0] ? key(firsts[0]) : null,
+      no_times: noTimes,
+    };
+  }
+
+  // The name the user sees: the short name for the main masjid.
+  private label(masjid: Masjid): string {
+    const s = this.settings;
+    return masjid.id === s.main_masjid?.id && s.main_masjid_short_name ? s.main_masjid_short_name : masjid.name ?? "Your masjid";
+  }
+
+  // Like POST /calendar/preview: this week at round times, with a drive block before masjid prayers.
+  preview(): Preview {
+    const s = this.settings;
+    const times: [PreviewEvent["prayer"], string, number][] = [
+      ["fajr", "Fajr", 6 * 60 + 10], ["dhuhr", "Dhuhr", 13 * 60], ["asr", "Asr", 15 * 60 + 30],
+      ["maghrib", "Maghrib", 18 * 60], ["isha", "Isha", 19 * 60 + 30],
+    ];
+    const label = s.main_masjid ? this.label(s.main_masjid) : "";
+    const events: PreviewEvent[] = [];
+    for (let n = 0; n < 7; n++) {
+      // Mon Oct 26 to Sun Nov 1, 2026.
+      const date = new Date(Date.UTC(2026, 9, 26 + n)).toISOString().slice(0, 10);
+      const weekday = n;
+      // Toronto is back on standard time (-05:00) from Nov 1.
+      const offset = date >= "2026-11-01" ? "-05:00" : OFFSET;
+      const at = (minutes: number) =>
+        `${date}T${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}:00${offset}`;
+      for (const [prayer, title, start] of times) {
+        const atMasjid = s.main_masjid_choice === "masjid" && s.weekly.find((d) => d.weekday === weekday)?.[prayer];
+        if (atMasjid) {
+          events.push({ local_date: date, prayer, kind: "drive", title: `Drive to ${label}`, starts_at: at(start - 19), ends_at: at(start - 5) });
+        }
+        events.push({ local_date: date, prayer, kind: "prayer", title: atMasjid ? `${title} at ${label}` : title, starts_at: at(start), ends_at: at(start + 10) });
+      }
+    }
+    return { time_zone: "America/Toronto", prayer_color_id: s.prayer_color_id, drive_color_id: s.drive_color_id, events };
   }
 
   private saved(calendar: unknown = null) {
@@ -216,6 +275,7 @@ export class MockApi {
       return route.fulfill({ status: 204 });
     }
     if (!this.me) {
+      if (path === "/api/admin/stats") return json(404, { detail: "Not Found" });
       return json(401, { detail: { message: "Not signed in.", reason: "not_signed_in", login_url: "/auth/google/login" } });
     }
 
@@ -283,8 +343,17 @@ export class MockApi {
       case "PUT /api/settings/jumuah-pick":
         s.jumuah_pick = body.masjid_id ? { masjid_id: body.masjid_id, order: body.order } : null;
         return json(200, this.saved(updated(2)));
-      case "GET /api/jumuah/slots":
-        return json(200, this.slots(new URL(request.url()).searchParams.getAll("masjid_id")));
+      case "POST /api/jumuah/slots":
+        return json(200, this.slots(body?.masjid_ids ?? []));
+      case "POST /api/calendar/preview":
+        if (this.previewNotReady > 0 || !s.address || !s.main_masjid_choice) {
+          this.previewNotReady = Math.max(0, this.previewNotReady - 1);
+          return json(409, { detail: { message: "Finish setup first." } });
+        }
+        return json(200, this.preview());
+      case "GET /api/admin/stats":
+        if (!this.adminEmail || this.me.email !== this.adminEmail) return json(404, { detail: "Not Found" });
+        return json(200, this.stats);
       case "PUT /api/settings/optional":
         this.optionalSaved = true;
         Object.assign(s, {
@@ -318,8 +387,8 @@ function suggest(query: string): string[] {
   }).slice(0, 5);
 }
 
-// Masjids on the map whose words start with what was typed, closest first.
-// Text with a number in it, or no masjid match, also gets the address one.
+// Masjids on the map within 100 km whose words start with what was typed,
+// closest first. Text with a number in it also gets the address one.
 function suggestMasjids(query: string): PretendMasjid[] {
   if (query.trim().length < 3) return [];
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -327,8 +396,8 @@ function suggestMasjids(query: string): PretendMasjid[] {
     const parts = text.toLowerCase().replace(/,/g, " ").split(/\s+/);
     return words.every((w) => parts.some((p) => p.startsWith(w)));
   };
-  const found = ON_THE_MAP.filter(({ masjid }) => matches(`${masjid.name} ${masjid.address}`));
-  if ((found.length === 0 || /\d/.test(query)) && matches(BY_ADDRESS.masjid.address!)) found.push(BY_ADDRESS);
+  const found = ON_THE_MAP.filter(({ masjid }) => (masjid.distance_km ?? 0) <= 100 && matches(`${masjid.name} ${masjid.address}`));
+  if (/\d/.test(query) && matches(BY_ADDRESS.masjid.address!)) found.push(BY_ADDRESS);
   return found.slice(0, 5);
 }
 

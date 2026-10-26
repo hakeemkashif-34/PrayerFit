@@ -3,8 +3,8 @@
 // sends it because the website and the API are the same site.
 
 import type {
-  CalendarUpdate, JumuahChoices, Masjid, MasjidSuggestion, Me, OptionalAnswers, SaveResponse, Settings,
-  SlotKey, Suggestions,
+  CalendarUpdate, JumuahChoices, Masjid, MasjidSuggestion, Me, OptionalAnswers, Preview, SaveResponse, Settings,
+  SlotKey, Stats, Suggestions,
 } from "./types";
 
 export class ApiError extends Error {
@@ -73,10 +73,13 @@ export const api = {
   // null clears the pick, so the earliest Jumuah that fits is used.
   saveJumuahPick: (pick: SlotKey | null) => request<SaveResponse>("PUT", "/api/settings/jumuah-pick", pick ?? {}),
   // masjidIds: masjids setup hasn't saved yet. Left out, the saved Jumuah masjids are used.
-  jumuahSlots: (masjidIds?: string[], signal?: AbortSignal) => {
-    const query = new URLSearchParams((masjidIds ?? []).map((id) => ["masjid_id", id]));
-    return request<JumuahChoices>("GET", `/api/jumuah/slots${masjidIds?.length ? `?${query}` : ""}`, undefined, signal);
-  },
+  // A POST because the backend may ask OpenRouteService for a drive time.
+  jumuahSlots: (masjidIds?: string[], signal?: AbortSignal) =>
+    request<JumuahChoices>("POST", "/api/jumuah/slots", { masjid_ids: masjidIds ?? [] }, signal),
+  // This week's prayers at their real times, for the "Adding your prayers" page. Saves nothing.
+  preview: () => request<Preview>("POST", "/api/calendar/preview"),
+  // The private /stats page. 404 for everyone but ADMIN_EMAIL.
+  stats: () => request<Stats>("GET", "/api/admin/stats"),
   finishSetup: () => request<SaveResponse>("POST", "/api/setup/finish"),
   syncCalendar: () => request<CalendarUpdate>("POST", "/api/calendar/sync"),
   // /auth/ goes straight to the backend, like the sign-in links.

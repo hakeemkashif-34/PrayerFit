@@ -94,6 +94,10 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
           </div>
         </header>
 
+        {settings.masjid_notices.map((text) => (
+          <p key={text} className="notice warning" role="status">{text}</p>
+        ))}
+
         {!busyAccess && <BusyBanner />}
 
         {calendar && (
@@ -115,6 +119,8 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
               edit={<LocationStep current={settings.place_name} onSaved={saved} onKeep={cancel} keepLabel="Cancel" />}>
               <p>{settings.place_name}</p>
               <p className="hint">Time zone: {settings.time_zone}</p>
+              {/* Events don't say where their times came from, so it's shown here. */}
+              <p className="hint">Calculated times use ISNA with standard Asr.</p>
             </Row>
 
             <Row title="Main masjid" step="masjid" {...rows}

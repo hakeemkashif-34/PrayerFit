@@ -55,6 +55,8 @@ export type Settings = {
   jumuah_pick: SlotKey | null;
   prayer_color_id: string | null;
   drive_color_id: string | null;
+  // "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
+  masjid_notices: string[];
 };
 
 export type OptionalAnswers = {
@@ -105,6 +107,8 @@ export type JumuahSlot = SlotKey & {
   // This week's times, as an example.
   starts_at: string;
   ends_at: string;
+  // When to leave home (the drive and the "how early" minutes). The arrival time if the drive is unknown.
+  leave_at: string;
   jumuah_minutes: number;
   length_estimated: boolean;
 };
@@ -115,4 +119,33 @@ export type JumuahChoices = {
   slots: JumuahSlot[];
   // The saved pick, or the 1st Jumuah.
   selected: SlotKey | null;
+  // Jumuah masjids with no Jumuah times yet, by the name the user sees.
+  no_times: string[];
+};
+
+// This week's events at their real times, for the "Adding your prayers" page.
+export type PreviewEvent = {
+  local_date: string; // "2026-10-26"
+  prayer: Prayer;
+  kind: "prayer" | "drive";
+  title: string;
+  starts_at: string;
+  ends_at: string;
+};
+
+export type Preview = {
+  time_zone: string;
+  prayer_color_id: string | null;
+  drive_color_id: string | null;
+  events: PreviewEvent[];
+};
+
+// The private /stats page. Counts only.
+export type Stats = {
+  signed_up: number;
+  finished_setup: number;
+  active: number;
+  new_this_week: number;
+  history: { day: string; signed_up: number; active: number }[];
+  masjid_times: { name: string; source: string; last_success_at: string | null; error: string | null }[];
 };
