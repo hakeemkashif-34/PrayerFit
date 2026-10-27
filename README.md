@@ -158,14 +158,14 @@ If you move to another time zone, the Prayers calendar's time zone changes too.
 
 ### 5. Notifications
 
-2 optional settings add Google Calendar popup reminders. Each is a dropdown: **No notification**, or 5, 10, 15, 20, or 30 minutes before. Both start at 5 minutes, including for people who signed up before these settings existed. They're on setup's optional page and on Settings, with the same labels, choices, and defaults. Setup saves them before the first calendar update, so the first calendar already has them.
+2 optional settings add Google Calendar popup reminders. Each is a number box for whole minutes from 0 to 60, with "minutes" after it and "0 = no notification" under it. On a phone it opens the number keypad. Both start at 5 minutes, including for people who signed up before these settings existed. They're on setup's optional page and on Settings, with the same labels, choices, and defaults. Setup saves them before the first calendar update, so the first calendar already has them.
 
 1. **Notify before leaving for the masjid**: drive blocks. With no drive block (no drive time), nothing is added.
 2. **Notify for home prayers**: every prayer that isn't at the masjid, including a masjid prayer moved home because you're busy.
 
 Masjid prayer blocks, Jumuah too, never get a reminder. The drive block's reminder comes before them anyway.
 
-"No notification" means no reminder at all. The app tells Google not to use the calendar's own default reminders either. Changing a setting only sends the future events whose reminder changed. Past events are never touched.
+0 means no reminder at all, and Settings shows it as "No notification". The app tells Google not to use the calendar's own default reminders either. Changing a setting only sends the future events whose reminder changed. Past events are never touched.
 
 ### 6. Delete my account
 
@@ -407,7 +407,7 @@ Through nginx, every endpoint below is under `/api` (like `/api/me`), except the
 | `POST /masjids/from-suggestion` | Saves the picked suggestion as a masjid, for the main masjid or Jumuah |
 | `PUT /settings/main-masjid` | Saves the main masjid, or "home". Picking a different masjid clears its short name |
 | `PUT /settings/weekly` | Saves the weekly grid (7 days) |
-| `PUT /settings/optional` | Saves both "how early" times, the short name, the 2 colours, and the 2 notifications. Skip sends the defaults |
+| `PUT /settings/optional` | Saves both "how early" times, the short name, the 2 colours, and the 2 notifications. Skip sends the defaults. Every minutes value must be a whole number from 0 to 60, or it answers 422 with "Enter a whole number of minutes from 0 to 60." |
 | `PUT /settings/jumuah-pick` | Saves your Jumuah pick as your main masjid and a slot (1st, 2nd, or 3rd), or clears it |
 | `POST /jumuah/slots` | Each Jumuah slot at your main masjid (or the `masjid_id` given, for setup), with this week's times as an example, its leave time, which one is picked, and the masjid's name if it has no Jumuah times yet. No busy times. A POST because it may ask OpenRouteService for a drive time |
 | `POST /calendar/preview` | This week's prayers and drive blocks at their real times, for the "Adding your prayers" page. Nothing goes to Google |
@@ -619,11 +619,11 @@ export DATABASE_URL=postgresql://prayerfit:change-me@localhost:5432/prayerfit
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `873 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `890 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`438 passed, 435 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`438 passed, 452 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
@@ -636,4 +636,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `320 passed`: 160 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `324 passed`: 162 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.

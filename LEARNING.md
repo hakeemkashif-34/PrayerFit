@@ -1734,3 +1734,25 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
 4. **Look**: on Settings, the label and the dropdown share a line when they fit. On setup, they stack like every other question there. The dropdown's border and size come from `.reminder-select`, so it looks the same on both pages.
 5. **Test** (`setup.spec.ts`): both dropdowns start at 5 minutes with the same 6 choices. The test changes them to 15 minutes and No notification, finishes setup, and checks that the save came before the first calendar update. Then it checks that Settings shows the same 2 values, and still shows them after a reload.
 6. **Counts**: `pytest` gives `873 passed`, and `npx playwright test` gives `320 passed`.
+
+### 18. Number boxes for every minutes setting
+
+1. **What changed**: the 2 notifications were dropdowns (No notification, 5, 10, 15, 20, 30). Now all 4 minutes settings use the same number box: "Arrive before iqamah", "Arrive before Jumuah", "Notify before leaving for the masjid", and "Notify for home prayers". It's the same on setup's optional page and on Settings.
+2. **The box** (`MinutesField.tsx`):
+   a) It takes whole minutes from 0 to 60, with "minutes" after it.
+   b) `inputMode="numeric"` opens the number keypad on a phone.
+   c) It has a new optional `hint` line under the box. The 2 notify boxes use it for "0 = no notification". The box's `aria-describedby` points at the hint, so a screen reader reads it with the box.
+   d) `ReminderField.tsx`, the dropdown, is gone.
+3. **What 0 means**: for the 2 notify settings, 0 means no notification, and Settings shows "No notification". For the 2 arrive settings, 0 means arriving right at iqamah or Jumuah, and Settings shows "0 minutes".
+4. **Checks on the website**: `wholeMinutes` in `labels.ts` already checked the arrive boxes. Now the notify boxes use it too. Anything else (61, -1, 2.5, empty) shows "Enter a whole number of minutes from 0 to 60." and saves nothing.
+5. **Checks on the backend**:
+   a) `OptionalRequest` takes the notify settings as `int` from 0 to 60 with `strict=True`, like the arrive settings. So 2.5, "5", and null are refused, not rounded or guessed.
+   b) FastAPI's normal 422 answer is a list of technical errors, which the website could only show as "Check what you typed and try again." So `main.py` has a handler for bad minutes that answers `{"detail": {"message": "Enter a whole number of minutes from 0 to 60.", "field": ...}}`. The website shows that message under the box.
+   c) Other bad answers, like a colour that doesn't exist, keep FastAPI's usual answer.
+6. **Existing users keep their values**:
+   a) The database didn't change. 5, 10, 15, 20, and 30 are all whole numbers from 0 to 60, so they stay as they are.
+   b) Someone who picked "No notification" in the old dropdown has an empty value. The API reads that as 0, which means the same thing.
+   c) On the backend, 0 and empty both mean no reminder (`or None` in `user_settings.py`). New and skipped setups still start at 5 for both.
+7. **Tests**:
+   a) `test_reminders.py` covers any whole number (7 and 60), 0 meaning no reminder on the events, an empty value reading as 0, and the clear message. The message test runs for each of the 4 fields with 61, -1, 2.5, "5", and null.
+   b) `settings.spec.ts` and `setup.spec.ts` cover the boxes, the hint, the keypad, 0, bad numbers, and the server's message. Counts: `pytest` gives `890 passed`, and `npx playwright test` gives `324 passed`.
