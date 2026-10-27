@@ -81,8 +81,10 @@ export function ShortNameEditor({ settings, onSaved, onCancel }: EditorProps) {
   return (
     <EditorForm title="Short name" onCancel={onCancel}
       onSave={() => api.saveOptional({ ...saved(settings), short_name: name.trim() || undefined }).then(onSaved)}>
-      <label htmlFor="short-name">Short name for {masjid?.name ?? "your masjid"}</label>
-      <input id="short-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="KMA" maxLength={40} />
+      <div className="inline-field">
+        <label htmlFor="short-name">Short name for {masjid?.name ?? "your masjid"}</label>
+        <input id="short-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="KMA" maxLength={40} />
+      </div>
       <p className="hint small-line">Events will say "Dhuhr at {name.trim() || masjid?.name || "your masjid"}".</p>
     </EditorForm>
   );

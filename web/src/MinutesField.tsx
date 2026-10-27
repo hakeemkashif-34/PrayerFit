@@ -16,21 +16,24 @@ export function MinutesField({ id, label, value, onChange, error, min, max }: Pr
 
   return (
     <>
-      <label htmlFor={id}>{label}</label>
-      <div className="minutes-field">
-        <input
-          id={id}
-          type="number"
-          inputMode="numeric"
-          min={min}
-          max={max}
-          step={1}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
-        />
-        <span aria-hidden="true">minutes</span>
+      {/* On Settings, the question and the box share a line when they fit. */}
+      <div className="inline-field">
+        <label htmlFor={id}>{label}</label>
+        <div className="minutes-field">
+          <input
+            id={id}
+            type="number"
+            inputMode="numeric"
+            min={min}
+            max={max}
+            step={1}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? errorId : undefined}
+          />
+          <span aria-hidden="true">minutes</span>
+        </div>
       </div>
       {error && (
         <p className="error field-error" id={errorId} role="alert">

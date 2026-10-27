@@ -524,3 +524,31 @@ test("the Required and Optional cards and the calendar message share one backgro
   expect(await background(".settings-card.optional")).toBe("rgb(255, 255, 255)");
   expect(await page.getByRole("status").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(255, 255, 255)");
 });
+
+// Is the answer (or box) on the same line as its question? Same line means their boxes overlap top to bottom.
+async function sideBySide(page: import("@playwright/test").Page, question: string, answer: string) {
+  const [q, a] = await Promise.all([page.locator(question).boundingBox(), page.locator(answer).boundingBox()]);
+  return a!.x >= q!.x + q!.width - 1 && a!.y < q!.y + q!.height && q!.y < a!.y + a!.height;
+}
+
+test("each question and its answer share a line when they fit, and wrap only when they don't", async ({ page }, info) => {
+  await new MockApi().signedIn(finishedSettings()).install(page);
+  await page.goto("/");
+  const row = (name: string) => `section.setting-row[aria-label="${name}"]`;
+  await expect(page.locator(row("Short name"))).toBeVisible();
+
+  // A short answer fits beside its question on every screen.
+  expect(await sideBySide(page, `${row("Short name")} h3`, `${row("Short name")} .row-value`)).toBe(true);
+  // A long question with an answer fits on desktop. On a phone it wraps, with the answer under it.
+  const early = await sideBySide(page, `${row("How early for prayers")} h3`, `${row("How early for prayers")} .row-value`);
+  expect(early).toBe(info.project.name === "desktop");
+
+  // While editing, the question and its box share a line on desktop too.
+  await page.getByRole("button", { name: "Edit how early for prayers" }).click();
+  const editing = await sideBySide(page, `${row("How early for prayers")} .inline-field label`, `${row("How early for prayers")} .minutes-field`);
+  expect(editing).toBe(info.project.name === "desktop");
+
+  // Nothing ever runs off the screen.
+  const width = await page.evaluate(() => document.documentElement.clientWidth);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+});

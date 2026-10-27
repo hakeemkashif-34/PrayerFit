@@ -1063,8 +1063,60 @@ ul.colour-list li[aria-selected="true"] {
   gap: 16px;
 }
 
+/* The question and its answer share a line when they fit. The question
+   keeps at least 9rem, so on a phone a long answer wraps under it instead. */
 .row-text {
+  flex: 1;
   min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.row-text h3 {
+  flex: 1 1 9rem;
+  /* Balanced wrapping splits these short questions early in a flex row. */
+  text-wrap: wrap;
+}
+
+.row-text .row-value {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* While editing on Settings: the question, then its box or dropdown, on one
+   line when they fit. Setup uses the same fields, still stacked. */
+.settings-page .inline-field,
+.settings-page .row-edit .colour-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 12px 0 0;
+}
+
+.settings-page .inline-field > label,
+.settings-page .row-edit .colour-picker > .field-label {
+  flex: 1 1 14rem;
+  margin: 0;
+}
+
+.settings-page .inline-field > input {
+  flex: 0 1 14rem;
+  width: auto;
+  min-width: 0;
+}
+
+.settings-page .row-edit .colour-button {
+  flex: 0 1 16rem;
+  width: auto;
+}
+
+/* The open colour list gets a line of its own under the button. */
+.settings-page .row-edit .colour-list {
+  flex-basis: 100%;
 }
 
 /* The label: small and slate. The value under it: larger and ink. */
@@ -1073,7 +1125,7 @@ ul.colour-list li[aria-selected="true"] {
   font-weight: 600;
   letter-spacing: 0;
   color: var(--muted);
-  margin: 0 0 4px;
+  margin: 0;
 }
 
 .row-value {
