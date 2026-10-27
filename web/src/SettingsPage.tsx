@@ -88,7 +88,7 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
           <div>
             <h1>Settings</h1>
             <p className="hint">Signed in as {email}</p>
-            <p className="hint">Updates and changes are reflected on your calendar every 5 minutes.</p>
+            <p className="hint"><mark className="highlight">Updates and changes</mark> are reflected on your calendar every 5 minutes.</p>
           </div>
           <div className="top-action">
             <a className="button open-calendar" href={googleCalendarUrl(email)}>

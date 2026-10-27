@@ -299,6 +299,17 @@ strong {
   white-space: nowrap;
 }
 
+/* The same soft yellow as "praying on time", for a few words in normal text.
+   Not bold, and it stays inline so it wraps like the rest of the sentence. */
+.highlight {
+  color: inherit;
+  background: var(--gold-highlight);
+  padding: 0.05em 0.2em;
+  border-radius: 0.22em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
 .hadith figcaption {
   margin-top: 14px;
   font-size: 0.9375rem;

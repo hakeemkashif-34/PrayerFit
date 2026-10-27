@@ -47,6 +47,10 @@ test("Settings has 2 cards, Required and Optional, each item with its own Edit",
   await expect(page.getByRole("region", { name: "Jumuah masjids" })).toHaveCount(0);
   // How often the calendar catches up.
   await expect(page.getByText("Updates and changes are reflected on your calendar every 5 minutes.")).toBeVisible();
+  // "Updates and changes" has the same soft yellow as "praying on time" on the landing page.
+  const highlight = page.locator("mark.highlight");
+  await expect(highlight).toHaveText("Updates and changes");
+  await expect(highlight).toHaveCSS("background-color", "rgb(251, 224, 138)");
   await expect(page.getByRole("region", { name: "Prayer colour" })).toContainText("Peacock");
   await expect(page.getByRole("region", { name: "Drive colour" })).toContainText("Calendar colour");
   // Drive times always come from OpenRouteService, so there's nothing to set for them.
