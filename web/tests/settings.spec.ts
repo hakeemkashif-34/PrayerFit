@@ -14,7 +14,7 @@ test("Settings has 2 cards, Required and Optional, each item with its own Edit",
   }
   const optionalItems = [
     "Short name", "Arrive before iqamah", "Arrive before Jumuah",
-    "Prayer colour", "Drive colour", "Notify before leaving", "Notify before home prayers",
+    "Prayer colour", "Drive colour", "Notify before leaving for the masjid", "Notify for home prayers",
   ];
   for (const name of optionalItems) {
     await expect(optional.getByRole("region", { name })).toBeVisible();
@@ -39,7 +39,7 @@ test("Settings has 2 cards, Required and Optional, each item with its own Edit",
   await expect(page.locator(".setting-row h3")).toHaveText([
     "Location", "Main masjid", "Prayers at the masjid", "Preferred Jumuah",
     "Short name", "Arrive before iqamah", "Arrive before Jumuah", "Prayer colour", "Drive colour",
-    "Notify before leaving", "Notify before home prayers",
+    "Notify before leaving for the masjid", "Notify for home prayers",
   ]);
   await expect(page.locator(".setting-row h3", { hasText: "?" })).toHaveCount(0);
   // Jumuah is always at the main masjid, so there's no Jumuah masjids setting.
@@ -546,7 +546,7 @@ test("each label and its answer share a line when they fit, and wrap only when t
   expect(await beside("Short name")).toBe(true);
   // On desktop, every Optional row fits on one line.
   if (info.project.name === "desktop") {
-    for (const name of ["Arrive before iqamah", "Arrive before Jumuah", "Prayer colour", "Drive colour", "Notify before leaving", "Notify before home prayers"]) {
+    for (const name of ["Arrive before iqamah", "Arrive before Jumuah", "Prayer colour", "Drive colour", "Notify before leaving for the masjid", "Notify for home prayers"]) {
       expect(await beside(name), name).toBe(true);
     }
   }
@@ -596,8 +596,8 @@ test("the 2 notification dropdowns save, show, and stay after a reload", async (
   await expect(page.getByText(/notif\w* before iqamah/i)).toHaveCount(0);
 
   const rows = {
-    leave: { name: "Notify before leaving", question: "Notify before leaving", start: "5 minutes", pick: "30 minutes" },
-    home: { name: "Notify before home prayers", question: "Notify before home prayers", start: "5 minutes", pick: "15 minutes" },
+    leave: { name: "Notify before leaving for the masjid", question: "Notify before leaving for the masjid", start: "5 minutes", pick: "30 minutes" },
+    home: { name: "Notify for home prayers", question: "Notify for home prayers", start: "5 minutes", pick: "15 minutes" },
   };
   for (const row of Object.values(rows)) {
     const region = page.getByRole("region", { name: row.name });
@@ -629,7 +629,7 @@ test("the 2 notification dropdowns save, show, and stay after a reload", async (
   }
 
   // Back to "No notification" sends null, not 0.
-  await openEditor(page, "Edit notify before home prayers");
+  await openEditor(page, "Edit notify for home prayers");
   await page.getByRole("combobox", { name: rows.home.question }).selectOption({ label: "No notification" });
   await page.getByRole("region", { name: rows.home.name }).getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("region", { name: rows.home.name }).locator(".row-value")).toHaveText("No notification");

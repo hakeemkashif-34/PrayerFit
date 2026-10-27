@@ -53,6 +53,8 @@ export const CALENDAR_COLOUR = "Calendar colour";
 export const DEFAULT_ARRIVE_EARLY = 5;
 export const DEFAULT_JUMUAH_ARRIVE_EARLY = 5;
 export const DEFAULT_COLOUR = "10";
+// Both notifications start at 5 minutes, the same as the backend.
+export const DEFAULT_REMINDER = 5;
 
 export function colourName(id: string | null): string {
   return GOOGLE_COLOURS.find((c) => c.id === id)?.name ?? CALENDAR_COLOUR;
@@ -91,8 +93,8 @@ export const LABELS = {
   jumuahEarly: "Arrive before Jumuah",
   prayerColour: "Prayer colour",
   driveColour: "Drive colour",
-  leaveReminder: "Notify before leaving",
-  homeReminder: "Notify before home prayers",
+  leaveReminder: "Notify before leaving for the masjid",
+  homeReminder: "Notify for home prayers",
 };
 
 // The masjid's name in event titles: the short name if there is one.
