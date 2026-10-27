@@ -1,7 +1,7 @@
 // The Settings page, where returning users land: a button to open Google
 // Calendar, then 2 cards, side by side on a computer. "Required" has the setup
 // questions (location, masjid, weekly prayers, Jumuah pick). "Optional" has everything
-// with a default. Each item shows its setup question as the label and just the
+// with a default. Each item shows a short label (LABELS in labels.ts) and just the
 // answer as the value, with its own Edit button, and saves on its own.
 // Saving updates the calendar. Jumuah is always at the main masjid.
 
@@ -10,10 +10,9 @@ import { api, ApiError, SIGN_IN_URL } from "./api";
 import { BusyBanner } from "./BusyBanner";
 import { googleCalendarUrl } from "./googleCalendar";
 import {
-  colourName, GOOGLE_COLOURS, masjidLabel, masjidName, minutesText, PRAYER_NAMES, PRAYERS, QUESTIONS, reminderText, WEEKDAYS,
+  colourName, GOOGLE_COLOURS, masjidLabel, LABELS, masjidName, minutesText, PRAYER_NAMES, PRAYERS, reminderText, WEEKDAYS,
 } from "./labels";
 import { OsmFooter } from "./OsmFooter";
-import { QUESTION as JUMUAH_QUESTION } from "./JumuahChooser";
 import { ColourEditor, EarlyEditor, JumuahPickEditor, ReminderEditor, REMINDER_KINDS, REMINDERS, ShortNameEditor } from "./SettingsEditors";
 import { LocationStep } from "./steps/LocationStep";
 import { MasjidStep } from "./steps/MasjidStep";
@@ -88,7 +87,7 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
           <div>
             <h1>Settings</h1>
             <p className="hint">Signed in as {email}</p>
-            <p className="hint"><mark className="highlight">Updates and changes</mark> are reflected on your calendar every 5 minutes.</p>
+            <p className="hint">Updates and changes are reflected on your calendar <mark className="highlight">every 5 minutes</mark>.</p>
           </div>
           <div className="top-action">
             <a className="button open-calendar" href={googleCalendarUrl(email)}>
@@ -121,13 +120,13 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
         <div className="settings-grid">
           <section className="card settings-card required" aria-labelledby="required-title">
             <h2 id="required-title" className="section-title">Required</h2>
-            <Row title="Location" question={QUESTIONS.location} step="address" {...rows}
+            <Row title={LABELS.location} step="address" {...rows}
               edit={<LocationStep current={settings.place_name} onSaved={saved} onKeep={cancel} keepLabel="Cancel" />}>
               <p>{settings.place_name}</p>
               <p className="hint">Time zone: {settings.time_zone}</p>
             </Row>
 
-            <Row title="Main masjid" question={QUESTIONS.masjid} step="masjid" {...rows}
+            <Row title={LABELS.masjid} step="masjid" {...rows}
               edit={<MasjidStep settings={settings} onSaved={saved} onCancel={cancel} skipLabel="I pray at home" />}>
               {atHome || !settings.main_masjid ? (
                 <p>I pray at home</p>
@@ -140,7 +139,7 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
             </Row>
 
             {!atHome && (
-              <Row title="Prayers at the masjid" question={QUESTIONS.weekly} step="weekly" {...rows}
+              <Row title={LABELS.weekly} step="weekly" {...rows}
                 edit={<WeeklyStep initial={settings.weekly} masjidLabel={masjidLabel(settings)} onSaved={saved}
                   onCancel={settings.missing.includes("weekly") ? undefined : cancel} />}>
                 <ul className="plain">
@@ -157,7 +156,7 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
             )}
 
             {hasJumuah && (
-              <Row title="Jumuah pick" question={JUMUAH_QUESTION} step="jumuah_pick" {...rows}
+              <Row title={LABELS.jumuahPick} step="jumuah_pick" {...rows}
                 edit={<JumuahPickEditor settings={settings} onSaved={saved} onCancel={cancel} />}>
                 <p>{pickText(settings)}</p>
               </Row>
@@ -167,37 +166,37 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
           <section className="card settings-card optional" aria-labelledby="optional-section-title">
             <h2 id="optional-section-title" className="section-title">Optional</h2>
             {!atHome && settings.main_masjid && (
-              <Row title="Short name" step="short_name" {...rows}
+              <Row title={LABELS.shortName} step="short_name" {...rows}
                 edit={<ShortNameEditor settings={settings} onSaved={saved} onCancel={cancel} />}>
                 <p>{settings.main_masjid_short_name ?? "None"}</p>
               </Row>
             )}
 
-            <Row title="How early for prayers" question={QUESTIONS.early} step="early" {...rows}
+            <Row title={LABELS.early} step="early" {...rows}
               edit={<EarlyEditor settings={settings} onSaved={saved} onCancel={cancel} jumuah={false} />}>
               <p>{minutesText(settings.arrive_early_minutes)}</p>
             </Row>
 
             {hasJumuah && (
-              <Row title="How early for Jumuah" question={QUESTIONS.jumuahEarly} step="jumuah_early" {...rows}
+              <Row title={LABELS.jumuahEarly} step="jumuah_early" {...rows}
                 edit={<EarlyEditor settings={settings} onSaved={saved} onCancel={cancel} jumuah />}>
                 <p>{minutesText(settings.jumuah_arrive_early_minutes)}</p>
               </Row>
             )}
 
-            <Row title="Prayer colour" step="prayer_colour" {...rows}
+            <Row title={LABELS.prayerColour} step="prayer_colour" {...rows}
               edit={<ColourEditor settings={settings} onSaved={saved} onCancel={cancel} drive={false} />}>
               <p><ColourName id={settings.prayer_color_id} /></p>
             </Row>
 
-            <Row title="Drive colour" step="drive_colour" {...rows}
+            <Row title={LABELS.driveColour} step="drive_colour" {...rows}
               edit={<ColourEditor settings={settings} onSaved={saved} onCancel={cancel} drive />}>
               <p><ColourName id={settings.drive_color_id} /></p>
             </Row>
 
-            {/* Google Calendar popup reminders: before iqamah, before leaving, and at home. */}
+            {/* Google Calendar popup reminders: before leaving for the masjid, and before home prayers. */}
             {REMINDER_KINDS.map((kind) => (
-              <Row key={kind} title={REMINDERS[kind].title} question={REMINDERS[kind].question} step={`reminder_${kind}`}
+              <Row key={kind} title={REMINDERS[kind].title} step={`reminder_${kind}`}
                 {...rows} edit={<ReminderEditor settings={settings} onSaved={saved} onCancel={cancel} kind={kind} />}>
                 <p>{reminderText(settings[REMINDERS[kind].field])}</p>
               </Row>
@@ -283,7 +282,7 @@ function firstMissing(settings: Settings): Editable | null {
   return step === "address" || step === "masjid" || step === "weekly" ? step : null;
 }
 
-// Just the answer: the question already says it's about Jumuah at the main masjid.
+// Just the answer: Jumuah is always at the main masjid.
 function pickText(settings: Settings): string {
   const pick = settings.jumuah_pick;
   if (!pick || pick.masjid_id !== settings.main_masjid?.id) return "The earliest Jumuah that fits your calendar";
@@ -291,10 +290,8 @@ function pickText(settings: Settings): string {
 }
 
 type RowProps = {
-  // A short name, for screen readers and the Edit button, like "How early for prayers".
+  // The short label shown on the row, also used by screen readers and the Edit button, like "Arrive before iqamah".
   title: string;
-  // What's shown as the label: the setup question when there is one. Otherwise the title.
-  question?: string;
   step: Editable;
   editing: Editable | null;
   onEdit: (step: Editable) => void;
@@ -306,7 +303,7 @@ type RowProps = {
 // with an Edit button, or its editor in the same place. Switching between the
 // two eases the row's height from old to new, so it opens and closes smoothly
 // instead of jumping. Skipped when the device asks for less motion.
-function Row({ title, question, step, editing, onEdit, edit, children }: RowProps) {
+function Row({ title, step, editing, onEdit, edit, children }: RowProps) {
   const open = editing === step;
   const row = useRef<HTMLElement>(null);
   const height = useRef(0);
@@ -345,7 +342,7 @@ function Row({ title, question, step, editing, onEdit, edit, children }: RowProp
       ) : (
         <div className="row-view">
           <div className="row-text">
-            <h3>{question ?? title}</h3>
+            <h3>{title}</h3>
             <div className="row-value">{children}</div>
           </div>
           <button type="button" className="secondary small" onClick={() => onEdit(step)} disabled={editing !== null}

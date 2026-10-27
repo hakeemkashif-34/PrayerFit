@@ -77,9 +77,22 @@ export const QUESTIONS = {
   weekly: "Which prayers do you usually pray at the masjid?",
   early: "How early do you want to arrive before iqamah (daily prayers)?",
   jumuahEarly: "How early do you want to arrive before Jumuah (Friday prayer)?",
-  masjidReminder: "How early do you want to be notified before iqamah at the masjid?",
-  leaveReminder: "How early do you want to be notified before leaving for the masjid?",
-  homeReminder: "How early do you want to be notified before prayer at home?",
+};
+
+// The Settings page's labels: as short as they can be while still clear.
+// Setup keeps the full questions above, since it's where people first answer them.
+export const LABELS = {
+  location: "Location",
+  masjid: "Main masjid",
+  weekly: "Prayers at the masjid",
+  jumuahPick: "Preferred Jumuah",
+  shortName: "Short name",
+  early: "Arrive before iqamah",
+  jumuahEarly: "Arrive before Jumuah",
+  prayerColour: "Prayer colour",
+  driveColour: "Drive colour",
+  leaveReminder: "Notify before leaving",
+  homeReminder: "Notify before home prayers",
 };
 
 // The masjid's name in event titles: the short name if there is one.

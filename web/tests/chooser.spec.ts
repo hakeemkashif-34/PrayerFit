@@ -154,7 +154,7 @@ test("the calendar view fits a phone screen with no sideways scrolling", async (
   const api = new MockApi().signedIn(finishedSettings());
   await api.install(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Edit jumuah pick" }).click();
+  await page.getByRole("button", { name: "Edit preferred jumuah" }).click();
   await expect(page.getByRole("radio")).toHaveCount(2);
 
   const width = await page.evaluate(() => document.documentElement.clientWidth);
@@ -168,10 +168,10 @@ test("on Settings, the pick is in the Required section and changed with the same
   const api = new MockApi().signedIn(finishedSettings());
   await api.install(page);
   await page.goto("/");
-  const row = page.getByRole("region", { name: "Required" }).getByRole("region", { name: "Jumuah pick" });
+  const row = page.getByRole("region", { name: "Required" }).getByRole("region", { name: "Preferred Jumuah" });
   await expect(row).toContainText("The earliest Jumuah that fits your calendar");
 
-  await page.getByRole("button", { name: "Edit jumuah pick" }).click();
+  await page.getByRole("button", { name: "Edit preferred jumuah" }).click();
   await expect(question(page)).toBeVisible();
   // The same blocks as setup: no masjid name, just the Jumuah and its time.
   await expect(page.getByRole("radio", { name: /^1st Jumuah 1:30 to 2:15 PM/ })).toBeChecked();
@@ -185,7 +185,7 @@ test("on Settings, the pick is in the Required section and changed with the same
   await expect(page.getByRole("status")).toHaveText("Calendar updated. 2 events sent to Google.");
 
   // Editing again starts from the saved pick.
-  await page.getByRole("button", { name: "Edit jumuah pick" }).click();
+  await page.getByRole("button", { name: "Edit preferred jumuah" }).click();
   await expect(page.getByRole("radio", { name: /^2nd Jumuah/ })).toBeChecked();
 });
 
@@ -195,7 +195,7 @@ test("Settings says when there are no Jumuah times to pick from", async ({ page 
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit jumuah pick" }).click();
+  await page.getByRole("button", { name: "Edit preferred jumuah" }).click();
   // On Settings it doesn't say "change it in Settings later".
   await expect(page.locator(".chooser .notice")).toHaveText("Jumuah times for KMA aren't available yet.");
 });
@@ -253,7 +253,7 @@ for (const where of ["setup", "settings"] as const) {
     api.jumuahTimes = { [KMA.id]: ["13:00", "13:20", "13:40"] };
     await api.install(page);
     await page.goto("/");
-    if (where === "settings") await page.getByRole("button", { name: "Edit jumuah pick" }).click();
+    if (where === "settings") await page.getByRole("button", { name: "Edit preferred jumuah" }).click();
     else await atMasjid(page);
     await expect(page.getByRole("radio")).toHaveCount(3);
 

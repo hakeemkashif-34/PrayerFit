@@ -299,10 +299,11 @@ strong {
   white-space: nowrap;
 }
 
-/* The same soft yellow as "praying on time", for a few words in normal text.
-   Not bold, and it stays inline so it wraps like the rest of the sentence. */
+/* The same soft yellow as "praying on time", and bold like it, for a few words
+   in normal text. It stays inline so it wraps like the rest of the sentence. */
 .highlight {
-  color: inherit;
+  color: var(--text);
+  font-weight: 700;
   background: var(--gold-highlight);
   padding: 0.05em 0.2em;
   border-radius: 0.22em;
@@ -1063,8 +1064,8 @@ ul.colour-list li[aria-selected="true"] {
   gap: 16px;
 }
 
-/* The question and its answer share a line when they fit. The question
-   keeps at least 9rem, so on a phone a long answer wraps under it instead. */
+/* The label and its answer share a line when they fit. Each takes its own
+   width, so on a phone a long answer wraps under the label instead. */
 .row-text {
   flex: 1;
   min-width: 0;
@@ -1076,7 +1077,7 @@ ul.colour-list li[aria-selected="true"] {
 }
 
 .row-text h3 {
-  flex: 1 1 9rem;
+  flex: 1 1 auto;
   /* Balanced wrapping splits these short questions early in a flex row. */
   text-wrap: wrap;
 }
@@ -1099,7 +1100,7 @@ ul.colour-list li[aria-selected="true"] {
 
 .settings-page .inline-field > label,
 .settings-page .row-edit .colour-picker > .field-label {
-  flex: 1 1 14rem;
+  flex: 1 1 auto;
   margin: 0;
 }
 

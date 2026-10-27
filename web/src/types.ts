@@ -54,7 +54,6 @@ export type Settings = {
   prayer_color_id: string | null;
   drive_color_id: string | null;
   // Google Calendar popup reminders, in minutes before the event. null means no notification.
-  masjid_reminder_minutes: ReminderMinutes | null;
   leave_reminder_minutes: ReminderMinutes | null;
   home_reminder_minutes: ReminderMinutes | null;
   // "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
@@ -68,7 +67,6 @@ export type OptionalAnswers = {
   prayer_color_id: string | null;
   drive_color_id: string | null;
   // Left out means no notification, like setup's optional page.
-  masjid_reminder_minutes?: ReminderMinutes | null;
   leave_reminder_minutes?: ReminderMinutes | null;
   home_reminder_minutes?: ReminderMinutes | null;
 };
