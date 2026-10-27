@@ -1,10 +1,9 @@
-"""Prayer notifications: Google Calendar popup reminders from the 3 optional settings.
+"""Prayer notifications: Google Calendar popup reminders from the 2 optional settings.
 
-1. Before iqamah: masjid prayer blocks, Jumuah too.
-2. Before leaving: drive blocks.
-3. At home: every prayer that isn't at the masjid.
-Everyone starts with 5 minutes before leaving and at home, and none before
-iqamah. None means no reminder at all, never the calendar's own defaults.
+1. Before leaving: drive blocks.
+2. Before home prayers: every prayer that isn't at the masjid.
+Masjid prayer blocks, Jumuah too, never get one. Everyone starts with 5
+minutes for both. None means no reminder at all, never the calendar's own defaults.
 
 KMA's made-up MAWAQIT page has Isha iqamah at 20:15, Dhuhr at 13:00, and
 Jumuah at 13:30. The fake OpenRouteService says every drive is 14 minutes.
@@ -50,7 +49,7 @@ def user(db, http, fake_google, fake_mawaqit, ors_key):
     return uid
 
 
-def test_the_defaults_5_minutes_before_leaving_and_at_home_and_none_before_iqamah(db, http, user, fake_google):
+def test_the_defaults_5_minutes_before_leaving_and_at_home_and_none_at_the_masjid(db, http, user, fake_google):
     refresh(db, http, user, NOW)
     monday = on(google_events(fake_google), MONDAY)
     assert [(e["summary"], e["reminders"]) for e in monday] == [
@@ -64,8 +63,8 @@ def test_the_defaults_5_minutes_before_leaving_and_at_home_and_none_before_iqama
     ]
 
 
-def test_no_notification_on_all_3_means_no_reminders_at_all(db, http, user, fake_google):
-    set_settings(db, user, masjid_reminder_minutes=None, leave_reminder_minutes=None, home_reminder_minutes=None)
+def test_no_notification_on_both_means_no_reminders_at_all(db, http, user, fake_google):
+    set_settings(db, user, leave_reminder_minutes=None, home_reminder_minutes=None)
     refresh(db, http, user, NOW)
     events = google_events(fake_google)
     # Drive blocks, masjid prayers, and home prayers: none of them, and never the calendar's defaults.
@@ -74,36 +73,37 @@ def test_no_notification_on_all_3_means_no_reminders_at_all(db, http, user, fake
 
 
 def test_each_setting_sets_its_own_events(db, http, user, fake_google):
-    set_settings(db, user, masjid_reminder_minutes=10, leave_reminder_minutes=15, home_reminder_minutes=5)
+    set_settings(db, user, leave_reminder_minutes=15, home_reminder_minutes=20)
     refresh(db, http, user, NOW)
     monday = on(google_events(fake_google), MONDAY)
+    # Masjid prayers never get a reminder, whatever the other 2 are.
     assert [(e["summary"], e["reminders"]) for e in monday] == [
-        ("Fajr", popup(5)),
+        ("Fajr", popup(20)),
         ("Drive to KMA", popup(15)),
-        ("Dhuhr at KMA", popup(10)),
-        ("Asr", popup(5)),
-        ("Maghrib", popup(5)),
+        ("Dhuhr at KMA", NONE),
+        ("Asr", popup(20)),
+        ("Maghrib", popup(20)),
         ("Drive to KMA", popup(15)),
-        ("Isha at KMA", popup(10)),
+        ("Isha at KMA", NONE),
     ]
 
 
-def test_jumuah_uses_the_before_iqamah_setting(db, http, user, fake_google):
-    set_settings(db, user, masjid_reminder_minutes=20, leave_reminder_minutes=30)
+def test_jumuah_gets_no_reminder_but_its_drive_does(db, http, user, fake_google):
+    set_settings(db, user, leave_reminder_minutes=30)
     refresh(db, http, user, NOW)
     events = google_events(fake_google)
-    assert titled(events, FRIDAY, "Jumuah at KMA")["reminders"] == popup(20)
+    assert titled(events, FRIDAY, "Jumuah at KMA")["reminders"] == NONE
     friday_drives = [e for e in on(events, FRIDAY) if e["summary"] == "Drive to KMA"]
     assert friday_drives and all(e["reminders"] == popup(30) for e in friday_drives)
 
 
 def test_a_masjid_prayer_moved_home_uses_the_at_home_setting(db, http, user, fake_google):
-    set_settings(db, user, masjid_reminder_minutes=10, home_reminder_minutes=5)
+    set_settings(db, user, home_reminder_minutes=10)
     # Busy from 7:30 to 8:45 pm on Monday, so the trip to Isha at KMA doesn't fit and Isha is at home.
     fake_google.busy["user-a"] = [("2026-10-26T23:30:00Z", "2026-10-27T00:45:00Z")]
     refresh(db, http, user, NOW)
     isha = titled(google_events(fake_google), MONDAY, "Isha")
-    assert isha["reminders"] == popup(5)
+    assert isha["reminders"] == popup(10)
 
 
 def test_no_drive_block_means_no_before_leaving_reminder(db, http, fake_google, fake_mawaqit, monkeypatch):
@@ -151,15 +151,13 @@ def test_the_settings_start_at_the_defaults_and_save(db, fake_google):
     with new_client() as browser:
         sign_in(browser, fake_google, sub="user-a", email="a@example.com")
         start = browser.get("/settings").json()
-        assert (start["masjid_reminder_minutes"], start["leave_reminder_minutes"], start["home_reminder_minutes"]) == (
-            None, 5, 5,
-        )
-        response = optional(browser, masjid_reminder_minutes=5, leave_reminder_minutes=30, home_reminder_minutes=None)
+        assert (start["leave_reminder_minutes"], start["home_reminder_minutes"]) == (5, 5)
+        # The removed "before iqamah" setting isn't there any more.
+        assert "masjid_reminder_minutes" not in start
+        response = optional(browser, leave_reminder_minutes=30, home_reminder_minutes=None)
         assert response.status_code == 200
         saved = browser.get("/settings").json()
-    assert (saved["masjid_reminder_minutes"], saved["leave_reminder_minutes"], saved["home_reminder_minutes"]) == (
-        5, 30, None,
-    )
+    assert (saved["leave_reminder_minutes"], saved["home_reminder_minutes"]) == (30, None)
 
 
 @pytest.mark.parametrize("bad", [7, 0, 60, "5", -5])
@@ -175,17 +173,13 @@ def test_skipping_the_optional_step_gives_the_defaults(db, fake_google):
         sign_in(browser, fake_google, sub="user-a", email="a@example.com")
         assert optional(browser).status_code == 200
         saved = browser.get("/settings").json()
-    assert (saved["masjid_reminder_minutes"], saved["leave_reminder_minutes"], saved["home_reminder_minutes"]) == (
-        None, 5, 5,
-    )
+    assert (saved["leave_reminder_minutes"], saved["home_reminder_minutes"]) == (5, 5)
 
 
-def test_no_notification_is_still_a_choice_for_all_3(db, fake_google):
+def test_no_notification_is_still_a_choice_for_both(db, fake_google):
     with new_client() as browser:
         sign_in(browser, fake_google, sub="user-a", email="a@example.com")
-        response = optional(browser, masjid_reminder_minutes=None, leave_reminder_minutes=None, home_reminder_minutes=None)
+        response = optional(browser, leave_reminder_minutes=None, home_reminder_minutes=None)
         assert response.status_code == 200
         saved = browser.get("/settings").json()
-    assert (saved["masjid_reminder_minutes"], saved["leave_reminder_minutes"], saved["home_reminder_minutes"]) == (
-        None, None, None,
-    )
+    assert (saved["leave_reminder_minutes"], saved["home_reminder_minutes"]) == (None, None)

@@ -27,7 +27,7 @@ DEFAULT_ASR_METHOD = AsrMethod.STANDARD
 DEFAULT_ARRIVE_EARLY_MINUTES = 5
 DEFAULT_JUMUAH_ARRIVE_EARLY_MINUTES = 5
 DEFAULT_COLOR_ID = "10"  # Basil, Google Calendar's green
-# Notifications: 5 minutes before leaving and before home prayers. None before iqamah.
+# Notifications: 5 minutes before leaving and before home prayers.
 DEFAULT_LEAVE_REMINDER_MINUTES = 5
 DEFAULT_HOME_REMINDER_MINUTES = 5
 
@@ -145,7 +145,6 @@ class Setup:
     prayer_color_id: str | None = None
     drive_color_id: str | None = None
     # Popup reminders, minutes before the event. None means no reminder.
-    masjid_reminder_minutes: int | None = None
     leave_reminder_minutes: int | None = DEFAULT_LEAVE_REMINDER_MINUTES
     home_reminder_minutes: int | None = DEFAULT_HOME_REMINDER_MINUTES
 
@@ -210,7 +209,6 @@ def load_setup(db: Session, user_id: uuid.UUID, preview: bool = False) -> Setup 
         ),
         prayer_color_id=row.prayer_color_id,
         drive_color_id=row.drive_color_id,
-        masjid_reminder_minutes=row.masjid_reminder_minutes,
         leave_reminder_minutes=row.leave_reminder_minutes,
         home_reminder_minutes=row.home_reminder_minutes,
     )

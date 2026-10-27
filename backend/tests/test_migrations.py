@@ -292,7 +292,7 @@ def test_migration_0013_counts_existing_users_by_sign_up_hour(db):
 
 
 def test_migration_0014_gives_existing_users_the_defaults(db):
-    """Users from before the notification settings get 5 minutes before leaving and at home, and none before iqamah."""
+    """Users from before the notification settings get 5 minutes before leaving and before home prayers."""
     from alembic import command
     from alembic.config import Config
     from sqlalchemy import text
@@ -312,9 +312,9 @@ def test_migration_0014_gives_existing_users_the_defaults(db):
 
         with db.connect() as connection:
             row = connection.execute(text(
-                "SELECT masjid_reminder_minutes, leave_reminder_minutes, home_reminder_minutes, arrive_early_minutes "
+                "SELECT leave_reminder_minutes, home_reminder_minutes, arrive_early_minutes "
                 "FROM user_settings"
             )).one()
-        assert tuple(row) == (None, 5, 5, 5)
+        assert tuple(row) == (5, 5, 5)
     finally:
         command.upgrade(config, "head")

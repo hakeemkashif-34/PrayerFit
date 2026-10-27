@@ -117,7 +117,6 @@ class SettingsOut(BaseModel):
     prayer_color_id: ColorId | None
     drive_color_id: ColorId | None
     # Popup reminders, minutes before the event. null means no notification.
-    masjid_reminder_minutes: ReminderMinutes | None = None
     leave_reminder_minutes: ReminderMinutes | None = DEFAULT_LEAVE_REMINDER_MINUTES
     home_reminder_minutes: ReminderMinutes | None = DEFAULT_HOME_REMINDER_MINUTES
     # "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
@@ -228,7 +227,6 @@ def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
         ),
         prayer_color_id=row.prayer_color_id,
         drive_color_id=row.drive_color_id,
-        masjid_reminder_minutes=row.masjid_reminder_minutes,
         leave_reminder_minutes=row.leave_reminder_minutes,
         home_reminder_minutes=row.home_reminder_minutes,
         masjid_notices=masjid_notices(db, labelled, now, zone),
@@ -574,7 +572,6 @@ class OptionalRequest(BaseModel):
     prayer_color_id: ColorId | None = DEFAULT_COLOR_ID
     drive_color_id: ColorId | None = DEFAULT_COLOR_ID
     # null means no notification. Only the dropdown's choices are allowed.
-    masjid_reminder_minutes: ReminderMinutes | None = None
     leave_reminder_minutes: ReminderMinutes | None = DEFAULT_LEAVE_REMINDER_MINUTES
     home_reminder_minutes: ReminderMinutes | None = DEFAULT_HOME_REMINDER_MINUTES
 
@@ -588,7 +585,6 @@ def save_optional(request: OptionalRequest, user: UserDep, db: DbDep, http: Http
     row.main_masjid_short_name = _optional_text(request.short_name) if has_masjid else None
     row.prayer_color_id = request.prayer_color_id
     row.drive_color_id = request.drive_color_id
-    row.masjid_reminder_minutes = request.masjid_reminder_minutes
     row.leave_reminder_minutes = request.leave_reminder_minutes
     row.home_reminder_minutes = request.home_reminder_minutes
     row.optional_saved = True
