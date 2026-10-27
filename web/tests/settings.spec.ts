@@ -467,7 +467,8 @@ test("an item opens and closes smoothly, and not at all with motion turned off",
   const easing = () => row.evaluate((el) => el.getAnimations().length);
   // Nothing moves on page load.
   expect(await easing()).toBe(0);
-  await openEditor(page, "Edit location");
+  // A plain click, not openEditor: this test needs to see the row while it's still easing.
+  await page.getByRole("button", { name: "Edit location" }).click();
   expect(await easing()).toBeGreaterThan(0);
   await page.waitForTimeout(400);
   await row.getByRole("button", { name: "Cancel" }).click();
@@ -542,12 +543,36 @@ test("each label and its answer share a line when they fit, and wrap only when t
 
   const beside = (name: string) => sideBySide(page, `${row(name)} h3`, `${row(name)} .row-value`);
   // Short labels and short answers fit side by side on every screen.
-  for (const name of ["Short name", "Arrive before iqamah", "Prayer colour", "Notify before leaving"]) {
-    expect(await beside(name), name).toBe(true);
+  expect(await beside("Short name")).toBe(true);
+  // On desktop, every Optional row fits on one line.
+  if (info.project.name === "desktop") {
+    for (const name of ["Arrive before iqamah", "Arrive before Jumuah", "Prayer colour", "Drive colour", "Notify before leaving", "Notify before home prayers"]) {
+      expect(await beside(name), name).toBe(true);
+    }
   }
-  // On desktop, every Optional row fits on one line. On a phone, a longer pair wraps, with the answer under its label.
-  for (const name of ["Arrive before Jumuah", "Drive colour", "Notify before home prayers"]) {
-    expect(await beside(name), name).toBe(info.project.name === "desktop");
+  // Every row follows the rule: side by side when the label, the gap, and the answer fit across the row,
+  // and wrapped when they don't. Fonts render a little differently on each computer, so a pair within
+  // 2px of fitting can go either way and isn't checked.
+  const rows = await page.locator("section.setting-row .row-text").evaluateAll((all) =>
+    all.map((text) => {
+      const width = (el: Element) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return range.getBoundingClientRect().width;
+      };
+      const label = text.querySelector("h3")!;
+      const value = text.querySelector(".row-value")!;
+      const [l, v] = [label.getBoundingClientRect(), value.getBoundingClientRect()];
+      return {
+        name: label.textContent,
+        room: text.getBoundingClientRect().width - (width(label) + 16 + width(value)),
+        beside: v.left >= l.right - 1 && v.top < l.bottom && l.top < v.bottom,
+      };
+    }),
+  );
+  for (const r of rows) {
+    if (r.room > 2) expect(r.beside, `${r.name} fits, so it shares the line`).toBe(true);
+    if (r.room < -2) expect(r.beside, `${r.name} doesn't fit, so it wraps`).toBe(false);
   }
 
   // While editing, the label and its box share a line on desktop. A phone has no room, so the box goes under it.
