@@ -194,7 +194,7 @@ class UserSettings(Base):
     # Google event colours, "1" to "11". Empty uses the calendar's colour.
     prayer_color_id: Mapped[str | None] = mapped_column(String(2))
     drive_color_id: Mapped[str | None] = mapped_column(String(2))
-    # Google Calendar popup reminders, in minutes before the event. Empty means no reminder at all.
+    # Google Calendar popup reminders, in minutes before the event, 0 to 60. 0 or empty means no reminder at all.
     # Before leaving: drive blocks. At home: home prayers. Masjid prayer blocks never get one.
     # New and existing users start with 5 minutes for both.
     leave_reminder_minutes: Mapped[int | None] = mapped_column(SmallInteger, default=5, server_default="5")

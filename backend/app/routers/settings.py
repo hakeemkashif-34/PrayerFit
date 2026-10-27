@@ -58,8 +58,6 @@ OSM_CREDIT = "© OpenStreetMap contributors"
 OSM_CREDIT_URL = "https://www.openstreetmap.org/copyright"
 # Google Calendar's fixed event colours. The website shows their names and swatches.
 ColorId = Literal["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]
-# The notification dropdown's choices, in minutes. "No notification" is null.
-ReminderMinutes = Literal[5, 10, 15, 20, 30]
 
 UserDep = Annotated[User, Depends(current_user)]
 DbDep = Annotated[Session, Depends(get_db)]
@@ -116,9 +114,9 @@ class SettingsOut(BaseModel):
     jumuah_pick: JumuahPickOut | None
     prayer_color_id: ColorId | None
     drive_color_id: ColorId | None
-    # Popup reminders, minutes before the event. null means no notification.
-    leave_reminder_minutes: ReminderMinutes | None = DEFAULT_LEAVE_REMINDER_MINUTES
-    home_reminder_minutes: ReminderMinutes | None = DEFAULT_HOME_REMINDER_MINUTES
+    # Popup reminders, minutes before the event, 0 to 60. 0 means no notification.
+    leave_reminder_minutes: int = DEFAULT_LEAVE_REMINDER_MINUTES
+    home_reminder_minutes: int = DEFAULT_HOME_REMINDER_MINUTES
     # "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
     masjid_notices: list[str] = []
 
@@ -227,8 +225,9 @@ def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
         ),
         prayer_color_id=row.prayer_color_id,
         drive_color_id=row.drive_color_id,
-        leave_reminder_minutes=row.leave_reminder_minutes,
-        home_reminder_minutes=row.home_reminder_minutes,
+        # Empty, from before these were number boxes, also means no notification.
+        leave_reminder_minutes=row.leave_reminder_minutes or 0,
+        home_reminder_minutes=row.home_reminder_minutes or 0,
         masjid_notices=masjid_notices(db, labelled, now, zone),
     )
 
@@ -571,9 +570,9 @@ class OptionalRequest(BaseModel):
     # null uses the Prayers calendar's own colour.
     prayer_color_id: ColorId | None = DEFAULT_COLOR_ID
     drive_color_id: ColorId | None = DEFAULT_COLOR_ID
-    # null means no notification. Only the dropdown's choices are allowed.
-    leave_reminder_minutes: ReminderMinutes | None = DEFAULT_LEAVE_REMINDER_MINUTES
-    home_reminder_minutes: ReminderMinutes | None = DEFAULT_HOME_REMINDER_MINUTES
+    # Whole minutes, 0 to 60, the same as "how early". 0 means no notification.
+    leave_reminder_minutes: int = Field(default=DEFAULT_LEAVE_REMINDER_MINUTES, ge=0, le=60, strict=True)
+    home_reminder_minutes: int = Field(default=DEFAULT_HOME_REMINDER_MINUTES, ge=0, le=60, strict=True)
 
 
 @router.put("/settings/optional", response_model=SaveResponse)

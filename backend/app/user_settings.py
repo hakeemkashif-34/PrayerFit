@@ -209,6 +209,7 @@ def load_setup(db: Session, user_id: uuid.UUID, preview: bool = False) -> Setup 
         ),
         prayer_color_id=row.prayer_color_id,
         drive_color_id=row.drive_color_id,
-        leave_reminder_minutes=row.leave_reminder_minutes,
-        home_reminder_minutes=row.home_reminder_minutes,
+        # 0, or empty from before the number boxes, means no reminder.
+        leave_reminder_minutes=row.leave_reminder_minutes or None,
+        home_reminder_minutes=row.home_reminder_minutes or None,
     )

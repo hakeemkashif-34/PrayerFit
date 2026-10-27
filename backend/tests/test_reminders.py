@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.models import UserSettings
 from tests.calendar_helpers import fetch, google_events, on, refresh, titled
 from tests.conftest import new_client, sign_in
-from tests.masjid_helpers import add_user, link, masjid_id
+from tests.masjid_helpers import add_user, link, masjid_id, user_id
 
 TORONTO = ZoneInfo("America/Toronto")
 NOW = datetime(2026, 10, 25, 8, 0, tzinfo=TORONTO)  # Sunday
@@ -154,21 +154,34 @@ def test_the_settings_start_at_the_defaults_and_save(db, fake_google):
         assert (start["leave_reminder_minutes"], start["home_reminder_minutes"]) == (5, 5)
         # The removed "before iqamah" setting isn't there any more.
         assert "masjid_reminder_minutes" not in start
-        response = optional(browser, leave_reminder_minutes=30, home_reminder_minutes=None)
+        # Any whole number from 0 to 60, not just the old dropdown's choices.
+        response = optional(browser, leave_reminder_minutes=7, home_reminder_minutes=60)
         assert response.status_code == 200
         saved = browser.get("/settings").json()
-    assert (saved["leave_reminder_minutes"], saved["home_reminder_minutes"]) == (30, None)
+    assert (saved["leave_reminder_minutes"], saved["home_reminder_minutes"]) == (7, 60)
 
 
-@pytest.mark.parametrize("bad", [7, 0, 60, "5", -5])
-def test_only_the_dropdown_choices_are_allowed(db, fake_google, bad):
+@pytest.mark.parametrize("field", ["leave_reminder_minutes", "home_reminder_minutes", "arrive_early_minutes", "jumuah_arrive_early_minutes"])
+@pytest.mark.parametrize("bad", [61, -1, 2.5, "5", None])
+def test_only_whole_minutes_from_0_to_60_with_a_clear_message(db, fake_google, field, bad):
     with new_client() as browser:
         sign_in(browser, fake_google, sub="user-a", email="a@example.com")
-        assert optional(browser, home_reminder_minutes=bad).status_code == 422
+        response = optional(browser, **{field: bad})
+    assert response.status_code == 422
+    # One plain message the website shows, not a list of technical errors.
+    assert response.json() == {"detail": {"message": "Enter a whole number of minutes from 0 to 60.", "field": field}}
+
+
+def test_other_bad_answers_keep_the_usual_error(db, fake_google):
+    with new_client() as browser:
+        sign_in(browser, fake_google, sub="user-a", email="a@example.com")
+        response = optional(browser, prayer_color_id="99")
+    assert response.status_code == 422
+    assert isinstance(response.json()["detail"], list)
 
 
 def test_skipping_the_optional_step_gives_the_defaults(db, fake_google):
-    # Setup's optional page doesn't send the notification fields, so they get the defaults.
+    # Setup's Skip doesn't send the notification fields, so they get the defaults.
     with new_client() as browser:
         sign_in(browser, fake_google, sub="user-a", email="a@example.com")
         assert optional(browser).status_code == 200
@@ -176,10 +189,21 @@ def test_skipping_the_optional_step_gives_the_defaults(db, fake_google):
     assert (saved["leave_reminder_minutes"], saved["home_reminder_minutes"]) == (5, 5)
 
 
-def test_no_notification_is_still_a_choice_for_both(db, fake_google):
+def test_0_means_no_notification(db, http, user, fake_google):
     with new_client() as browser:
         sign_in(browser, fake_google, sub="user-a", email="a@example.com")
-        response = optional(browser, leave_reminder_minutes=None, home_reminder_minutes=None)
-        assert response.status_code == 200
+        assert optional(browser, leave_reminder_minutes=0, home_reminder_minutes=0).status_code == 200
         saved = browser.get("/settings").json()
-    assert (saved["leave_reminder_minutes"], saved["home_reminder_minutes"]) == (None, None)
+    assert (saved["leave_reminder_minutes"], saved["home_reminder_minutes"]) == (0, 0)
+    refresh(db, http, user, NOW)
+    assert all(e["reminders"] == NONE for e in google_events(fake_google))
+
+
+def test_an_empty_setting_from_before_the_number_boxes_reads_as_0(db, fake_google):
+    # Someone who picked "No notification" in the old dropdown has it empty. They keep it, shown as 0.
+    with new_client() as browser:
+        sign_in(browser, fake_google, sub="user-a", email="a@example.com")
+        optional(browser)
+        set_settings(db, user_id(db, "user-a"), leave_reminder_minutes=None, home_reminder_minutes=15)
+        saved = browser.get("/settings").json()
+    assert (saved["leave_reminder_minutes"], saved["home_reminder_minutes"]) == (0, 15)
