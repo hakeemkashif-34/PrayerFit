@@ -156,7 +156,7 @@ If you move to another time zone, the Prayers calendar's time zone changes too.
 
 ### 5. Notifications
 
-3 optional settings add Google Calendar popup reminders. Each is a dropdown: **No notification** (the default), or 5, 10, 15, 20, or 30 minutes before.
+3 optional settings add Google Calendar popup reminders. Each is a dropdown: **No notification**, or 5, 10, 15, 20, or 30 minutes before. Everyone starts with 5 minutes before leaving and before prayers at home, and no notification before iqamah. That includes people who signed up before these settings existed.
 
 1. "How early do you want to be notified before iqamah at the masjid?": masjid prayer blocks, Jumuah too.
 2. "How early do you want to be notified before leaving for the masjid?": drive blocks. With no drive block (no drive time), nothing is added.
@@ -271,7 +271,7 @@ MAWAQIT can block this at any time. After a 403, a 429, or 3 failed reads in a r
 
 ## Drive times
 
-Each masjid prayer gets a **Drive to <masjid>** block before it, from when to leave until you arrive. It only gets a popup if you pick one in "Notifications" below. Drive times come from [OpenRouteService](https://openrouteservice.org), which has a free plan. They're typical drive times with no live traffic. The app calls `https://api.heigit.org/openrouteservice/v2/directions/driving-car`. HeiGIT shut off the old address, `api.openrouteservice.org`, on September 28, 2026.
+Each masjid prayer gets a **Drive to <masjid>** block before it, from when to leave until you arrive. It gets a popup 5 minutes before you leave, which you can change or turn off in "Notifications" below. Drive times come from [OpenRouteService](https://openrouteservice.org), which has a free plan. They're typical drive times with no live traffic. The app calls `https://api.heigit.org/openrouteservice/v2/directions/driving-car`. HeiGIT shut off the old address, `api.openrouteservice.org`, on September 28, 2026.
 
 1. Sign up at https://account.heigit.org/signup and copy your API key.
 2. Put it in `.env` as `ORS_API_KEY=...` and restart: `docker compose up -d`.
@@ -612,11 +612,11 @@ export DATABASE_URL=postgresql://prayerfit:change-me@localhost:5432/prayerfit
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `870 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `873 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`438 passed, 432 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`438 passed, 435 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
