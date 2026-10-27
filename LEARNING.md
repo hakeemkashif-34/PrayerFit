@@ -1695,3 +1695,32 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
    j) Because of g) and h), the first update after this goes out sends every upcoming event once, since each one's `reminders` changed. After that, only real changes are sent.
    k) Every Settings editor sends both notification values with its own change. Otherwise saving a colour would turn the notifications off. A Playwright test checks that.
 5. **Tests**: `test_reminders.py` (the defaults, "No notification" on both, each setting on its own events, no reminder on masjid prayers or Jumuah, a prayer moved home, no drive block, changing a setting, and the API), `test_migrations.py` (0014), and `settings.spec.ts` (every label, the highlight, the one-line layout, and both dropdowns saving and staying after a reload on desktop and phone). Counts: `pytest` gives `873 passed`, and `npx playwright test` gives `280 passed`.
+
+### 16. The users graph, YouTube Studio style
+
+1. **Where**: `Graph` and `UsersCard` in `web/src/StatsPage.tsx`, and the `.graph-box` styles in `styles.css`. The backend didn't change.
+2. **The big sentence**: "PrayerFit has 41 users" sits above the graph. Every range ends now, so the last point of whatever range is picked is today's total. It uses `toLocaleString`, so 1234 shows as "1,234", and 1 says "user", not "users".
+3. **The line**: one path of straight segments (`M` then `L`s), 1.75px wide. No curve smoothing: a curve between 40 and 41 can bend below 40, which would draw a dip that never happened. There's no dot on each point. The only dot is the one for the point being looked at.
+4. **The value labels** (`valueTicks`):
+   a) They're on the right, like YouTube Studio's.
+   b) Each step is a whole number from 1, 2, 2.5, or 5, times 1, 10, 100, and so on. Only whole steps count, so 2.5 is only used as 25, 250, and up.
+   c) The code tries the steps from smallest up and takes the first one that needs 4 spans or fewer to get above the highest total. Then it shows 4 or 5 labels from 0.
+   d) The top label is always above the highest total, so the line never touches the top.
+   e) Some results: 42 gives 0, 20, 40, 60. 3 gives 0, 1, 2, 3, 4. 0 or 1 gives 0, 1, 2, 3. 999 gives 0, 250, 500, 750, 1K. 1,148 gives 0, 500, 1K, 1.5K. Tests check each of these.
+   f) From 1,000 on, labels say "1K", "1.5K", "1.25K" (`valueText`).
+5. **The bottom labels** (`labelledPoints`):
+   a) Labels are always the same number of points apart, so they're evenly spaced.
+   b) Hours land on round clock hours, like every 4 hours: 12 AM, 4 AM, 8 AM. Midnight shows the date instead, so 2 or 3 days of hours still say which day is which.
+   c) Days count back from today, so today always has a label.
+   d) The code tries steps from smallest up (1, 2, 3, 4, 6, 8, 12, 24 hours, or 1, 2, 3, 5, 7, 10, 14... days). It takes the first one with at most 7 labels that are far enough apart not to touch. It works out how wide a label is from its length, at 6.2px a character for 11px text ("Oct 20" measured 36px). That gives 5 to 7 labels on every range, on desktop and on a phone.
+   e) Each label is centred under its point. The plot has 22px on the left, enough for half a date, so the first label can be centred too. When the first label was lined up with the left edge instead, it moved right into the second one on a phone.
+6. **Hover**: an invisible box over the plot finds the point closest to the pointer, left to right. It reaches the right edge, so pointing at the value labels picks the newest point. A dot appears there with a dashed line down to 0. The card sits in a band above the plot, centred over the dot, so it never covers the line. Near either edge it slides inward. The total is large and bold. Tapping, the arrow keys, Home, and End work as before.
+7. **Phones**: the graph is drawn at its real width, so its text keeps its size. The title and the dropdown wrap onto 2 lines when they don't fit side by side.
+8. **A flaky Settings test, fixed**: 2 Settings tests sometimes failed in a full run and passed on their own. Both opened "Prayers at the masjid" and clicked Save straight away. A Settings row eases its height for 220ms when it opens or closes, with its overflow hidden. Playwright's trace showed it clicked Save in that window, and the click landed on nothing. A person can't tap that fast, but a test can. The short labels changed the row heights on phones, which made it happen more often. Now every test opens a row with `openEditor` (`tests/mock-api.ts`), which waits for the page's animations to finish before and after clicking Edit.
+9. **Tests** (`stats.spec.ts`):
+   a) The sentence: "user" for 1, and "1,234" style numbers.
+   b) The line: straight segments only, at most 2px wide, and no dots until you point.
+   c) The value labels: on the right, for 9 different highest totals.
+   d) The bottom labels: 5 to 7, evenly spaced to within a pixel, and never touching, for every range on desktop and phone.
+   e) Hover: the dot, the card above it, and the large bold total.
+   f) Tapping, the keyboard, and the card staying inside the graph.

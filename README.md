@@ -371,11 +371,15 @@ Masjids:
 
 **The private page**: put your own Google email in `.env` as `ADMIN_EMAIL=you@gmail.com` and restart. Sign in, then open http://localhost:8000/stats. It has 2 cards:
 
-1. **Total users over time**: a line graph with a dropdown above it: 1 day, 2 days, 3 days, 5 days, 7 days (the default), 30 days, or All time.
-   a) 1 to 3 days have one point per hour. 5 days and up have one point per day.
-   b) Each point is the total users at the end of that hour or day, or right now for the current one.
-   c) Point at the graph to see the closest point's date, the hour when it's hourly, and the total. Moving off the graph hides it. On a phone, tap the graph, and tap anywhere else to hide it. With the keyboard, tab to the graph and use the arrow keys, Home, and End.
-   d) All times are Toronto time.
+1. **Total users over time**, styled like YouTube Studio's views graph, in PrayerFit's own colours and font:
+   a) A dropdown at the top right: 1 day, 2 days, 3 days, 5 days, 7 days (the default), 30 days, or All time.
+   b) One big sentence with today's total, like "PrayerFit has 41 users".
+   c) One thin line with straight segments between points, and no dot on each point. A smoothed curve could draw a dip that never happened.
+   d) 1 to 3 days have one point per hour. 5 days and up have one point per day. Each point is the total users at the end of that hour or day, or right now for the current one.
+   e) Light grid lines with labels on the right: 4 or 5 whole numbers from 0, up to a round number just above the highest total, like 0, 20, 40, 60. With few users it's 0, 1, 2, 3. From 1,000 on they say "1K", "1.5K".
+   f) 5 to 7 evenly spaced labels along the bottom: round hours (like every 4 hours) for 1 to 3 days, with the date at midnight, and dates for longer ranges.
+   g) Point at the graph (or tap it on a phone) and a dot appears on the line at the closest point, with a card above it: the date, the hour when it's hourly, and the total in large bold text. Moving off the graph or tapping elsewhere hides it. With the keyboard, tab to the graph and use the arrow keys, Home, and End.
+   h) All times are Toronto time.
    e) The line goes down when someone deletes their account. It's built from `user_count_changes`: how many people signed up and how many deleted their account in each hour. That table has no user ID, no email, and nothing else that leads back to a person.
 2. **Masajid**: each masjid and how many users picked it, with a small "No MAWAQIT times" tag on masjids that aren't linked.
 
