@@ -1652,3 +1652,24 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
    f) The masjid card is called "Masajid" (the plural), and that's the only place the word shows. The names column has a hidden "Name" header for screen readers, and the right column just says "Users".
 7. **Privacy page**: it now says the app counts sign-ups and deletions per hour, with nothing that leads back to a person.
 8. **Tests**: `test_stats.py` (the counts, each range, daylight saving, the endpoints), `test_migrations.py` (the migration groups users by hour and adds no ID or email column), and `stats.spec.ts` and `privacy.spec.ts` for the page. Counts: `pytest` gives `857 passed`, and `npx playwright test` gives `276 passed`.
+
+### 15. The highlight, one line per setting, and prayer notifications
+
+1. **The highlight**: on Settings, "Updates and changes" in "Updates and changes are reflected on your calendar every 5 minutes." is in a `<mark class="highlight">`. It uses `--gold-highlight`, the same token as "praying on time" on the landing page, so both always match. It isn't bold, and it wraps like normal text (`box-decoration-break: clone` keeps the rounded ends on each line). The sentence's wording didn't change.
+2. **One line per setting** (`styles.css`, `.row-text`):
+   a) Each row is a wrapping flex line: the question, then the answer, then **Edit**.
+   b) The question asks for at least 9rem. If the question and the answer fit side by side, they share the line. If they don't, the answer wraps under the question. Short answers like "KMA" stay beside the question even on a phone. Long ones like the weekly list or an address go under it on a phone.
+   c) Headings use `text-wrap: balance` everywhere else, but in these rows it split short questions onto 2 lines when there was room, so the rows turn it off.
+   d) While editing, `.inline-field` puts the question and its box or dropdown on one line the same way. It only applies inside `.settings-page`, because setup uses the same `MinutesField` and stays stacked there.
+   e) A Playwright test measures the boxes: a short answer is beside its question on both screens, and "How early... (daily prayers)?" is beside its answer on desktop and wraps on a phone.
+3. **Prayer notifications**:
+   a) 3 settings in `user_settings`, added by migration `0014`: `masjid_reminder_minutes`, `leave_reminder_minutes`, and `home_reminder_minutes`. Empty means "No notification", so existing users start with none. A migration test checks that.
+   b) The API only takes the dropdown's choices: 5, 10, 15, 20, 30, or null. 7, 0, 60, and "5" get 422.
+   c) `event_plan.py` puts each one on the right events: masjid prayer blocks and Jumuah use "before iqamah", drive blocks use "before leaving", and every home prayer uses "at home". A masjid prayer moved home because the user is busy is a home prayer, so it uses "at home". No drive time means no drive block, so "before leaving" adds nothing.
+   d) They're Google Calendar popup reminders (`reminders.overrides`), so there's no web push and no new service.
+   e) **"No notification" really means none.** Before, an event with no reminder left out the `reminders` field, so Google used the calendar's own default reminders. Now every event sends `{"useDefault": false, "overrides": []}` when there's no reminder.
+   f) **Drive blocks changed.** They used to get a popup when it was time to leave. Now they follow "before leaving", which starts at "No notification".
+   g) **Only changed events are sent.** The calendar update already compares a hash of what Google would get with what Google last got. A new reminder changes the hash, so only events whose reminder changed go back to Google. Past events are never touched. A test changes "at home" at 3 pm and checks that only future home prayers were sent.
+   h) Because of e) and f), the first update after this goes out sends every upcoming event once, since each one's `reminders` changed. After that, only real changes are sent.
+   i) Every Settings editor sends the 3 notification values with its own change. Otherwise saving a colour would turn the notifications off. A Playwright test checks that.
+4. **Tests**: `test_reminders.py` (the default, each setting on its own events, Jumuah, a prayer moved home, no drive block, changing a setting, and the API), `test_migrations.py` (0014), and `settings.spec.ts` (the highlight, the one-line layout, and the 3 dropdowns saving and staying after a reload on desktop and phone). Counts: `pytest` gives `870 passed`, and `npx playwright test` gives `280 passed`.
