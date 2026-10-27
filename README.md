@@ -150,17 +150,20 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 
 ### 4. Change a setting
 
-Coming back to the website later opens the **Settings** page. It never sends you to Google Calendar on its own. Press **Open Google Calendar** to go there. Settings has 2 white cards, side by side on a computer and one above the other on a phone. **Required** has your location, main masjid, weekly prayers, and your Jumuah pick (the same calendar view as setup). **Optional** has the short name, both "how early" times, both colours, and the 3 notification settings. Each item shows its setup question with your answer beside it on the same line, like "How early do you want to arrive before iqamah (daily prayers)?" and "5 minutes". On a phone, the answer moves under the question only when the two don't fit side by side. While editing, the question and its box or dropdown share a line the same way. At the top, Settings says "Updates and changes are reflected on your calendar every 5 minutes.", with "Updates and changes" in the same soft yellow as "praying on time" on the landing page. Press **Edit** next to any one of them, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
+Coming back to the website later opens the **Settings** page. It never sends you to Google Calendar on its own. Press **Open Google Calendar** to go there. Settings has 2 white cards, side by side on a computer and one above the other on a phone. **Required** has your location, main masjid, weekly prayers, and your Jumuah pick (the same calendar view as setup). **Optional** has the short name, both "how early" times, both colours, and the 2 notification settings. Each item has a short label with your answer beside it on the same line, like "Arrive before iqamah" and "5 minutes". Setup still asks the full questions, like "How early do you want to arrive before iqamah (daily prayers)?". On a phone, the answer moves under the label only when the two don't fit side by side. While editing, the label and its box or dropdown share a line the same way. At the top, Settings says "Updates and changes are reflected on your calendar every 5 minutes.", with "every 5 minutes" in bold, in the same soft yellow as "praying on time" on the landing page.
+
+The labels: Location, Main masjid, Prayers at the masjid, Preferred Jumuah, Short name, Arrive before iqamah, Arrive before Jumuah, Prayer colour, Drive colour, Notify before leaving, and Notify before home prayers. Press **Edit** next to any one of them, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
 
 If you move to another time zone, the Prayers calendar's time zone changes too.
 
 ### 5. Notifications
 
-3 optional settings add Google Calendar popup reminders. Each is a dropdown: **No notification**, or 5, 10, 15, 20, or 30 minutes before. Everyone starts with 5 minutes before leaving and before prayers at home, and no notification before iqamah. That includes people who signed up before these settings existed.
+2 optional settings add Google Calendar popup reminders. Each is a dropdown: **No notification**, or 5, 10, 15, 20, or 30 minutes before. Both start at 5 minutes, including for people who signed up before these settings existed.
 
-1. "How early do you want to be notified before iqamah at the masjid?": masjid prayer blocks, Jumuah too.
-2. "How early do you want to be notified before leaving for the masjid?": drive blocks. With no drive block (no drive time), nothing is added.
-3. "How early do you want to be notified before prayer at home?": every prayer that isn't at the masjid, including a masjid prayer moved home because you're busy.
+1. **Notify before leaving**: drive blocks. With no drive block (no drive time), nothing is added.
+2. **Notify before home prayers**: every prayer that isn't at the masjid, including a masjid prayer moved home because you're busy.
+
+Masjid prayer blocks, Jumuah too, never get a reminder. The drive block's reminder comes before them anyway.
 
 "No notification" means no reminder at all. The app tells Google not to use the calendar's own default reminders either. Changing a setting only sends the future events whose reminder changed. Past events are never touched.
 
@@ -400,7 +403,7 @@ Through nginx, every endpoint below is under `/api` (like `/api/me`), except the
 | `POST /masjids/from-suggestion` | Saves the picked suggestion as a masjid, for the main masjid or Jumuah |
 | `PUT /settings/main-masjid` | Saves the main masjid, or "home". Picking a different masjid clears its short name |
 | `PUT /settings/weekly` | Saves the weekly grid (7 days) |
-| `PUT /settings/optional` | Saves both "how early" times, the short name, and the 2 colours. Skip sends the defaults |
+| `PUT /settings/optional` | Saves both "how early" times, the short name, the 2 colours, and the 2 notifications. Skip sends the defaults |
 | `PUT /settings/jumuah-pick` | Saves your Jumuah pick as your main masjid and a slot (1st, 2nd, or 3rd), or clears it |
 | `POST /jumuah/slots` | Each Jumuah slot at your main masjid (or the `masjid_id` given, for setup), with this week's times as an example, its leave time, which one is picked, and the masjid's name if it has no Jumuah times yet. No busy times. A POST because it may ask OpenRouteService for a drive time |
 | `POST /calendar/preview` | This week's prayers and drive blocks at their real times, for the "Adding your prayers" page. Nothing goes to Google |
