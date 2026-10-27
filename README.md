@@ -150,11 +150,21 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 
 ### 4. Change a setting
 
-Coming back to the website later opens the **Settings** page. It never sends you to Google Calendar on its own. Press **Open Google Calendar** to go there. Settings has 2 white cards, side by side on a computer and one above the other on a phone. **Required** has your location, main masjid, weekly prayers, and your Jumuah pick (the same calendar view as setup). **Optional** has the short name, both "how early" times, and both colours. Each item shows its setup question as the label and just your answer under it, like "How early do you want to arrive before iqamah (daily prayers)?" and "5 minutes". At the top, Settings says "Updates and changes are reflected on your calendar every 5 minutes." Press **Edit** next to any one of them, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
+Coming back to the website later opens the **Settings** page. It never sends you to Google Calendar on its own. Press **Open Google Calendar** to go there. Settings has 2 white cards, side by side on a computer and one above the other on a phone. **Required** has your location, main masjid, weekly prayers, and your Jumuah pick (the same calendar view as setup). **Optional** has the short name, both "how early" times, both colours, and the 3 notification settings. Each item shows its setup question with your answer beside it on the same line, like "How early do you want to arrive before iqamah (daily prayers)?" and "5 minutes". On a phone, the answer moves under the question only when the two don't fit side by side. While editing, the question and its box or dropdown share a line the same way. At the top, Settings says "Updates and changes are reflected on your calendar every 5 minutes.", with "Updates and changes" in the same soft yellow as "praying on time" on the landing page. Press **Edit** next to any one of them, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
 
 If you move to another time zone, the Prayers calendar's time zone changes too.
 
-### 5. Delete my account
+### 5. Notifications
+
+3 optional settings add Google Calendar popup reminders. Each is a dropdown: **No notification** (the default), or 5, 10, 15, 20, or 30 minutes before.
+
+1. "How early do you want to be notified before iqamah at the masjid?": masjid prayer blocks, Jumuah too.
+2. "How early do you want to be notified before leaving for the masjid?": drive blocks. With no drive block (no drive time), nothing is added.
+3. "How early do you want to be notified before prayer at home?": every prayer that isn't at the masjid, including a masjid prayer moved home because you're busy.
+
+"No notification" means no reminder at all. The app tells Google not to use the calendar's own default reminders either. Changing a setting only sends the future events whose reminder changed. Past events are never touched.
+
+### 6. Delete my account
 
 At the very bottom of Settings, **Delete my account** (outlined in red) asks first: "This deletes your PrayerFit account, your settings, and the Prayers calendar from your Google Calendar. This can't be undone." Cancel is focused, so a stray Enter does nothing. **Delete my account** then:
 
@@ -261,7 +271,7 @@ MAWAQIT can block this at any time. After a 403, a 429, or 3 failed reads in a r
 
 ## Drive times
 
-Each masjid prayer gets a **Drive to <masjid>** block before it, from when to leave until you arrive, with a popup reminder when it starts. Drive times come from [OpenRouteService](https://openrouteservice.org), which has a free plan. They're typical drive times with no live traffic. The app calls `https://api.heigit.org/openrouteservice/v2/directions/driving-car`. HeiGIT shut off the old address, `api.openrouteservice.org`, on September 28, 2026.
+Each masjid prayer gets a **Drive to <masjid>** block before it, from when to leave until you arrive. It only gets a popup if you pick one in "Notifications" below. Drive times come from [OpenRouteService](https://openrouteservice.org), which has a free plan. They're typical drive times with no live traffic. The app calls `https://api.heigit.org/openrouteservice/v2/directions/driving-car`. HeiGIT shut off the old address, `api.openrouteservice.org`, on September 28, 2026.
 
 1. Sign up at https://account.heigit.org/signup and copy your API key.
 2. Put it in `.env` as `ORS_API_KEY=...` and restart: `docker compose up -d`.
@@ -602,11 +612,11 @@ export DATABASE_URL=postgresql://prayerfit:change-me@localhost:5432/prayerfit
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `857 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `870 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`438 passed, 419 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`438 passed, 432 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
@@ -619,4 +629,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `276 passed`: 138 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `280 passed`: 140 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
