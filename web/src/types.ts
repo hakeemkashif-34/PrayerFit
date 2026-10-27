@@ -30,7 +30,8 @@ export type Step = "address" | "masjid" | "weekly" | "optional";
 // Each item on the Settings page, edited on its own.
 export type Editable =
   | "address" | "masjid" | "weekly"
-  | "jumuah" | "jumuah_pick" | "short_name" | "early" | "jumuah_early" | "prayer_colour" | "drive_colour";
+  | "jumuah" | "jumuah_pick" | "short_name" | "early" | "jumuah_early" | "prayer_colour" | "drive_colour"
+  | "reminder_masjid" | "reminder_leave" | "reminder_home";
 
 // A Jumuah slot: a masjid and its 1st, 2nd, or 3rd Jumuah.
 export type SlotKey = { masjid_id: string; order: number };
@@ -52,6 +53,10 @@ export type Settings = {
   jumuah_pick: SlotKey | null;
   prayer_color_id: string | null;
   drive_color_id: string | null;
+  // Google Calendar popup reminders, in minutes before the event. null means no notification.
+  masjid_reminder_minutes: ReminderMinutes | null;
+  leave_reminder_minutes: ReminderMinutes | null;
+  home_reminder_minutes: ReminderMinutes | null;
   // "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
   masjid_notices: string[];
 };
@@ -62,7 +67,14 @@ export type OptionalAnswers = {
   short_name?: string;
   prayer_color_id: string | null;
   drive_color_id: string | null;
+  // Left out means no notification, like setup's optional page.
+  masjid_reminder_minutes?: ReminderMinutes | null;
+  leave_reminder_minutes?: ReminderMinutes | null;
+  home_reminder_minutes?: ReminderMinutes | null;
 };
+
+// The notification dropdown's choices, in minutes.
+export type ReminderMinutes = 5 | 10 | 15 | 20 | 30;
 
 export type CalendarUpdate = {
   // "adding" is the website's own, while setup's first update runs.

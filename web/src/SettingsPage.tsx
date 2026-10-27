@@ -10,11 +10,11 @@ import { api, ApiError, SIGN_IN_URL } from "./api";
 import { BusyBanner } from "./BusyBanner";
 import { googleCalendarUrl } from "./googleCalendar";
 import {
-  colourName, GOOGLE_COLOURS, masjidLabel, masjidName, minutesText, PRAYER_NAMES, PRAYERS, QUESTIONS, WEEKDAYS,
+  colourName, GOOGLE_COLOURS, masjidLabel, masjidName, minutesText, PRAYER_NAMES, PRAYERS, QUESTIONS, reminderText, WEEKDAYS,
 } from "./labels";
 import { OsmFooter } from "./OsmFooter";
 import { QUESTION as JUMUAH_QUESTION } from "./JumuahChooser";
-import { ColourEditor, EarlyEditor, JumuahPickEditor, ShortNameEditor } from "./SettingsEditors";
+import { ColourEditor, EarlyEditor, JumuahPickEditor, ReminderEditor, REMINDER_KINDS, REMINDERS, ShortNameEditor } from "./SettingsEditors";
 import { LocationStep } from "./steps/LocationStep";
 import { MasjidStep } from "./steps/MasjidStep";
 import { WeeklyStep } from "./steps/WeeklyStep";
@@ -194,6 +194,14 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
               edit={<ColourEditor settings={settings} onSaved={saved} onCancel={cancel} drive />}>
               <p><ColourName id={settings.drive_color_id} /></p>
             </Row>
+
+            {/* Google Calendar popup reminders: before iqamah, before leaving, and at home. */}
+            {REMINDER_KINDS.map((kind) => (
+              <Row key={kind} title={REMINDERS[kind].title} question={REMINDERS[kind].question} step={`reminder_${kind}`}
+                {...rows} edit={<ReminderEditor settings={settings} onSaved={saved} onCancel={cancel} kind={kind} />}>
+                <p>{reminderText(settings[REMINDERS[kind].field])}</p>
+              </Row>
+            ))}
           </section>
         </div>
 

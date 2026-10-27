@@ -59,6 +59,9 @@ export function emptySettings(): Settings {
     jumuah_pick: null,
     prayer_color_id: null,
     drive_color_id: null,
+    masjid_reminder_minutes: null,
+    leave_reminder_minutes: null,
+    home_reminder_minutes: null,
     masjid_notices: [],
   };
 }
@@ -81,6 +84,9 @@ export function finishedSettings(): Settings {
     jumuah_pick: null,
     prayer_color_id: "7",
     drive_color_id: null,
+    masjid_reminder_minutes: null,
+    leave_reminder_minutes: null,
+    home_reminder_minutes: null,
     masjid_notices: [],
   };
 }
@@ -383,6 +389,9 @@ export class MockApi {
           main_masjid_short_name: s.main_masjid_choice === "masjid" ? body.short_name?.trim() || null : null,
           prayer_color_id: body.prayer_color_id ?? null,
           drive_color_id: body.drive_color_id ?? null,
+          masjid_reminder_minutes: body.masjid_reminder_minutes ?? null,
+          leave_reminder_minutes: body.leave_reminder_minutes ?? null,
+          home_reminder_minutes: body.home_reminder_minutes ?? null,
         });
         return json(200, this.saved(updated(20)));
       case "POST /api/setup/finish":

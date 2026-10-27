@@ -14,7 +14,7 @@ test("Settings has 2 cards, Required and Optional, each item with its own Edit",
   }
   const optionalItems = [
     "Short name", "How early for prayers", "How early for Jumuah",
-    "Prayer colour", "Drive colour",
+    "Prayer colour", "Drive colour", "Notify before iqamah", "Notify before leaving", "Notify at home",
   ];
   for (const name of optionalItems) {
     await expect(optional.getByRole("region", { name })).toBeVisible();
@@ -184,6 +184,8 @@ test("picking a different masjid clears the old short name", async ({ page }) =>
 // What finishedSettings() has saved for the optional answers.
 const SAVED_OPTIONAL = {
   arrive_early_minutes: 5, jumuah_arrive_early_minutes: 10, short_name: "KMA", prayer_color_id: "7", drive_color_id: null,
+  // Every editor sends the notifications too, so saving one setting never turns them off.
+  masjid_reminder_minutes: null, leave_reminder_minutes: null, home_reminder_minutes: null,
 };
 
 test("how early for prayers is edited on its own", async ({ page }) => {
@@ -551,4 +553,52 @@ test("each question and its answer share a line when they fit, and wrap only whe
   // Nothing ever runs off the screen.
   const width = await page.evaluate(() => document.documentElement.clientWidth);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+});
+
+test("the 3 notification dropdowns save, show, and stay after a reload", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  await api.install(page);
+  await page.goto("/");
+  // The highlight shows on this page too.
+  await expect(page.locator("mark.highlight")).toHaveText("Updates and changes");
+
+  const rows = {
+    masjid: { name: "Notify before iqamah", question: "How early do you want to be notified before iqamah at the masjid?", pick: "10 minutes" },
+    leave: { name: "Notify before leaving", question: "How early do you want to be notified before leaving for the masjid?", pick: "30 minutes" },
+    home: { name: "Notify at home", question: "How early do you want to be notified before prayer at home?", pick: "5 minutes" },
+  };
+  for (const row of Object.values(rows)) {
+    const region = page.getByRole("region", { name: row.name });
+    // Everyone starts with no notification.
+    await expect(region.locator("h3")).toHaveText(row.question);
+    await expect(region.locator(".row-value")).toHaveText("No notification");
+    await page.getByRole("button", { name: `Edit ${row.name.toLowerCase()}` }).click();
+    const select = region.getByLabel(row.question);
+    await expect(select.locator("option")).toHaveText(["No notification", "5 minutes", "10 minutes", "15 minutes", "20 minutes", "30 minutes"]);
+    await select.selectOption({ label: row.pick });
+    await region.getByRole("button", { name: "Save" }).click();
+    await expect(region.locator(".row-value")).toHaveText(row.pick);
+  }
+  const lastSave = () => api.calls("PUT", "/api/settings/optional").at(-1)!.body as Record<string, number | null>;
+  const sent = lastSave();
+  expect([sent.masjid_reminder_minutes, sent.leave_reminder_minutes, sent.home_reminder_minutes]).toEqual([10, 30, 5]);
+
+  // Saving another optional setting keeps the notifications.
+  await page.getByRole("button", { name: "Edit how early for prayers" }).click();
+  await page.getByLabel("How early do you want to arrive before iqamah (daily prayers)?").fill("7");
+  await page.getByRole("region", { name: "How early for prayers" }).getByRole("button", { name: "Save" }).click();
+  const after = lastSave();
+  expect([after.masjid_reminder_minutes, after.leave_reminder_minutes, after.home_reminder_minutes]).toEqual([10, 30, 5]);
+
+  await page.reload();
+  for (const row of Object.values(rows)) {
+    await expect(page.getByRole("region", { name: row.name }).locator(".row-value")).toHaveText(row.pick);
+  }
+
+  // Back to "No notification" sends null, not 0.
+  await page.getByRole("button", { name: "Edit notify at home" }).click();
+  await page.getByLabel(rows.home.question).selectOption({ label: "No notification" });
+  await page.getByRole("region", { name: rows.home.name }).getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("region", { name: rows.home.name }).locator(".row-value")).toHaveText("No notification");
+  expect(lastSave().home_reminder_minutes).toBeNull();
 });

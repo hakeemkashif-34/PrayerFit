@@ -1,6 +1,6 @@
 // Words shown on the page for the values the API uses.
 
-import type { Masjid, Prayer, Settings } from "./types";
+import type { Masjid, Prayer, ReminderMinutes, Settings } from "./types";
 
 export const PRAYERS: Prayer[] = ["fajr", "dhuhr", "asr", "maghrib", "isha"];
 export const PRAYER_NAMES: Record<Prayer, string> = {
@@ -63,6 +63,13 @@ export function minutesText(minutes: number): string {
   return `${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
+// The notification dropdown: "No notification" first, then minutes before.
+export const REMINDER_CHOICES: (ReminderMinutes | null)[] = [null, 5, 10, 15, 20, 30];
+
+export function reminderText(minutes: ReminderMinutes | null): string {
+  return minutes === null ? "No notification" : minutesText(minutes);
+}
+
 // The setup questions, shown as labels on Settings too.
 export const QUESTIONS = {
   location: "What's your location?",
@@ -70,6 +77,9 @@ export const QUESTIONS = {
   weekly: "Which prayers do you usually pray at the masjid?",
   early: "How early do you want to arrive before iqamah (daily prayers)?",
   jumuahEarly: "How early do you want to arrive before Jumuah (Friday prayer)?",
+  masjidReminder: "How early do you want to be notified before iqamah at the masjid?",
+  leaveReminder: "How early do you want to be notified before leaving for the masjid?",
+  homeReminder: "How early do you want to be notified before prayer at home?",
 };
 
 // The masjid's name in event titles: the short name if there is one.

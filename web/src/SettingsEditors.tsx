@@ -8,9 +8,9 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { api, ApiError } from "./api";
 import { ColourPicker } from "./ColourPicker";
 import { JumuahChooser } from "./JumuahChooser";
-import { EARLY_ERROR, MAX_EARLY, QUESTIONS, wholeMinutes } from "./labels";
+import { EARLY_ERROR, MAX_EARLY, QUESTIONS, REMINDER_CHOICES, reminderText, wholeMinutes } from "./labels";
 import { MinutesField } from "./MinutesField";
-import type { OptionalAnswers, SaveResponse, Settings, SlotKey } from "./types";
+import type { OptionalAnswers, ReminderMinutes, SaveResponse, Settings, SlotKey } from "./types";
 
 type EditorProps = {
   settings: Settings;
@@ -25,6 +25,10 @@ function saved(settings: Settings): OptionalAnswers {
     short_name: settings.main_masjid_short_name ?? undefined,
     prayer_color_id: settings.prayer_color_id,
     drive_color_id: settings.drive_color_id,
+    // Every editor sends these too, or saving a colour would turn the notifications off.
+    masjid_reminder_minutes: settings.masjid_reminder_minutes,
+    leave_reminder_minutes: settings.leave_reminder_minutes,
+    home_reminder_minutes: settings.home_reminder_minutes,
   };
 }
 
@@ -120,6 +124,39 @@ export function ColourEditor({ settings, onSaved, onCancel, drive }: EditorProps
     <EditorForm title={title} onCancel={onCancel}
       onSave={() => api.saveOptional({ ...saved(settings), [field]: colour }).then(onSaved)}>
       <ColourPicker label={title} value={colour} onChange={setColour} />
+    </EditorForm>
+  );
+}
+
+export type ReminderKind = "masjid" | "leave" | "home";
+
+type ReminderField = "masjid_reminder_minutes" | "leave_reminder_minutes" | "home_reminder_minutes";
+
+export const REMINDER_KINDS: ReminderKind[] = ["masjid", "leave", "home"];
+
+export const REMINDERS: Record<ReminderKind, { title: string; question: string; field: ReminderField }> = {
+  masjid: { title: "Notify before iqamah", question: QUESTIONS.masjidReminder, field: "masjid_reminder_minutes" },
+  leave: { title: "Notify before leaving", question: QUESTIONS.leaveReminder, field: "leave_reminder_minutes" },
+  home: { title: "Notify at home", question: QUESTIONS.homeReminder, field: "home_reminder_minutes" },
+};
+
+// A dropdown: No notification, or 5 to 30 minutes before. It becomes a Google Calendar popup.
+export function ReminderEditor({ settings, onSaved, onCancel, kind }: EditorProps & { kind: ReminderKind }) {
+  const { title, question, field } = REMINDERS[kind];
+  const [minutes, setMinutes] = useState<ReminderMinutes | null>(settings[field]);
+  const id = `reminder-${kind}`;
+  return (
+    <EditorForm title={title} onCancel={onCancel}
+      onSave={() => api.saveOptional({ ...saved(settings), [field]: minutes }).then(onSaved)}>
+      <div className="inline-field">
+        <label htmlFor={id}>{question}</label>
+        <select id={id} value={minutes ?? ""}
+          onChange={(e) => setMinutes(e.target.value === "" ? null : (Number(e.target.value) as ReminderMinutes))}>
+          {REMINDER_CHOICES.map((choice) => (
+            <option key={choice ?? "none"} value={choice ?? ""}>{reminderText(choice)}</option>
+          ))}
+        </select>
+      </div>
     </EditorForm>
   );
 }
