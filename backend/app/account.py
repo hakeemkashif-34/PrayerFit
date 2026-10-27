@@ -40,6 +40,7 @@ from app.google_errors import (
     ReauthRequired,
 )
 from app.models import GoogleToken, PrayerCalendar, User
+from app.stats import record_deletion
 
 logger = logging.getLogger("app.account")
 
@@ -86,6 +87,8 @@ def delete_account(db: Session, http: httpx2.Client, user_id: uuid.UUID) -> Dele
             logger.exception("Cleaning up Google for user %s failed", user_id)
             calendar_gone = access_revoked = False
         db.execute(delete(User).where(User.id == user_id))
+        # The /stats graph goes down by 1. Same commit, so it can't count a delete that didn't happen.
+        record_deletion(db)
         db.commit()
     # Only the user ID and whether Google worked. Never anything else about them.
     logger.info("Deleted user %s (Google cleaned up: %s)", user_id, calendar_gone and access_revoked)

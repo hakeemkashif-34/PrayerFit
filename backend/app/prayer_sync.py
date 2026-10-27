@@ -126,11 +126,11 @@ def google_event(row: PrayerEvent) -> dict:
     # and aren't sent again.
     if row.color_id:
         event["colorId"] = row.color_id
-    if row.reminder_minutes is not None:
-        event["reminders"] = {
-            "useDefault": False,
-            "overrides": [{"method": "popup", "minutes": row.reminder_minutes}],
-        }
+    # Always sent, and never the calendar's defaults: no setting means no reminder at all.
+    event["reminders"] = {
+        "useDefault": False,
+        "overrides": [] if row.reminder_minutes is None else [{"method": "popup", "minutes": row.reminder_minutes}],
+    }
     return event
 
 

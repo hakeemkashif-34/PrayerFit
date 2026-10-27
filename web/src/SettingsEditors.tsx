@@ -8,7 +8,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { api, ApiError } from "./api";
 import { ColourPicker } from "./ColourPicker";
 import { JumuahChooser } from "./JumuahChooser";
-import { EARLY_ERROR, MAX_EARLY, QUESTIONS, wholeMinutes } from "./labels";
+import { EARLY_ERROR, LABELS, MAX_EARLY, REMINDER_HINT, wholeMinutes } from "./labels";
 import { MinutesField } from "./MinutesField";
 import type { OptionalAnswers, SaveResponse, Settings, SlotKey } from "./types";
 
@@ -25,6 +25,9 @@ function saved(settings: Settings): OptionalAnswers {
     short_name: settings.main_masjid_short_name ?? undefined,
     prayer_color_id: settings.prayer_color_id,
     drive_color_id: settings.drive_color_id,
+    // Every editor sends these too, or saving a colour would turn the notifications off.
+    leave_reminder_minutes: settings.leave_reminder_minutes,
+    home_reminder_minutes: settings.home_reminder_minutes,
   };
 }
 
@@ -56,7 +59,8 @@ function EditorForm({ title, onSave, onCancel, children }: {
 
   return (
     <form onSubmit={submit} aria-labelledby={id} noValidate>
-      <h3 id={id}>{title}</h3>
+      {/* The field's own label says the same thing, so the title is only for screen readers. */}
+      <h3 id={id} className="visually-hidden">{title}</h3>
       {children}
       {error && (
         <p className="error" role="alert">
@@ -79,10 +83,12 @@ export function ShortNameEditor({ settings, onSaved, onCancel }: EditorProps) {
   const [name, setName] = useState(settings.main_masjid_short_name ?? "");
   const masjid = settings.main_masjid;
   return (
-    <EditorForm title="Short name" onCancel={onCancel}
+    <EditorForm title={LABELS.shortName} onCancel={onCancel}
       onSave={() => api.saveOptional({ ...saved(settings), short_name: name.trim() || undefined }).then(onSaved)}>
-      <label htmlFor="short-name">Short name for {masjid?.name ?? "your masjid"}</label>
-      <input id="short-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="KMA" maxLength={40} />
+      <div className="inline-field">
+        <label htmlFor="short-name">Short name for {masjid?.name ?? "your masjid"}</label>
+        <input id="short-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="KMA" maxLength={40} />
+      </div>
       <p className="hint small-line">Events will say "Dhuhr at {name.trim() || masjid?.name || "your masjid"}".</p>
     </EditorForm>
   );
@@ -102,9 +108,9 @@ export function EarlyEditor({ settings, onSaved, onCancel, jumuah }: EditorProps
   }
 
   return (
-    <EditorForm title={jumuah ? "How early for Jumuah" : "How early for prayers"} onSave={save} onCancel={onCancel}>
+    <EditorForm title={jumuah ? LABELS.jumuahEarly : LABELS.early} onSave={save} onCancel={onCancel}>
       <MinutesField id={jumuah ? "jumuah-early" : "arrive-early"}
-        label={jumuah ? QUESTIONS.jumuahEarly : QUESTIONS.early}
+        label={jumuah ? LABELS.jumuahEarly : LABELS.early}
         value={text} onChange={setText} error={error} min={0} max={MAX_EARLY} />
     </EditorForm>
   );
@@ -112,7 +118,7 @@ export function EarlyEditor({ settings, onSaved, onCancel, jumuah }: EditorProps
 
 export function ColourEditor({ settings, onSaved, onCancel, drive }: EditorProps & { drive: boolean }) {
   const [colour, setColour] = useState(drive ? settings.drive_color_id : settings.prayer_color_id);
-  const title = drive ? "Drive colour" : "Prayer colour";
+  const title = drive ? LABELS.driveColour : LABELS.prayerColour;
   const field = drive ? "drive_color_id" : "prayer_color_id";
   return (
     <EditorForm title={title} onCancel={onCancel}
@@ -122,10 +128,43 @@ export function ColourEditor({ settings, onSaved, onCancel, drive }: EditorProps
   );
 }
 
+export type ReminderKind = "leave" | "home";
+
+type ReminderField = "leave_reminder_minutes" | "home_reminder_minutes";
+
+export const REMINDER_KINDS: ReminderKind[] = ["leave", "home"];
+
+// Masjid prayers have no notification of their own. The drive block's comes first.
+export const REMINDERS: Record<ReminderKind, { title: string; field: ReminderField }> = {
+  leave: { title: LABELS.leaveReminder, field: "leave_reminder_minutes" },
+  home: { title: LABELS.homeReminder, field: "home_reminder_minutes" },
+};
+
+// A notification's number box, the same as setup's optional page. 0 means no notification.
+export function ReminderEditor({ settings, onSaved, onCancel, kind }: EditorProps & { kind: ReminderKind }) {
+  const { title, field } = REMINDERS[kind];
+  const [text, setText] = useState(String(settings[field]));
+  const [error, setError] = useState("");
+
+  function save() {
+    const minutes = wholeMinutes(text, 0, MAX_EARLY);
+    setError(minutes === null ? EARLY_ERROR : "");
+    if (minutes === null) return null;
+    return api.saveOptional({ ...saved(settings), [field]: minutes }).then(onSaved);
+  }
+
+  return (
+    <EditorForm title={title} onSave={save} onCancel={onCancel}>
+      <MinutesField id={`reminder-${kind}`} label={title} value={text} onChange={setText} error={error}
+        min={0} max={MAX_EARLY} hint={REMINDER_HINT} />
+    </EditorForm>
+  );
+}
+
 export function JumuahPickEditor({ settings, onSaved, onCancel }: EditorProps) {
   const [pick, setPick] = useState<SlotKey | null>(settings.jumuah_pick);
   return (
-    <EditorForm title="Jumuah pick" onCancel={onCancel} onSave={() => api.saveJumuahPick(pick).then(onSaved)}>
+    <EditorForm title={LABELS.jumuahPick} onCancel={onCancel} onSave={() => api.saveJumuahPick(pick).then(onSaved)}>
       <JumuahChooser selected={pick} onSelect={setPick} heading="h4" where="settings" />
     </EditorForm>
   );

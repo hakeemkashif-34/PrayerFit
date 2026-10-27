@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { finishedSettings, GOOGLE_CALENDAR, KMA, MockApi } from "./mock-api";
+import { finishedSettings, GOOGLE_CALENDAR, KMA, MockApi, openEditor } from "./mock-api";
 
 test("Settings has 2 cards, Required and Optional, each item with its own Edit", async ({ page }) => {
   await new MockApi().signedIn(finishedSettings()).install(page);
@@ -9,17 +9,17 @@ test("Settings has 2 cards, Required and Optional, each item with its own Edit",
   await expect(page.getByText("Signed in as hakeem@example.com")).toBeVisible();
   const required = page.getByRole("region", { name: "Required" });
   const optional = page.getByRole("region", { name: "Optional" });
-  for (const name of ["Location", "Main masjid", "Prayers at the masjid", "Jumuah pick"]) {
+  for (const name of ["Location", "Main masjid", "Prayers at the masjid", "Preferred Jumuah"]) {
     await expect(required.getByRole("region", { name })).toBeVisible();
   }
   const optionalItems = [
-    "Short name", "How early for prayers", "How early for Jumuah",
-    "Prayer colour", "Drive colour",
+    "Short name", "Arrive before iqamah", "Arrive before Jumuah",
+    "Prayer colour", "Drive colour", "Notify before leaving for the masjid", "Notify for home prayers",
   ];
   for (const name of optionalItems) {
     await expect(optional.getByRole("region", { name })).toBeVisible();
   }
-  for (const name of ["Location", "Main masjid", "Prayers at the masjid", "Jumuah pick", ...optionalItems]) {
+  for (const name of ["Location", "Main masjid", "Prayers at the masjid", "Preferred Jumuah", ...optionalItems]) {
     await expect(page.getByRole("button", { name: `Edit ${name.toLowerCase()}` })).toBeVisible();
   }
   await expect(page.getByText("Monday: Dhuhr, Isha")).toBeVisible();
@@ -27,26 +27,31 @@ test("Settings has 2 cards, Required and Optional, each item with its own Edit",
   // Where each masjid's times come from.
   await expect(page.getByRole("region", { name: "Main masjid" })).toContainText("Times from MAWAQIT, updated Oct 25, 2026");
   await expect(page.getByRole("region", { name: "Short name" })).toContainText("KMA");
-  // The setup question as the label, and just the answer as the value.
-  const early = page.getByRole("region", { name: "How early for prayers" });
-  await expect(early.locator("h3")).toHaveText("How early do you want to arrive before iqamah (daily prayers)?");
+  // A short label, and just the answer as the value.
+  const early = page.getByRole("region", { name: "Arrive before iqamah" });
+  await expect(early.locator("h3")).toHaveText("Arrive before iqamah");
   await expect(early.locator(".row-value")).toHaveText("5 minutes");
-  const jumuahEarly = page.getByRole("region", { name: "How early for Jumuah" });
-  await expect(jumuahEarly.locator("h3")).toHaveText("How early do you want to arrive before Jumuah (Friday prayer)?");
+  const jumuahEarly = page.getByRole("region", { name: "Arrive before Jumuah" });
+  await expect(jumuahEarly.locator("h3")).toHaveText("Arrive before Jumuah");
   await expect(jumuahEarly.locator(".row-value")).toHaveText("10 minutes");
   await expect(page.getByText(/Arrive \d+ min/)).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Location" }).locator("h3")).toHaveText("What's your location?");
-  await expect(page.getByRole("region", { name: "Main masjid" }).locator("h3")).toHaveText("Which masjid do you usually go to?");
-  await expect(page.getByRole("region", { name: "Prayers at the masjid" }).locator("h3")).toHaveText(
-    "Which prayers do you usually pray at the masjid?",
-  );
-  await expect(page.getByRole("region", { name: "Jumuah pick" }).locator("h3")).toHaveText(
-    "Generally speaking, which Jumuah would you like to attend?",
-  );
+  // Every label, in order: as short as possible, and never a long setup question.
+  await expect(page.locator(".setting-row h3")).toHaveText([
+    "Location", "Main masjid", "Prayers at the masjid", "Preferred Jumuah",
+    "Short name", "Arrive before iqamah", "Arrive before Jumuah", "Prayer colour", "Drive colour",
+    "Notify before leaving for the masjid", "Notify for home prayers",
+  ]);
+  await expect(page.locator(".setting-row h3", { hasText: "?" })).toHaveCount(0);
   // Jumuah is always at the main masjid, so there's no Jumuah masjids setting.
   await expect(page.getByRole("region", { name: "Jumuah masjids" })).toHaveCount(0);
   // How often the calendar catches up.
   await expect(page.getByText("Updates and changes are reflected on your calendar every 5 minutes.")).toBeVisible();
+  // "every 5 minutes" has the same soft yellow as "praying on time" on the landing page, in bold.
+  const highlight = page.locator("mark.highlight");
+  await expect(highlight).toHaveCount(1);
+  await expect(highlight).toHaveText("every 5 minutes");
+  await expect(highlight).toHaveCSS("background-color", "rgb(251, 224, 138)");
+  await expect(highlight).toHaveCSS("font-weight", "700");
   await expect(page.getByRole("region", { name: "Prayer colour" })).toContainText("Peacock");
   await expect(page.getByRole("region", { name: "Drive colour" })).toContainText("Calendar colour");
   // Drive times always come from OpenRouteService, so there's nothing to set for them.
@@ -86,7 +91,7 @@ test("editing a setting saves it and says what changed in the calendar", async (
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit prayers at the masjid" }).click();
+  await openEditor(page, "Edit prayers at the masjid");
   await page.getByLabel("Asr on Monday at the masjid").check();
   await page.getByRole("button", { name: "Save" }).click();
 
@@ -108,7 +113,7 @@ test("a save that can't reach Google offers Sign in again", async ({ page }) => 
   );
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit prayers at the masjid" }).click();
+  await openEditor(page, "Edit prayers at the masjid");
   await page.getByRole("button", { name: "Save" }).click();
 
   await expect(page.getByRole("status")).toContainText("Saved. Sign in again so your calendar can update.");
@@ -120,7 +125,7 @@ test("editing the location picks a new place from the suggestions", async ({ pag
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit location" }).click();
+  await openEditor(page, "Edit location");
   await page.getByRole("combobox").pressSequentially("Robson", { delay: 30 });
   await page.getByRole("option", { name: "1 Robson Street, Vancouver, British Columbia, Canada" }).click();
 
@@ -133,7 +138,7 @@ test("cancel leaves the setting as it was", async ({ page }) => {
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit prayers at the masjid" }).click();
+  await openEditor(page, "Edit prayers at the masjid");
   await page.getByLabel("Asr on Monday at the masjid").check();
   await page.getByRole("button", { name: "Cancel" }).click();
 
@@ -147,7 +152,7 @@ test("picking a masjid after praying at home asks for the weekly grid", async ({
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit main masjid" }).click();
+  await openEditor(page, "Edit main masjid");
   await page.getByRole("combobox").pressSequentially("Stittsville", { delay: 30 });
   await page.getByRole("option", { name: /^Stittsville Masjid/ }).click();
   await page.getByRole("button", { name: "Save" }).click();
@@ -162,7 +167,7 @@ test("picking a different masjid clears the old short name", async ({ page }) =>
   await page.goto("/");
   await expect(page.getByRole("region", { name: "Short name" })).toContainText("KMA");
 
-  await page.getByRole("button", { name: "Edit main masjid" }).click();
+  await openEditor(page, "Edit main masjid");
   await expect(page.getByRole("textbox", { name: /Short name/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Change" }).click();
   await page.getByRole("combobox").pressSequentially("Stittsville", { delay: 30 });
@@ -173,13 +178,15 @@ test("picking a different masjid clears the old short name", async ({ page }) =>
     choice: "masjid", masjid_id: "22222222-2222-2222-2222-222222222222",
   });
   await expect(page.getByRole("region", { name: "Short name" })).toContainText("None");
-  await page.getByRole("button", { name: "Edit short name" }).click();
+  await openEditor(page, "Edit short name");
   await expect(page.getByLabel("Short name for Stittsville Masjid")).toHaveValue("");
 });
 
 // What finishedSettings() has saved for the optional answers.
 const SAVED_OPTIONAL = {
   arrive_early_minutes: 5, jumuah_arrive_early_minutes: 10, short_name: "KMA", prayer_color_id: "7", drive_color_id: null,
+  // Every editor sends the notifications too, so saving one setting never turns them off.
+  leave_reminder_minutes: 5, home_reminder_minutes: 5,
 };
 
 test("how early for prayers is edited on its own", async ({ page }) => {
@@ -187,16 +194,16 @@ test("how early for prayers is edited on its own", async ({ page }) => {
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit how early for prayers" }).click();
-  const early = page.getByLabel("How early do you want to arrive before iqamah (daily prayers)?");
+  await openEditor(page, "Edit arrive before iqamah");
+  const early = page.getByRole("spinbutton", { name: "Arrive before iqamah" });
   await expect(early).toHaveValue("5");
   await early.fill("45");
   await page.getByRole("button", { name: "Save" }).click();
 
   // Every other answer is sent as it was saved.
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({ ...SAVED_OPTIONAL, arrive_early_minutes: 45 });
-  await expect(page.getByRole("region", { name: "How early for prayers" }).locator(".row-value")).toHaveText("45 minutes");
-  await expect(page.getByRole("region", { name: "How early for Jumuah" }).locator(".row-value")).toHaveText("10 minutes");
+  await expect(page.getByRole("region", { name: "Arrive before iqamah" }).locator(".row-value")).toHaveText("45 minutes");
+  await expect(page.getByRole("region", { name: "Arrive before Jumuah" }).locator(".row-value")).toHaveText("10 minutes");
   await expect(page.getByRole("status")).toHaveText("Calendar updated. 20 events sent to Google.");
 });
 
@@ -205,12 +212,12 @@ test("how early for Jumuah is edited on its own", async ({ page }) => {
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit how early for jumuah" }).click();
-  await page.getByLabel("How early do you want to arrive before Jumuah (Friday prayer)?").fill("0");
+  await openEditor(page, "Edit arrive before jumuah");
+  await page.getByRole("spinbutton", { name: "Arrive before Jumuah" }).fill("0");
   await page.getByRole("button", { name: "Save" }).click();
 
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({ ...SAVED_OPTIONAL, jumuah_arrive_early_minutes: 0 });
-  await expect(page.getByRole("region", { name: "How early for Jumuah" }).locator(".row-value")).toHaveText("0 minutes");
+  await expect(page.getByRole("region", { name: "Arrive before Jumuah" }).locator(".row-value")).toHaveText("0 minutes");
 });
 
 test("the short name is edited on its own", async ({ page }) => {
@@ -218,7 +225,7 @@ test("the short name is edited on its own", async ({ page }) => {
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit short name" }).click();
+  await openEditor(page, "Edit short name");
   const shortName = page.getByLabel("Short name for Kanata Muslim Association");
   await expect(shortName).toHaveValue("KMA");
   await shortName.fill("Kanata");
@@ -234,7 +241,7 @@ test("each colour is edited on its own", async ({ page }) => {
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit prayer colour" }).click();
+  await openEditor(page, "Edit prayer colour");
   await expect(page.getByRole("button", { name: /^Prayer colour/ })).toContainText("Peacock");
   await page.getByRole("button", { name: /^Prayer colour/ }).click();
   await page.getByRole("option", { name: "Calendar colour" }).click();
@@ -242,7 +249,7 @@ test("each colour is edited on its own", async ({ page }) => {
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({ ...SAVED_OPTIONAL, prayer_color_id: null });
   await expect(page.getByRole("region", { name: "Prayer colour" })).toContainText("Calendar colour");
 
-  await page.getByRole("button", { name: "Edit drive colour" }).click();
+  await openEditor(page, "Edit drive colour");
   await page.getByRole("button", { name: /^Drive colour/ }).click();
   await page.getByRole("option", { name: "Banana" }).click();
   await page.getByRole("button", { name: "Save" }).click();
@@ -257,11 +264,11 @@ test("cancel leaves an optional item as it was", async ({ page }) => {
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit how early for prayers" }).click();
-  await page.getByLabel("How early do you want to arrive before iqamah (daily prayers)?").fill("0");
+  await openEditor(page, "Edit arrive before iqamah");
+  await page.getByRole("spinbutton", { name: "Arrive before iqamah" }).fill("0");
   await page.getByRole("button", { name: "Cancel" }).click();
 
-  await expect(page.getByRole("region", { name: "How early for prayers" }).locator(".row-value")).toHaveText("5 minutes");
+  await expect(page.getByRole("region", { name: "Arrive before iqamah" }).locator(".row-value")).toHaveText("5 minutes");
   expect(api.calls("PUT", "/api/settings/optional")).toHaveLength(0);
 });
 
@@ -269,7 +276,7 @@ test("only one item is edited at a time", async ({ page }) => {
   await new MockApi().signedIn(finishedSettings()).install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit short name" }).click();
+  await openEditor(page, "Edit short name");
   await expect(page.getByRole("button", { name: "Edit location" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Edit prayer colour" })).toBeDisabled();
 });
@@ -278,10 +285,10 @@ test("a new main masjid moves Jumuah there too, starting at its 1st Jumuah", asy
   const api = new MockApi().signedIn({ ...finishedSettings(), jumuah_pick: { masjid_id: KMA.id, order: 2 } });
   await api.install(page);
   await page.goto("/");
-  const pick = page.getByRole("region", { name: "Jumuah pick" });
+  const pick = page.getByRole("region", { name: "Preferred Jumuah" });
   await expect(pick.locator(".row-value")).toHaveText("2nd Jumuah");
 
-  await page.getByRole("button", { name: "Edit main masjid" }).click();
+  await openEditor(page, "Edit main masjid");
   await page.getByRole("button", { name: "Change" }).click();
   await page.getByRole("combobox").pressSequentially("Stittsville", { delay: 30 });
   await page.getByRole("option", { name: /^Stittsville Masjid/ }).click();
@@ -296,7 +303,7 @@ test("I pray at home on the settings page moves every prayer home", async ({ pag
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit main masjid" }).click();
+  await openEditor(page, "Edit main masjid");
   await page.getByRole("button", { name: "I pray at home" }).click();
 
   expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({ choice: "home" });
@@ -304,8 +311,8 @@ test("I pray at home on the settings page moves every prayer home", async ({ pag
   await expect(page.getByRole("region", { name: "Prayers at the masjid" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Short name" })).toHaveCount(0);
   // Praying at home means no Jumuah.
-  await expect(page.getByRole("region", { name: "Jumuah pick" })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "How early for Jumuah" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Preferred Jumuah" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Arrive before Jumuah" })).toHaveCount(0);
 });
 
 test("sign out calls the API and goes back to the sign-in screen", async ({ page }) => {
@@ -327,27 +334,29 @@ test("existing users keep their own answers, not the new defaults", async ({ pag
   const api = new MockApi().signedIn({ ...finishedSettings(), arrive_early_minutes: 0, prayer_color_id: null, drive_color_id: null });
   await api.install(page);
   await page.goto("/");
-  await expect(page.getByRole("region", { name: "How early for prayers" }).locator(".row-value")).toHaveText("0 minutes");
+  await expect(page.getByRole("region", { name: "Arrive before iqamah" }).locator(".row-value")).toHaveText("0 minutes");
   await expect(page.getByRole("region", { name: "Prayer colour" })).toContainText("Calendar colour");
 
-  await page.getByRole("button", { name: "Edit how early for prayers" }).click();
-  await expect(page.getByLabel("How early do you want to arrive before iqamah (daily prayers)?")).toHaveValue("0");
+  await openEditor(page, "Edit arrive before iqamah");
+  await expect(page.getByRole("spinbutton", { name: "Arrive before iqamah" })).toHaveValue("0");
   await page.getByRole("button", { name: "Cancel" }).click();
-  await page.getByRole("button", { name: "Edit drive colour" }).click();
+  await openEditor(page, "Edit drive colour");
   await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Calendar colour");
 });
 
-test("a bad how early number on the Settings page shows the error and saves nothing", async ({ page }) => {
+test("a bad minutes number on the Settings page shows the error and saves nothing", async ({ page }) => {
   const api = new MockApi().signedIn(finishedSettings());
   await api.install(page);
   await page.goto("/");
 
-  for (const [button, label] of [
-    ["Edit how early for prayers", "How early do you want to arrive before iqamah (daily prayers)?"],
-    ["Edit how early for jumuah", "How early do you want to arrive before Jumuah (Friday prayer)?"],
+  for (const [button, label, bad] of [
+    ["Edit arrive before iqamah", "Arrive before iqamah", "61"],
+    ["Edit arrive before jumuah", "Arrive before Jumuah", "-1"],
+    ["Edit notify before leaving for the masjid", "Notify before leaving for the masjid", "2.5"],
+    ["Edit notify for home prayers", "Notify for home prayers", "61"],
   ]) {
-    await page.getByRole("button", { name: button }).click();
-    await page.getByLabel(label).fill("61");
+    await openEditor(page, button);
+    await page.getByRole("spinbutton", { name: label }).fill(bad);
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByRole("alert")).toHaveText("Enter a whole number of minutes from 0 to 60.");
     await page.getByRole("button", { name: "Cancel" }).click();
@@ -425,7 +434,7 @@ test("labels are small and muted, values larger and darker, and nothing is in al
   expect(label.size).toBeLessThan(value.size);
   expect(label.colour).not.toBe(value.colour);
   expect(label.transform).toBe("none");
-  await expect(row.locator("h3")).toHaveText("What's your location?");
+  await expect(row.locator("h3")).toHaveText("Location");
 });
 
 test("the chosen colours show as swatches", async ({ page }) => {
@@ -460,6 +469,7 @@ test("an item opens and closes smoothly, and not at all with motion turned off",
   const easing = () => row.evaluate((el) => el.getAnimations().length);
   // Nothing moves on page load.
   expect(await easing()).toBe(0);
+  // A plain click, not openEditor: this test needs to see the row while it's still easing.
   await page.getByRole("button", { name: "Edit location" }).click();
   expect(await easing()).toBeGreaterThan(0);
   await page.waitForTimeout(400);
@@ -468,7 +478,7 @@ test("an item opens and closes smoothly, and not at all with motion turned off",
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.waitForTimeout(400);
-  await page.getByRole("button", { name: "Edit location" }).click();
+  await openEditor(page, "Edit location");
   expect(await easing()).toBe(0);
 });
 
@@ -510,7 +520,7 @@ test("Location shows the time zone, and no line about the calculation method", a
 test("the Required and Optional cards and the calendar message share one background", async ({ page }) => {
   await new MockApi().signedIn(finishedSettings()).install(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Edit prayers at the masjid" }).click();
+  await openEditor(page, "Edit prayers at the masjid");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("status")).toHaveText(/^Calendar updated/);
   const background = (selector: string) =>
@@ -519,4 +529,151 @@ test("the Required and Optional cards and the calendar message share one backgro
   expect(await background(".settings-card.required")).toBe("rgb(255, 255, 255)");
   expect(await background(".settings-card.optional")).toBe("rgb(255, 255, 255)");
   expect(await page.getByRole("status").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(255, 255, 255)");
+});
+
+// Is the answer (or box) on the same line as its question? Same line means their boxes overlap top to bottom.
+async function sideBySide(page: import("@playwright/test").Page, question: string, answer: string) {
+  const [q, a] = await Promise.all([page.locator(question).boundingBox(), page.locator(answer).boundingBox()]);
+  return a!.x >= q!.x + q!.width - 1 && a!.y < q!.y + q!.height && q!.y < a!.y + a!.height;
+}
+
+test("each label and its answer share a line when they fit, and wrap only when they don't", async ({ page }, info) => {
+  await new MockApi().signedIn(finishedSettings()).install(page);
+  await page.goto("/");
+  const row = (name: string) => `section.setting-row[aria-label="${name}"]`;
+  await expect(page.locator(row("Short name"))).toBeVisible();
+
+  const beside = (name: string) => sideBySide(page, `${row(name)} h3`, `${row(name)} .row-value`);
+  // Short labels and short answers fit side by side on every screen.
+  expect(await beside("Short name")).toBe(true);
+  // On desktop, every Optional row fits on one line.
+  if (info.project.name === "desktop") {
+    for (const name of ["Arrive before iqamah", "Arrive before Jumuah", "Prayer colour", "Drive colour", "Notify before leaving for the masjid", "Notify for home prayers"]) {
+      expect(await beside(name), name).toBe(true);
+    }
+  }
+  // Every row follows the rule: side by side when the label, the gap, and the answer fit across the row,
+  // and wrapped when they don't. Fonts render a little differently on each computer, so a pair within
+  // 2px of fitting can go either way and isn't checked.
+  const rows = await page.locator("section.setting-row .row-text").evaluateAll((all) =>
+    all.map((text) => {
+      const width = (el: Element) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return range.getBoundingClientRect().width;
+      };
+      const label = text.querySelector("h3")!;
+      const value = text.querySelector(".row-value")!;
+      const [l, v] = [label.getBoundingClientRect(), value.getBoundingClientRect()];
+      return {
+        name: label.textContent,
+        room: text.getBoundingClientRect().width - (width(label) + 16 + width(value)),
+        beside: v.left >= l.right - 1 && v.top < l.bottom && l.top < v.bottom,
+      };
+    }),
+  );
+  for (const r of rows) {
+    if (r.room > 2) expect(r.beside, `${r.name} fits, so it shares the line`).toBe(true);
+    if (r.room < -2) expect(r.beside, `${r.name} doesn't fit, so it wraps`).toBe(false);
+  }
+
+  // While editing, the label and its box share a line on desktop. A phone has no room, so the box goes under it.
+  await openEditor(page, "Edit arrive before iqamah");
+  const editing = await sideBySide(page, `${row("Arrive before iqamah")} .inline-field label`, `${row("Arrive before iqamah")} .minutes-field`);
+  expect(editing).toBe(info.project.name === "desktop");
+
+  // Nothing ever runs off the screen.
+  const width = await page.evaluate(() => document.documentElement.clientWidth);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+});
+
+test("the 2 notification number boxes save, show, and stay after a reload", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  await api.install(page);
+  await page.goto("/");
+  // The highlight shows on this page too.
+  await expect(page.locator("mark.highlight")).toHaveText("every 5 minutes");
+  // Masjid prayers have no notification of their own.
+  await expect(page.getByRole("region", { name: /iqamah/ }).filter({ hasText: "otif" })).toHaveCount(0);
+  await expect(page.getByText(/notif\w* before iqamah/i)).toHaveCount(0);
+
+  const rows = {
+    leave: { name: "Notify before leaving for the masjid", typed: "25", shown: "25 minutes" },
+    home: { name: "Notify for home prayers", typed: "7", shown: "7 minutes" },
+  };
+  for (const row of Object.values(rows)) {
+    const region = page.getByRole("region", { name: row.name });
+    // The default: 5 minutes.
+    await expect(region.locator("h3")).toHaveText(row.name);
+    await expect(region.locator(".row-value")).toHaveText("5 minutes");
+    await openEditor(page, `Edit ${row.name.toLowerCase()}`);
+    // A number box like "how early": "minutes" after it, the number keypad on a phone, and the hint about 0.
+    const box = region.getByRole("spinbutton", { name: row.name });
+    await expect(box).toHaveValue("5");
+    await expect(box).toHaveAttribute("inputmode", "numeric");
+    await expect(box).toHaveAttribute("min", "0");
+    await expect(box).toHaveAttribute("max", "60");
+    await expect(region.locator(".minutes-field")).toContainText("minutes");
+    await expect(region.getByText("0 = no notification")).toBeVisible();
+    await expect(box).toHaveAccessibleDescription("0 = no notification");
+    await box.fill(row.typed);
+    await region.getByRole("button", { name: "Save" }).click();
+    await expect(region.locator(".row-value")).toHaveText(row.shown);
+  }
+  const lastSave = () => api.calls("PUT", "/api/settings/optional").at(-1)!.body as Record<string, number | null>;
+  const sent = lastSave();
+  expect([sent.leave_reminder_minutes, sent.home_reminder_minutes]).toEqual([25, 7]);
+  expect(sent).not.toHaveProperty("masjid_reminder_minutes");
+
+  // Saving another optional setting keeps the notifications.
+  await openEditor(page, "Edit arrive before iqamah");
+  await page.getByRole("spinbutton", { name: "Arrive before iqamah" }).fill("7");
+  await page.getByRole("region", { name: "Arrive before iqamah" }).getByRole("button", { name: "Save" }).click();
+  const after = lastSave();
+  expect([after.leave_reminder_minutes, after.home_reminder_minutes]).toEqual([25, 7]);
+
+  await page.reload();
+  for (const row of Object.values(rows)) {
+    await expect(page.getByRole("region", { name: row.name }).locator(".row-value")).toHaveText(row.shown);
+  }
+
+  // 0 means no notification.
+  await openEditor(page, "Edit notify for home prayers");
+  await page.getByRole("spinbutton", { name: rows.home.name }).fill("0");
+  await page.getByRole("region", { name: rows.home.name }).getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("region", { name: rows.home.name }).locator(".row-value")).toHaveText("No notification");
+  expect(lastSave().home_reminder_minutes).toBe(0);
+});
+
+test("0 minutes early means arriving right at iqamah or Jumuah, with no hint", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  await api.install(page);
+  await page.goto("/");
+  for (const name of ["Arrive before iqamah", "Arrive before Jumuah"]) {
+    await openEditor(page, `Edit ${name.toLowerCase()}`);
+    const region = page.getByRole("region", { name });
+    await expect(region.getByRole("spinbutton", { name })).toHaveAttribute("inputmode", "numeric");
+    await expect(region.getByText("0 = no notification")).toHaveCount(0);
+    await region.getByRole("spinbutton", { name }).fill("0");
+    await region.getByRole("button", { name: "Save" }).click();
+    await expect(region.locator(".row-value")).toHaveText("0 minutes");
+  }
+  const sent = api.calls("PUT", "/api/settings/optional").at(-1)!.body as Record<string, number>;
+  expect([sent.arrive_early_minutes, sent.jumuah_arrive_early_minutes]).toEqual([0, 0]);
+});
+
+test("if the server refuses a minutes number, its message shows and the editor stays open", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  // What the backend answers for anything that isn't a whole number from 0 to 60.
+  api.failNext["/api/settings/optional"] = {
+    status: 422, detail: { message: "Enter a whole number of minutes from 0 to 60.", field: "leave_reminder_minutes" },
+  };
+  await api.install(page);
+  await page.goto("/");
+  await openEditor(page, "Edit notify before leaving for the masjid");
+  const region = page.getByRole("region", { name: "Notify before leaving for the masjid" });
+  await region.getByRole("spinbutton").fill("20");
+  await region.getByRole("button", { name: "Save" }).click();
+  await expect(region.getByRole("alert")).toHaveText("Enter a whole number of minutes from 0 to 60.");
+  await expect(region.getByRole("button", { name: "Save" })).toBeVisible();
 });

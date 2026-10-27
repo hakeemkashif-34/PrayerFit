@@ -2,7 +2,7 @@
 // The session cookie is HttpOnly, so this code never sees it. The browser
 // sends it because the website and the API are the same site.
 
-import type { AccountDeleted, CalendarUpdate, JumuahChoices, Masjid, MasjidSuggestion, Me, OptionalAnswers, Preview, SaveResponse, Settings, SlotKey, Stats, Suggestions } from "./types";
+import type { AccountDeleted, CalendarUpdate, GraphRange, JumuahChoices, Masjid, MasjidSuggestion, Me, OptionalAnswers, Preview, SaveResponse, Settings, SlotKey, Stats, Suggestions, UsersGraph } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -77,6 +77,7 @@ export const api = {
   preview: () => request<Preview>("POST", "/api/calendar/preview"),
   // The private /stats page. 404 for everyone but ADMIN_EMAIL.
   stats: () => request<Stats>("GET", "/api/admin/stats"),
+  userTotals: (range: GraphRange) => request<UsersGraph>("GET", `/api/admin/stats/users?range=${range}`),
   finishSetup: () => request<SaveResponse>("POST", "/api/setup/finish"),
   syncCalendar: () => request<CalendarUpdate>("POST", "/api/calendar/sync"),
   // /auth/ goes straight to the backend, like the sign-in links.

@@ -27,6 +27,9 @@ DEFAULT_ASR_METHOD = AsrMethod.STANDARD
 DEFAULT_ARRIVE_EARLY_MINUTES = 5
 DEFAULT_JUMUAH_ARRIVE_EARLY_MINUTES = 5
 DEFAULT_COLOR_ID = "10"  # Basil, Google Calendar's green
+# Notifications: 5 minutes before leaving and before home prayers.
+DEFAULT_LEAVE_REMINDER_MINUTES = 5
+DEFAULT_HOME_REMINDER_MINUTES = 5
 
 
 def _empty(user_id: uuid.UUID) -> UserSettings:
@@ -36,6 +39,9 @@ def _empty(user_id: uuid.UUID) -> UserSettings:
         optional_saved=False,
         arrive_early_minutes=0,
         jumuah_arrive_early_minutes=DEFAULT_JUMUAH_ARRIVE_EARLY_MINUTES,
+        # Set here too, since a row not saved yet doesn't have its column defaults.
+        leave_reminder_minutes=DEFAULT_LEAVE_REMINDER_MINUTES,
+        home_reminder_minutes=DEFAULT_HOME_REMINDER_MINUTES,
     )
 
 
@@ -138,6 +144,9 @@ class Setup:
     # Google event colours, "1" to "11". None uses the calendar's colour.
     prayer_color_id: str | None = None
     drive_color_id: str | None = None
+    # Popup reminders, minutes before the event. None means no reminder.
+    leave_reminder_minutes: int | None = DEFAULT_LEAVE_REMINDER_MINUTES
+    home_reminder_minutes: int | None = DEFAULT_HOME_REMINDER_MINUTES
 
     @property
     def jumuah_masjid(self) -> Masjid | None:
@@ -200,4 +209,7 @@ def load_setup(db: Session, user_id: uuid.UUID, preview: bool = False) -> Setup 
         ),
         prayer_color_id=row.prayer_color_id,
         drive_color_id=row.drive_color_id,
+        # 0, or empty from before the number boxes, means no reminder.
+        leave_reminder_minutes=row.leave_reminder_minutes or None,
+        home_reminder_minutes=row.home_reminder_minutes or None,
     )

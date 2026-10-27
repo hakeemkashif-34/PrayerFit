@@ -249,3 +249,72 @@ def test_migration_0011_marks_existing_links_as_mine(db):
         assert listed == 0
     finally:
         command.upgrade(config, "head")
+
+
+def test_migration_0013_counts_existing_users_by_sign_up_hour(db):
+    """Today's users fill the new table by the hour they signed up. No IDs or emails go in."""
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import text
+
+    config = Config("alembic.ini")
+    config.attributes["configure_logger"] = False
+    command.downgrade(config, "0012")
+    try:
+        with db.begin() as connection:
+            connection.execute(text("""
+                INSERT INTO users (id, google_sub, email, created_at) VALUES
+                    (gen_random_uuid(), 'a', 'a@example.com', '2026-10-25 14:10:00+00'),
+                    (gen_random_uuid(), 'b', 'b@example.com', '2026-10-25 14:50:00+00'),
+                    (gen_random_uuid(), 'c', 'c@example.com', '2026-10-25 15:05:00+00'),
+                    -- 1:30 am on Nov 1 in Toronto, the hour that happens twice. The second one, in EST.
+                    (gen_random_uuid(), 'd', 'd@example.com', '2026-11-01 01:30:00-05');
+            """))
+        command.upgrade(config, "0013")
+
+        with db.connect() as connection:
+            columns = connection.execute(text(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'user_count_changes' ORDER BY 1"
+            )).scalars().all()
+            rows = connection.execute(text(
+                "SELECT to_char(hour AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI'), signed_up, deleted "
+                "FROM user_count_changes ORDER BY hour"
+            )).all()
+        # Only the hour and the counts. Nothing leads back to a person.
+        assert columns == ["deleted", "hour", "signed_up"]
+        assert rows == [
+            ("2026-10-25 14:00", 2, 0),
+            ("2026-10-25 15:00", 1, 0),
+            ("2026-11-01 06:00", 1, 0),
+        ]
+    finally:
+        command.upgrade(config, "head")
+
+
+def test_migration_0014_gives_existing_users_the_defaults(db):
+    """Users from before the notification settings get 5 minutes before leaving and before home prayers."""
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import text
+
+    config = Config("alembic.ini")
+    config.attributes["configure_logger"] = False
+    command.downgrade(config, "0013")
+    try:
+        with db.begin() as connection:
+            connection.execute(text("""
+                INSERT INTO users (id, google_sub, email) VALUES
+                    ('00000000-0000-0000-0000-00000000000a', 'old-user', 'old@example.com');
+                INSERT INTO user_settings (id, user_id, time_zone, arrive_early_minutes, optional_saved, updated_at) VALUES
+                    (gen_random_uuid(), '00000000-0000-0000-0000-00000000000a', 'America/Toronto', 5, true, now());
+            """))
+        command.upgrade(config, "0014")
+
+        with db.connect() as connection:
+            row = connection.execute(text(
+                "SELECT leave_reminder_minutes, home_reminder_minutes, arrive_early_minutes "
+                "FROM user_settings"
+            )).one()
+        assert tuple(row) == (5, 5, 5)
+    finally:
+        command.upgrade(config, "head")

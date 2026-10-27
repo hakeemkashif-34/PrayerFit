@@ -53,6 +53,8 @@ export const CALENDAR_COLOUR = "Calendar colour";
 export const DEFAULT_ARRIVE_EARLY = 5;
 export const DEFAULT_JUMUAH_ARRIVE_EARLY = 5;
 export const DEFAULT_COLOUR = "10";
+// Both notifications start at 5 minutes, the same as the backend.
+export const DEFAULT_REMINDER = 5;
 
 export function colourName(id: string | null): string {
   return GOOGLE_COLOURS.find((c) => c.id === id)?.name ?? CALENDAR_COLOUR;
@@ -63,6 +65,14 @@ export function minutesText(minutes: number): string {
   return `${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
+// A notification's value on Settings: "5 minutes", or "No notification" for 0.
+export function reminderText(minutes: number): string {
+  return minutes === 0 ? "No notification" : minutesText(minutes);
+}
+
+// Under both notification boxes, on setup and Settings.
+export const REMINDER_HINT = "0 = no notification";
+
 // The setup questions, shown as labels on Settings too.
 export const QUESTIONS = {
   location: "What's your location?",
@@ -70,6 +80,22 @@ export const QUESTIONS = {
   weekly: "Which prayers do you usually pray at the masjid?",
   early: "How early do you want to arrive before iqamah (daily prayers)?",
   jumuahEarly: "How early do you want to arrive before Jumuah (Friday prayer)?",
+};
+
+// The Settings page's labels: as short as they can be while still clear.
+// Setup keeps the full questions above, since it's where people first answer them.
+export const LABELS = {
+  location: "Location",
+  masjid: "Main masjid",
+  weekly: "Prayers at the masjid",
+  jumuahPick: "Preferred Jumuah",
+  shortName: "Short name",
+  early: "Arrive before iqamah",
+  jumuahEarly: "Arrive before Jumuah",
+  prayerColour: "Prayer colour",
+  driveColour: "Drive colour",
+  leaveReminder: "Notify before leaving for the masjid",
+  homeReminder: "Notify for home prayers",
 };
 
 // The masjid's name in event titles: the short name if there is one.

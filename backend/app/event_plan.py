@@ -29,6 +29,10 @@ the arrival time, then the prayer block at the target time. Fajr, Asr, and
 Maghrib blocks are 10 minutes, Dhuhr and Isha 15, and Jumuah uses the
 masjid's own length (45 minutes when it isn't set).
 No drive time means no drive block.
+
+Reminders follow the user's 2 notification settings: drive blocks use
+"before leaving", and every prayer at home uses "before home prayers".
+Masjid prayer blocks (Jumuah too) never get one. None means no reminder at all.
 """
 
 import uuid
@@ -203,8 +207,7 @@ def _masjid_events(
                 summary=f"Drive to {where.label}",
                 description="",
                 color_id=setup.drive_color_id,
-                # A popup when it's time to leave.
-                reminder_minutes=0,
+                reminder_minutes=setup.leave_reminder_minutes,
             )
         )
     events.append(
@@ -340,6 +343,7 @@ def _home_event(
         summary=summary,
         description=description,
         color_id=setup.prayer_color_id,
+        reminder_minutes=setup.home_reminder_minutes,
         fit=fit.kind,
     )
 

@@ -30,7 +30,8 @@ export type Step = "address" | "masjid" | "weekly" | "optional";
 // Each item on the Settings page, edited on its own.
 export type Editable =
   | "address" | "masjid" | "weekly"
-  | "jumuah" | "jumuah_pick" | "short_name" | "early" | "jumuah_early" | "prayer_colour" | "drive_colour";
+  | "jumuah" | "jumuah_pick" | "short_name" | "early" | "jumuah_early" | "prayer_colour" | "drive_colour"
+  | "reminder_masjid" | "reminder_leave" | "reminder_home";
 
 // A Jumuah slot: a masjid and its 1st, 2nd, or 3rd Jumuah.
 export type SlotKey = { masjid_id: string; order: number };
@@ -52,6 +53,9 @@ export type Settings = {
   jumuah_pick: SlotKey | null;
   prayer_color_id: string | null;
   drive_color_id: string | null;
+  // Google Calendar popup reminders, in minutes before the event, 0 to 60. 0 means no notification.
+  leave_reminder_minutes: number;
+  home_reminder_minutes: number;
   // "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
   masjid_notices: string[];
 };
@@ -62,6 +66,9 @@ export type OptionalAnswers = {
   short_name?: string;
   prayer_color_id: string | null;
   drive_color_id: string | null;
+  // Left out gets the default, 5 minutes.
+  leave_reminder_minutes?: number;
+  home_reminder_minutes?: number;
 };
 
 export type CalendarUpdate = {
@@ -139,11 +146,17 @@ export type Preview = {
 
 // The private /stats page. Counts only.
 export type Stats = {
-  total_users: number;
-  // One point per day, oldest first: signed up that day, and the total so far.
-  history: { day: string; signed_up: number; total: number }[];
   // Masjids with at least 1 user, most users first. Not linked means no MAWAQIT times.
   masjids: { name: string; users: number; mawaqit_linked: boolean }[];
+};
+
+// The /stats graph's dropdown. 1 to 3 days: a point per hour. Longer: a point per day.
+export type GraphRange = "1d" | "2d" | "3d" | "5d" | "7d" | "30d" | "all";
+
+export type UsersGraph = {
+  step: "hour" | "day";
+  // Oldest first. start is the hour or day in Toronto time, total is the users at the end of it.
+  points: { start: string; total: number }[];
 };
 
 // DELETE /api/account. False: Google couldn't be reached, so the Prayers calendar may still be there.

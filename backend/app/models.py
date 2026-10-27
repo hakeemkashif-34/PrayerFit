@@ -129,11 +129,28 @@ class PrayerEvent(Base):
     kind: Mapped[str] = mapped_column(String(8), default="prayer", server_default="prayer")
     # Google's event colour, "1" to "11". Empty uses the calendar's colour.
     color_id: Mapped[str | None] = mapped_column(String(2))
-    # A popup this many minutes before the start. Empty sends no reminder settings.
+    # A popup this many minutes before the start. Empty means no reminder at all.
     reminder_minutes: Mapped[int | None] = mapped_column(SmallInteger)
     # "normal", "moved" (busy times moved it), or "clash" (no free time at all).
     # When free/busy fails, moved and clash rows are kept as they are.
     fit: Mapped[str] = mapped_column(String(8), default="normal", server_default="normal")
+
+
+class UserCountChange(Base):
+    """How many people signed up and deleted their account in each hour.
+
+    The /stats graph adds these up, so it goes down when someone deletes
+    their account. Counts per hour only: no user ID, no email, nothing that
+    leads back to a person. Deleting an account adds 1 to "deleted" and
+    leaves "signed_up" alone, so the history stays right.
+    """
+
+    __tablename__ = "user_count_changes"
+
+    # The start of the hour, in UTC. Real hours, so daylight saving can't merge or skip any.
+    hour: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    signed_up: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    deleted: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class UserSettings(Base):
@@ -177,6 +194,11 @@ class UserSettings(Base):
     # Google event colours, "1" to "11". Empty uses the calendar's colour.
     prayer_color_id: Mapped[str | None] = mapped_column(String(2))
     drive_color_id: Mapped[str | None] = mapped_column(String(2))
+    # Google Calendar popup reminders, in minutes before the event, 0 to 60. 0 or empty means no reminder at all.
+    # Before leaving: drive blocks. At home: home prayers. Masjid prayer blocks never get one.
+    # New and existing users start with 5 minutes for both.
+    leave_reminder_minutes: Mapped[int | None] = mapped_column(SmallInteger, default=5, server_default="5")
+    home_reminder_minutes: Mapped[int | None] = mapped_column(SmallInteger, default=5, server_default="5")
     setup_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

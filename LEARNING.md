@@ -1625,3 +1625,134 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
 1. On my machine, the whole production stack (with `SITE_ADDRESS=:80`, plain http) started: `/api/health` answered through Caddy, `/privacy` loaded, another host name got a 308 to `APP_ORIGIN`, `/auth/google/login` sent me to Google with the production redirect URI, a POST from another site still got 403, only Caddy had public ports, and the worker logged "Worker started".
 2. Backup and restore worked as in section 8.
 3. Not tested here: `server-setup.sh` on a real Azure VM, and the Let's Encrypt certificate, which needs the real address. The README's "Check it works" list covers those on the server.
+
+### 14. The /stats page: a range dropdown and a line that goes down
+
+1. **Where**: `backend/app/stats.py` (`record_sign_up`, `record_deletion`, `user_totals`), `backend/app/models.py` (`UserCountChange`), `backend/alembic/versions/0013_user_count_changes.py`, `GET /admin/stats/users` in `backend/app/routers/stats.py`, and `web/src/StatsPage.tsx`.
+2. **The problem**: the graph used to add up `users.created_at`. "Delete my account" deletes the user's row, so they disappeared from the past too. The line could only go up, and a deleted user made every earlier day look smaller than it really was.
+3. **The fix: anonymous counts per hour**. `user_count_changes` has 3 columns: `hour` (the start of the hour in UTC), `signed_up`, and `deleted`.
+   a) A new user adds 1 to `signed_up` for this hour. Signing in again adds nothing.
+   b) Deleting an account adds 1 to `deleted` and leaves the old `signed_up` alone. So the line goes up on the day they joined and down on the day they left.
+   c) No user ID, no email, and no foreign key. Several people in the same hour share one row, so a row can't be matched to a person. A test checks the columns are exactly these 3.
+   d) Both writes are in the same commit as the sign-in or the delete, so a failed sign-in or delete never counts.
+   e) It's an "upsert" (`INSERT ... ON CONFLICT DO UPDATE`): if the hour's row is already there, the counts are added to it, even if 2 people sign up at the same moment.
+   f) The hour comes from the database's clock (`now()`), the same clock as `users.created_at`.
+4. **The migration** fills the table from today's users, grouped by the hour they signed up. People who deleted their account before it ran can't be counted, since their rows are already gone.
+5. **Points**: each point is the total users at the end of that hour or day, or right now for the current one. It's every sign-up minus every deletion up to then.
+   a) 1, 2, and 3 days: one point per hour, 24, 48, or 72 points. Hours are real hours counted in UTC, so the night the clocks fall back has two "1:00 AM" points (EDT, then EST). A test checks this.
+   b) 5, 7, and 30 days: one point per Toronto calendar day, ending today. Days move by calendar date, never by adding 24 hours. A test checks the week of Nov 1.
+   c) All time: one point per day from the first sign-up.
+   d) Changes before the first point are already in its total, so the line starts at the right height.
+6. **The page**:
+   a) The "Total users" card is gone. The graph has the same number at its right end.
+   b) The dropdown asks the backend for the new range (`?range=1d`). If an older answer arrives late, it's ignored, so it never replaces a newer choice.
+   c) 72 points are too many to tab through or point at one by one. An invisible box over the plot finds the point closest to the mouse or the finger. The keyboard uses the arrow keys, Home, and End.
+   d) Dots only show when they'd be at least 16px apart. On a phone, 1 day has no dots, just the line and the picked point.
+   e) Times use `America/Toronto` whatever the computer's own time zone is. The hour text comes from `timeText` in `labels.ts`, the same as the rest of the site.
+   f) The masjid card is called "Masajid" (the plural), and that's the only place the word shows. The names column has a hidden "Name" header for screen readers, and the right column just says "Users".
+7. **Privacy page**: it now says the app counts sign-ups and deletions per hour, with nothing that leads back to a person.
+8. **Tests**: `test_stats.py` (the counts, each range, daylight saving, the endpoints), `test_migrations.py` (the migration groups users by hour and adds no ID or email column), and `stats.spec.ts` and `privacy.spec.ts` for the page. Counts: `pytest` gives `857 passed`, and `npx playwright test` gives `276 passed`.
+
+### 15. The highlight, short labels, one line per setting, and prayer notifications
+
+1. **The highlight**: on Settings, "every 5 minutes" in "Updates and changes are reflected on your calendar every 5 minutes." is in a `<mark class="highlight">`. It uses `--gold-highlight`, the same token as "praying on time" on the landing page, so both always match, and it's bold like that phrase. It stays inline so it wraps like normal text (`box-decoration-break: clone` keeps the rounded ends on each line). An earlier version highlighted "Updates and changes" instead. The sentence's wording never changed.
+2. **Short labels** (`LABELS` in `labels.ts`):
+   a) Settings used to show each setup question as the label, like "How early do you want to arrive before iqamah (daily prayers)?". Now each row has the shortest label that's still clear:
+
+| Before | After |
+|---|---|
+| What's your location? | Location |
+| Which masjid do you usually go to? | Main masjid |
+| Which prayers do you usually pray at the masjid? | Prayers at the masjid |
+| Generally speaking, which Jumuah would you like to attend? | Preferred Jumuah |
+| Short name | Short name |
+| How early do you want to arrive before iqamah (daily prayers)? | Arrive before iqamah |
+| How early do you want to arrive before Jumuah (Friday prayer)? | Arrive before Jumuah |
+| Prayer colour | Prayer colour |
+| Drive colour | Drive colour |
+| How early do you want to be notified before leaving for the masjid? | Notify before leaving for the masjid |
+| How early do you want to be notified before prayer at home? | Notify for home prayers |
+
+   b) Setup keeps the full questions (`QUESTIONS`), since that's where people first answer them. The location, masjid, and weekly editors on Settings are setup's own steps, so they still show setup's questions while open.
+   c) Each row's label is also its name for screen readers and its Edit button, like "Edit arrive before iqamah". Before, those used separate names like "How early for prayers", so a screen reader heard something different from what was on screen.
+   d) While editing, the form's title said the same thing as the field's label, so the title is now only for screen readers (`visually-hidden`).
+3. **One line per setting** (`styles.css`, `.row-text`):
+   a) Each row is a wrapping flex line: the label, then the answer, then **Edit**.
+   b) The label and the answer each take their own width. If they fit side by side, they share the line. If they don't, the answer wraps under the label. On desktop, every Optional row fits. On a phone, short pairs like "Arrive before iqamah" and "5 minutes" fit, and longer ones like "Notify for home prayers" wrap.
+   c) Headings use `text-wrap: balance` everywhere else, but in these rows it split short labels onto 2 lines when there was room, so the rows turn it off.
+   d) While editing, `.inline-field` puts the label and its box or dropdown on one line the same way. It only applies inside `.settings-page`, because setup uses the same `MinutesField` and stays stacked there.
+   e) A Playwright test measures the boxes on both screens and checks which rows share a line.
+4. **Prayer notifications**:
+   a) 2 settings in `user_settings`, added by migration `0014`: `leave_reminder_minutes` and `home_reminder_minutes`. Empty means "No notification". Both start at 5 minutes. The migration adds them with `server_default='5'`, and Postgres fills every existing row with a new column's default, so existing users get 5 too. A migration test checks that.
+   b) There was a 3rd setting, "before iqamah at the masjid". I removed it, so masjid prayer blocks (Jumuah too) never get a reminder. The drive block's reminder comes before them anyway. Migration `0014` wasn't on `main` yet, so I changed it instead of adding a migration that drops the column.
+   c) A new user's settings row is built in Python before it's saved, and a column default only applies when the row is saved. So `_empty()` in `user_settings.py` sets the 2 defaults itself, or a brand new user's Settings page would show "No notification". The API's optional step uses the same defaults when a field is left out, so skipping setup's optional page gives them too.
+   d) The API only takes the dropdown's choices: 5, 10, 15, 20, 30, or null. 7, 0, 60, and "5" get 422.
+   e) `event_plan.py` puts each one on the right events: drive blocks use "before leaving", and every home prayer uses "for home prayers". A masjid prayer moved home because the user is busy is a home prayer. No drive time means no drive block, so "before leaving" adds nothing.
+   f) They're Google Calendar popup reminders (`reminders.overrides`), so there's no web push and no new service.
+   g) **"No notification" really means none.** Before, an event with no reminder left out the `reminders` field, so Google used the calendar's own default reminders. Now every event sends `{"useDefault": false, "overrides": []}` when there's no reminder. Masjid prayer blocks always send that.
+   h) **Drive blocks changed.** They used to get a popup right when it was time to leave. Now they follow "before leaving", which starts at 5 minutes before.
+   i) **Only changed events are sent.** The calendar update already compares a hash of what Google would get with what Google last got. A new reminder changes the hash, so only events whose reminder changed go back to Google. Past events are never touched. A test changes "for home prayers" at 3 pm and checks that only future home prayers were sent.
+   j) Because of g) and h), the first update after this goes out sends every upcoming event once, since each one's `reminders` changed. After that, only real changes are sent.
+   k) Every Settings editor sends both notification values with its own change. Otherwise saving a colour would turn the notifications off. A Playwright test checks that.
+5. **Tests**: `test_reminders.py` (the defaults, "No notification" on both, each setting on its own events, no reminder on masjid prayers or Jumuah, a prayer moved home, no drive block, changing a setting, and the API), `test_migrations.py` (0014), and `settings.spec.ts` (every label, the highlight, the one-line layout, and both dropdowns saving and staying after a reload on desktop and phone). Counts: `pytest` gives `873 passed`, and `npx playwright test` gives `280 passed`.
+
+### 16. The users graph, YouTube Studio style
+
+1. **Where**: `Graph` and `UsersCard` in `web/src/StatsPage.tsx`, and the `.graph-box` styles in `styles.css`. The backend didn't change.
+2. **The big sentence**: "PrayerFit has 41 users" sits above the graph. Every range ends now, so the last point of whatever range is picked is today's total. It uses `toLocaleString`, so 1234 shows as "1,234", and 1 says "user", not "users".
+3. **The line**: one path of straight segments (`M` then `L`s), 1.75px wide. No curve smoothing: a curve between 40 and 41 can bend below 40, which would draw a dip that never happened. There's no dot on each point. The only dot is the one for the point being looked at.
+4. **The value labels** (`valueTicks`):
+   a) They're on the right, like YouTube Studio's.
+   b) Each step is a whole number from 1, 2, 2.5, or 5, times 1, 10, 100, and so on. Only whole steps count, so 2.5 is only used as 25, 250, and up.
+   c) The code tries the steps from smallest up and takes the first one that needs 4 spans or fewer to get above the highest total. Then it shows 4 or 5 labels from 0.
+   d) The top label is always above the highest total, so the line never touches the top.
+   e) Some results: 42 gives 0, 20, 40, 60. 3 gives 0, 1, 2, 3, 4. 0 or 1 gives 0, 1, 2, 3. 999 gives 0, 250, 500, 750, 1K. 1,148 gives 0, 500, 1K, 1.5K. Tests check each of these.
+   f) From 1,000 on, labels say "1K", "1.5K", "1.25K" (`valueText`).
+5. **The bottom labels** (`labelledPoints`):
+   a) Labels are always the same number of points apart, so they're evenly spaced.
+   b) Hours land on round clock hours, like every 4 hours: 12 AM, 4 AM, 8 AM. Midnight shows the date instead, so 2 or 3 days of hours still say which day is which.
+   c) Days count back from today, so today always has a label.
+   d) The code tries steps from smallest up (1, 2, 3, 4, 6, 8, 12, 24 hours, or 1, 2, 3, 5, 7, 10, 14... days). It takes the first one with at most 7 labels that are far enough apart not to touch. It works out how wide a label is from its length, at 6.2px a character for 11px text ("Oct 20" measured 36px). That gives 5 to 7 labels on every range, on desktop and on a phone.
+   e) Each label is centred under its point. The plot has 22px on the left, enough for half a date, so the first label can be centred too. When the first label was lined up with the left edge instead, it moved right into the second one on a phone.
+6. **Hover**: an invisible box over the plot finds the point closest to the pointer, left to right. It reaches the right edge, so pointing at the value labels picks the newest point. A dot appears there with a dashed line down to 0. The card sits in a band above the plot, centred over the dot, so it never covers the line. Near either edge it slides inward. The total is large and bold. Tapping, the arrow keys, Home, and End work as before.
+7. **Phones**: the graph is drawn at its real width, so its text keeps its size. The title and the dropdown wrap onto 2 lines when they don't fit side by side.
+8. **A flaky Settings test, fixed**: 2 Settings tests sometimes failed in a full run and passed on their own. Both opened "Prayers at the masjid" and clicked Save straight away. A Settings row eases its height for 220ms when it opens or closes, with its overflow hidden. Playwright's trace showed it clicked Save in that window, and the click landed on nothing. A person can't tap that fast, but a test can. The short labels changed the row heights on phones, which made it happen more often. Now every test opens a row with `openEditor` (`tests/mock-api.ts`), which waits for the page's animations to finish before and after clicking Edit. The one test that checks the row eases open still uses a plain click, since it has to see the animation running.
+   a) A 2nd test was too strict. It named phone rows that only just fit side by side, like "Notify before leaving for the masjid" and "5 minutes". GitHub's computer renders fonts a pixel or 2 wider, so that row wrapped there. Now the test checks the rule on every row: it measures the label, the 16px gap, and the answer. If they clearly fit, they must share the line. If they clearly don't, the answer must wrap. A pair within 2px of fitting can go either way, so it isn't checked.
+9. **Tests** (`stats.spec.ts`):
+   a) The sentence: "user" for 1, and "1,234" style numbers.
+   b) The line: straight segments only, at most 2px wide, and no dots until you point.
+   c) The value labels: on the right, for 9 different highest totals.
+   d) The bottom labels: 5 to 7, evenly spaced to within a pixel, and never touching, for every range on desktop and phone.
+   e) Hover: the dot, the card above it, and the large bold total.
+   f) Tapping, the keyboard, and the card staying inside the graph.
+
+### 17. The notifications on setup's optional page
+
+1. **Labels**: "Notify before leaving" became "Notify before leaving for the masjid", which says where you're leaving for. "Notify before home prayers" became "Notify for home prayers", which is shorter and still clear.
+2. **One dropdown, 2 pages**: `web/src/ReminderField.tsx` is the label and the dropdown. Setup's optional page and the Settings editor both use it, so the labels, the 6 choices, and the 5-minute default (`DEFAULT_REMINDER` in `labels.ts`) can't drift apart.
+3. **Setup saves them**: Finish sends both values in the same `PUT /settings/optional` as the other optional answers, before `POST /setup/finish` fills the calendar. So the very first calendar already has the reminders. Skip sends the defaults, 5 and 5.
+4. **Look**: on Settings, the label and the dropdown share a line when they fit. On setup, they stack like every other question there. The dropdown's border and size come from `.reminder-select`, so it looks the same on both pages.
+5. **Test** (`setup.spec.ts`): both dropdowns start at 5 minutes with the same 6 choices. The test changes them to 15 minutes and No notification, finishes setup, and checks that the save came before the first calendar update. Then it checks that Settings shows the same 2 values, and still shows them after a reload.
+6. **Counts**: `pytest` gives `873 passed`, and `npx playwright test` gives `320 passed`.
+
+### 18. Number boxes for every minutes setting
+
+1. **What changed**: the 2 notifications were dropdowns (No notification, 5, 10, 15, 20, 30). Now all 4 minutes settings use the same number box: "Arrive before iqamah", "Arrive before Jumuah", "Notify before leaving for the masjid", and "Notify for home prayers". It's the same on setup's optional page and on Settings.
+2. **The box** (`MinutesField.tsx`):
+   a) It takes whole minutes from 0 to 60, with "minutes" after it.
+   b) `inputMode="numeric"` opens the number keypad on a phone.
+   c) It has a new optional `hint` line under the box. The 2 notify boxes use it for "0 = no notification". The box's `aria-describedby` points at the hint, so a screen reader reads it with the box.
+   d) `ReminderField.tsx`, the dropdown, is gone.
+3. **What 0 means**: for the 2 notify settings, 0 means no notification, and Settings shows "No notification". For the 2 arrive settings, 0 means arriving right at iqamah or Jumuah, and Settings shows "0 minutes".
+4. **Checks on the website**: `wholeMinutes` in `labels.ts` already checked the arrive boxes. Now the notify boxes use it too. Anything else (61, -1, 2.5, empty) shows "Enter a whole number of minutes from 0 to 60." and saves nothing.
+5. **Checks on the backend**:
+   a) `OptionalRequest` takes the notify settings as `int` from 0 to 60 with `strict=True`, like the arrive settings. So 2.5, "5", and null are refused, not rounded or guessed.
+   b) FastAPI's normal 422 answer is a list of technical errors, which the website could only show as "Check what you typed and try again." So `main.py` has a handler for bad minutes that answers `{"detail": {"message": "Enter a whole number of minutes from 0 to 60.", "field": ...}}`. The website shows that message under the box.
+   c) Other bad answers, like a colour that doesn't exist, keep FastAPI's usual answer.
+6. **Existing users keep their values**:
+   a) The database didn't change. 5, 10, 15, 20, and 30 are all whole numbers from 0 to 60, so they stay as they are.
+   b) Someone who picked "No notification" in the old dropdown has an empty value. The API reads that as 0, which means the same thing.
+   c) On the backend, 0 and empty both mean no reminder (`or None` in `user_settings.py`). New and skipped setups still start at 5 for both.
+7. **Tests**:
+   a) `test_reminders.py` covers any whole number (7 and 60), 0 meaning no reminder on the events, an empty value reading as 0, and the clear message. The message test runs for each of the 4 fields with 61, -1, 2.5, "5", and null.
+   b) `settings.spec.ts` and `setup.spec.ts` cover the boxes, the hint, the keypad, 0, bad numbers, and the server's message. Counts: `pytest` gives `890 passed`, and `npx playwright test` gives `324 passed`.

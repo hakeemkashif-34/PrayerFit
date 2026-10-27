@@ -8,6 +8,8 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -63,6 +65,20 @@ def ask_for_calendar_access(request: Request, error: CalendarAccessMissing) -> J
             }
         },
     )
+
+
+# Every minutes setting takes a whole number from 0 to 60. One plain message,
+# which the website shows, instead of FastAPI's list of technical errors.
+MINUTE_FIELDS = {"arrive_early_minutes", "jumuah_arrive_early_minutes", "leave_reminder_minutes", "home_reminder_minutes"}
+MINUTES_MESSAGE = "Enter a whole number of minutes from 0 to 60."
+
+
+@app.exception_handler(RequestValidationError)
+async def explain_bad_minutes(request: Request, error: RequestValidationError) -> JSONResponse:
+    fields = [e["loc"][-1] for e in error.errors() if e.get("loc") and e["loc"][-1] in MINUTE_FIELDS]
+    if not fields:
+        return await request_validation_exception_handler(request, error)
+    return JSONResponse(status_code=422, content={"detail": {"message": MINUTES_MESSAGE, "field": fields[0]}})
 
 
 @app.exception_handler(OsmServiceError)

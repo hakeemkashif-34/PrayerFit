@@ -142,7 +142,7 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
    c) **Which prayers do you usually pray at the masjid?** Tick them in the grid: prayers down the side, Monday to Sunday across the top. Anything left unticked is at home.
    d) **Generally speaking, which Jumuah would you like to attend?** It shows up as soon as you pick a masjid. It's a Friday in a day calendar, with times down the side from 11 AM to 4 PM. Each Jumuah slot (1st, 2nd, 3rd) at your masjid is a block covering just the Jumuah, from its start to its end (the masjid's Jumuah length, or 45 minutes when it isn't set), with "1st Jumuah" and a time like "1:30 to 2:15 PM". The blocks are in 1 column, one above the other, with a small gap between them. The rest of the day is greyed out. Click a block to pick it: it turns a light green with a small ✓ next to "1st Jumuah". The 1st Jumuah is picked for you. The times are this week's, only as an example: the pick is saved as "the 2nd Jumuah", not a clock time. It doesn't show your busy times. Jumuah is always at your main masjid. If it has no Jumuah times yet, it says "Jumuah times for <masjid> aren't available yet. We'll use the 1st Jumuah, and you can change it in Settings later." If you pray at home, there's no Jumuah, so there's no question.
    Press **Next** to save the masjid, the grid, and the Jumuah pick.
-6. **Optional** (page 2): a short name like `KMA`, how many minutes before iqamah and before Jumuah you want to arrive (whole numbers from 0 to 60, 5 by default), and a colour for prayer blocks and for drive blocks (Basil by default). **Back** goes to page 1 without losing anything typed here. **Skip** (top right) saves the defaults.
+6. **Optional** (page 2): a short name like `KMA`, how many minutes before iqamah and before Jumuah you want to arrive (whole numbers from 0 to 60, 5 by default), a colour for prayer blocks and for drive blocks (Basil by default), and the 2 notifications (5 minutes by default, see "Notifications" below). **Back** goes to page 1 without losing anything typed here. **Skip** (top right) saves the defaults.
 7. Press **Finish** (or **Skip**). Nothing is written to Google Calendar before this. A new tab opens and fills the screen: "Adding your prayers to Google Calendar...", "This can take up to 1 minute.", and a week calendar with times down the side. Each day fills in from Fajr to Isha at your real prayer times, about one block a second, in your prayer colour. Drive blocks slide in just before masjid prayers in your drive colour, with a small gap between a drive and its prayer so they never look like they overlap, and a caption says what's being added, like "Adding Thursday's Asr". With motion turned off on your device, it's a spinner instead. Once the calendar is filled, it shows Google Calendar for the account you signed in with. The first tab goes to the Settings page. If the update fails, the new tab shows the error with a link back to Settings, and Settings shows it too, with **Try again**. If your browser blocks the new tab, Settings says so, and **Open Google Calendar** is right there.
 8. Calculated times always use ISNA with standard Asr. Jumuah is always at your main masjid. Praying at home means no Jumuah.
 9. Every event the app makes is private, so people you share your calendar with only see "busy".
@@ -150,11 +150,24 @@ The same key encrypts Google tokens and home addresses. If it's lost or changed,
 
 ### 4. Change a setting
 
-Coming back to the website later opens the **Settings** page. It never sends you to Google Calendar on its own. Press **Open Google Calendar** to go there. Settings has 2 white cards, side by side on a computer and one above the other on a phone. **Required** has your location, main masjid, weekly prayers, and your Jumuah pick (the same calendar view as setup). **Optional** has the short name, both "how early" times, and both colours. Each item shows its setup question as the label and just your answer under it, like "How early do you want to arrive before iqamah (daily prayers)?" and "5 minutes". At the top, Settings says "Updates and changes are reflected on your calendar every 5 minutes." Press **Edit** next to any one of them, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
+Coming back to the website later opens the **Settings** page. It never sends you to Google Calendar on its own. Press **Open Google Calendar** to go there. Settings has 2 white cards, side by side on a computer and one above the other on a phone. **Required** has your location, main masjid, weekly prayers, and your Jumuah pick (the same calendar view as setup). **Optional** has the short name, both "how early" times, both colours, and the 2 notification settings. Each item has a short label with your answer beside it on the same line, like "Arrive before iqamah" and "5 minutes". Setup still asks the full questions, like "How early do you want to arrive before iqamah (daily prayers)?". On a phone, the answer moves under the label only when the two don't fit side by side. While editing, the label and its box or dropdown share a line the same way. At the top, Settings says "Updates and changes are reflected on your calendar every 5 minutes.", with "every 5 minutes" in bold, in the same soft yellow as "praying on time" on the landing page.
+
+The labels: Location, Main masjid, Prayers at the masjid, Preferred Jumuah, Short name, Arrive before iqamah, Arrive before Jumuah, Prayer colour, Drive colour, Notify before leaving for the masjid, and Notify for home prayers. Press **Edit** next to any one of them, change it, and press **Save**. The message at the top says how many events were sent to Google. Only future events that changed are sent. Past events are never touched. For example, ticking Asr on Tuesdays sends 2 events (the 2 Tuesdays in the window), not 70.
 
 If you move to another time zone, the Prayers calendar's time zone changes too.
 
-### 5. Delete my account
+### 5. Notifications
+
+2 optional settings add Google Calendar popup reminders. Each is a number box for whole minutes from 0 to 60, with "minutes" after it and "0 = no notification" under it. On a phone it opens the number keypad. Both start at 5 minutes, including for people who signed up before these settings existed. They're on setup's optional page and on Settings, with the same labels, choices, and defaults. Setup saves them before the first calendar update, so the first calendar already has them.
+
+1. **Notify before leaving for the masjid**: drive blocks. With no drive block (no drive time), nothing is added.
+2. **Notify for home prayers**: every prayer that isn't at the masjid, including a masjid prayer moved home because you're busy.
+
+Masjid prayer blocks, Jumuah too, never get a reminder. The drive block's reminder comes before them anyway.
+
+0 means no reminder at all, and Settings shows it as "No notification". The app tells Google not to use the calendar's own default reminders either. Changing a setting only sends the future events whose reminder changed. Past events are never touched.
+
+### 6. Delete my account
 
 At the very bottom of Settings, **Delete my account** (outlined in red) asks first: "This deletes your PrayerFit account, your settings, and the Prayers calendar from your Google Calendar. This can't be undone." Cancel is focused, so a stray Enter does nothing. **Delete my account** then:
 
@@ -261,7 +274,7 @@ MAWAQIT can block this at any time. After a 403, a 429, or 3 failed reads in a r
 
 ## Drive times
 
-Each masjid prayer gets a **Drive to <masjid>** block before it, from when to leave until you arrive, with a popup reminder when it starts. Drive times come from [OpenRouteService](https://openrouteservice.org), which has a free plan. They're typical drive times with no live traffic. The app calls `https://api.heigit.org/openrouteservice/v2/directions/driving-car`. HeiGIT shut off the old address, `api.openrouteservice.org`, on September 28, 2026.
+Each masjid prayer gets a **Drive to <masjid>** block before it, from when to leave until you arrive. It gets a popup 5 minutes before you leave, which you can change or turn off in "Notifications" below. Drive times come from [OpenRouteService](https://openrouteservice.org), which has a free plan. They're typical drive times with no live traffic. The app calls `https://api.heigit.org/openrouteservice/v2/directions/driving-car`. HeiGIT shut off the old address, `api.openrouteservice.org`, on September 28, 2026.
 
 1. Sign up at https://account.heigit.org/signup and copy your API key.
 2. Put it in `.env` as `ORS_API_KEY=...` and restart: `docker compose up -d`.
@@ -356,11 +369,19 @@ Masjids:
 1. **Total users**: everyone who ever signed in.
 2. **Masjids**: each masjid at least 1 user picked as their main masjid, most users first. A masjid picked by its address shows as "(picked by address)", never the address. "(no MAWAQIT times)" means it isn't linked, so it's one to add to the MAWAQIT list.
 
-**The private page**: put your own Google email in `.env` as `ADMIN_EMAIL=you@gmail.com` and restart. Sign in, then open http://localhost:8000/stats. It has 3 parts:
+**The private page**: put your own Google email in `.env` as `ADMIN_EMAIL=you@gmail.com` and restart. Sign in, then open http://localhost:8000/stats. It has 2 cards:
 
-1. "Total users: 42" at the top.
-2. A graph of total users over time, one dot per day, from the first sign-up to today. Point at a dot to see that day's date, how many signed up that day, and the total so far. Moving off the dot hides it. On a phone, tap a dot to show it and tap anywhere else to hide it. Tabbing to a dot shows it too. It's worked out from each user's sign-up date, so nothing is saved each day.
-3. A table of each masjid and how many users picked it, with a small "No MAWAQIT times" tag on masjids that aren't linked.
+1. **Total users over time**, styled like YouTube Studio's views graph, in PrayerFit's own colours and font:
+   a) A dropdown at the top right: 1 day, 2 days, 3 days, 5 days, 7 days (the default), 30 days, or All time.
+   b) One big sentence with today's total, like "PrayerFit has 41 users".
+   c) One thin line with straight segments between points, and no dot on each point. A smoothed curve could draw a dip that never happened.
+   d) 1 to 3 days have one point per hour. 5 days and up have one point per day. Each point is the total users at the end of that hour or day, or right now for the current one.
+   e) Light grid lines with labels on the right: 4 or 5 whole numbers from 0, up to a round number just above the highest total, like 0, 20, 40, 60. With few users it's 0, 1, 2, 3. From 1,000 on they say "1K", "1.5K".
+   f) 5 to 7 evenly spaced labels along the bottom: round hours (like every 4 hours) for 1 to 3 days, with the date at midnight, and dates for longer ranges.
+   g) Point at the graph (or tap it on a phone) and a dot appears on the line at the closest point, with a card above it: the date, the hour when it's hourly, and the total in large bold text. Moving off the graph or tapping elsewhere hides it. With the keyboard, tab to the graph and use the arrow keys, Home, and End.
+   h) All times are Toronto time.
+   e) The line goes down when someone deletes their account. It's built from `user_count_changes`: how many people signed up and how many deleted their account in each hour. That table has no user ID, no email, and nothing else that leads back to a person.
+2. **Masajid**: each masjid and how many users picked it, with a small "No MAWAQIT times" tag on masjids that aren't linked.
 
 Anyone else, signed in or not, gets "Page not found". Nothing links to it. With `ADMIN_EMAIL` empty, nobody can open it.
 
@@ -386,11 +407,12 @@ Through nginx, every endpoint below is under `/api` (like `/api/me`), except the
 | `POST /masjids/from-suggestion` | Saves the picked suggestion as a masjid, for the main masjid or Jumuah |
 | `PUT /settings/main-masjid` | Saves the main masjid, or "home". Picking a different masjid clears its short name |
 | `PUT /settings/weekly` | Saves the weekly grid (7 days) |
-| `PUT /settings/optional` | Saves both "how early" times, the short name, and the 2 colours. Skip sends the defaults |
+| `PUT /settings/optional` | Saves both "how early" times, the short name, the 2 colours, and the 2 notifications. Skip sends the defaults. Every minutes value must be a whole number from 0 to 60, or it answers 422 with "Enter a whole number of minutes from 0 to 60." |
 | `PUT /settings/jumuah-pick` | Saves your Jumuah pick as your main masjid and a slot (1st, 2nd, or 3rd), or clears it |
 | `POST /jumuah/slots` | Each Jumuah slot at your main masjid (or the `masjid_id` given, for setup), with this week's times as an example, its leave time, which one is picked, and the masjid's name if it has no Jumuah times yet. No busy times. A POST because it may ask OpenRouteService for a drive time |
 | `POST /calendar/preview` | This week's prayers and drive blocks at their real times, for the "Adding your prayers" page. Nothing goes to Google |
-| `GET /admin/stats` | Total users, total users per day for the graph, and each masjid's users with whether it has MAWAQIT times. 404 for everyone but `ADMIN_EMAIL` |
+| `GET /admin/stats` | Each masjid's users, with whether it has MAWAQIT times. 404 for everyone but `ADMIN_EMAIL` |
+| `GET /admin/stats/users?range=7d` | Total users over time for the graph. `range` is `1d`, `2d`, `3d` (one point per hour), `5d`, `7d`, `30d`, or `all` (one point per day). 404 for everyone but `ADMIN_EMAIL` |
 | `POST /setup/finish` | Finishes setup and fills the next 14 days. The website calls it after the last question |
 | `POST /calendar/sync` | Sends anything still waiting. Safe to run again |
 | `POST /prayers/today` | Updates today's prayers and drive blocks from your saved settings. Safe to run again |
@@ -597,11 +619,11 @@ export DATABASE_URL=postgresql://prayerfit:change-me@localhost:5432/prayerfit
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `841 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `890 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`437 passed, 404 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`438 passed, 452 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
@@ -614,4 +636,4 @@ npx playwright install chromium   # once
 npx playwright test
 ```
 
-You should see `264 passed`: 132 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.
+You should see `324 passed`: 162 tests, each on a desktop and a phone-sized screen. The tests mock the API, so the backend doesn't need to be running.

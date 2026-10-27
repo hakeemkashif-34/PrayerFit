@@ -4,7 +4,7 @@
 
 import type { Page, Route } from "@playwright/test";
 import type {
-  JumuahChoices, JumuahSlot, Masjid, MasjidSuggestion, Me, Preview, PreviewEvent, Settings, SlotKey, Stats, Step,
+  JumuahChoices, JumuahSlot, Masjid, MasjidSuggestion, Me, Preview, PreviewEvent, Settings, SlotKey, Stats, Step, UsersGraph,
 } from "../src/types";
 
 export const KMA: Masjid = {
@@ -59,6 +59,9 @@ export function emptySettings(): Settings {
     jumuah_pick: null,
     prayer_color_id: null,
     drive_color_id: null,
+    // The defaults: 5 minutes before leaving and before home prayers.
+    leave_reminder_minutes: 5,
+    home_reminder_minutes: 5,
     masjid_notices: [],
   };
 }
@@ -81,6 +84,9 @@ export function finishedSettings(): Settings {
     jumuah_pick: null,
     prayer_color_id: "7",
     drive_color_id: null,
+    // The defaults: 5 minutes before leaving and before home prayers.
+    leave_reminder_minutes: 5,
+    home_reminder_minutes: 5,
     masjid_notices: [],
   };
 }
@@ -128,18 +134,33 @@ export class MockApi {
   // The one email that can open /stats, like ADMIN_EMAIL. null: nobody.
   adminEmail: string | null = null;
   stats: Stats = {
-    total_users: 42,
-    history: [
-      { day: "2026-10-20", signed_up: 30, total: 30 }, { day: "2026-10-21", signed_up: 3, total: 33 },
-      { day: "2026-10-22", signed_up: 2, total: 35 }, { day: "2026-10-23", signed_up: 3, total: 38 },
-      { day: "2026-10-24", signed_up: 2, total: 40 }, { day: "2026-10-25", signed_up: 2, total: 42 },
-    ],
     masjids: [
       { name: "Kanata Muslim Association", users: 30, mawaqit_linked: true },
       { name: "Jamia Omar", users: 8, mawaqit_linked: false },
       { name: "(picked by address)", users: 1, mawaqit_linked: false },
     ],
   };
+  // The graph for each dropdown choice. Set one to change what the page gets.
+  usersGraphs: Record<string, UsersGraph> = {
+    // 7 days, the default. Someone deleted their account on Oct 24, so the line dips.
+    "7d": {
+      step: "day",
+      points: [
+        ["2026-10-20", 30], ["2026-10-21", 33], ["2026-10-22", 35], ["2026-10-23", 38],
+        ["2026-10-24", 37], ["2026-10-25", 40], ["2026-10-26", 42],
+      ].map(([day, total]) => ({ start: `${day}T00:00:00-04:00`, total: total as number })),
+    },
+    // 1 day: 24 hours ending at noon on Oct 26, Toronto time (UTC-4).
+    "1d": {
+      step: "hour",
+      points: Array.from({ length: 24 }, (_, i) => ({
+        start: new Date(Date.UTC(2026, 9, 25, 17 + i)).toISOString().replace(".000Z", "Z"),
+        total: 40 + Math.floor(i / 12),
+      })),
+    },
+  };
+  // Every range the page asked for, in order.
+  rangesAsked: string[] = [];
   // How many times POST /api/calendar/preview answers 409 before it works, like setup still saving.
   previewNotReady = 0;
 
@@ -281,7 +302,7 @@ export class MockApi {
       return route.fulfill({ status: 204 });
     }
     if (!this.me) {
-      if (path === "/api/admin/stats") return json(404, { detail: "Not Found" });
+      if (path.startsWith("/api/admin/stats")) return json(404, { detail: "Not Found" });
       return json(401, { detail: { message: "Not signed in.", reason: "not_signed_in", login_url: "/auth/google/login" } });
     }
 
@@ -353,6 +374,13 @@ export class MockApi {
       case "GET /api/admin/stats":
         if (!this.adminEmail || this.me.email !== this.adminEmail) return json(404, { detail: "Not Found" });
         return json(200, this.stats);
+      case "GET /api/admin/stats/users": {
+        if (!this.adminEmail || this.me.email !== this.adminEmail) return json(404, { detail: "Not Found" });
+        const range = new URL(request.url()).searchParams.get("range") ?? "7d";
+        this.rangesAsked.push(range);
+        // Ranges with no graph of their own get the 7-day one.
+        return json(200, this.usersGraphs[range] ?? this.usersGraphs["7d"]);
+      }
       case "PUT /api/settings/optional":
         this.optionalSaved = true;
         Object.assign(s, {
@@ -361,6 +389,9 @@ export class MockApi {
           main_masjid_short_name: s.main_masjid_choice === "masjid" ? body.short_name?.trim() || null : null,
           prayer_color_id: body.prayer_color_id ?? null,
           drive_color_id: body.drive_color_id ?? null,
+          // Left out gets the default, like the backend. null is "No notification".
+          leave_reminder_minutes: body.leave_reminder_minutes === undefined ? 5 : body.leave_reminder_minutes,
+          home_reminder_minutes: body.home_reminder_minutes === undefined ? 5 : body.home_reminder_minutes,
         });
         return json(200, this.saved(updated(20)));
       case "POST /api/setup/finish":
@@ -405,4 +436,18 @@ export const GOOGLE_CALENDAR = "https://calendar.google.com/calendar/r?authuser=
 
 export function updated(sent: number) {
   return { status: "updated", sent, waiting: 0, message: `Calendar updated. ${sent} events sent to Google.` };
+}
+
+// Opens a Settings row with its Edit button. A row that opens or closes eases
+// its height for 220ms, with its overflow hidden, and everything under it moves.
+// A click in that time can land on nothing. A person never taps that fast, but
+// a test does, so this waits for the rows to settle before and after the click.
+export async function openEditor(page: Page, button: string) {
+  await settled(page);
+  await page.getByRole("button", { name: button }).click();
+  await settled(page);
+}
+
+function settled(page: Page) {
+  return page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running"));
 }

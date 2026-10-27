@@ -11,7 +11,7 @@ export function PrivacyPage() {
         <a href="/">← PrayerFit</a>
       </p>
       <h1>Privacy policy</h1>
-      <p className="hint">Last updated October 26, 2026</p>
+      <p className="hint">Last updated October 27, 2026</p>
 
       <p>
         PrayerFit adds your daily prayers to your Google Calendar. This page explains what it keeps about you,
@@ -27,6 +27,11 @@ export function PrivacyPage() {
         <li>The prayer events it made for the next 2 weeks, so it can update them instead of adding copies.</li>
         <li>A sign-in cookie in your browser. PrayerFit has no ads and no tracking.</li>
       </ul>
+      <p>
+        Separately, it counts how many people signed up and how many deleted their account in each hour, to show
+        how many people use PrayerFit over time. Each count is just a number for that hour, with no email or
+        anything else that leads back to you.
+      </p>
 
       <h2>Your Google Calendar</h2>
       <p>PrayerFit asks Google for 2 calendar permissions, and never for Gmail or anything else:</p>
@@ -62,7 +67,8 @@ export function PrivacyPage() {
       <ul>
         <li>
           In Settings, <strong>Delete my account</strong> deletes everything PrayerFit keeps about you and your
-          Prayers calendar in Google Calendar. Daily backups are kept for 14 days, then deleted.
+          Prayers calendar in Google Calendar. Daily backups are kept for 14 days, then deleted. The hourly counts above keep a number for that
+          hour, but nothing about who it was.
         </li>
         <li>
           You can also remove PrayerFit's access at any time from your{" "}

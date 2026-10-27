@@ -37,6 +37,8 @@ from app.user_settings import (
     PRAYERS,
     DEFAULT_ARRIVE_EARLY_MINUTES,
     DEFAULT_COLOR_ID,
+    DEFAULT_HOME_REMINDER_MINUTES,
+    DEFAULT_LEAVE_REMINDER_MINUTES,
     DEFAULT_JUMUAH_ARRIVE_EARLY_MINUTES,
     find_settings,
     get_settings,
@@ -112,6 +114,9 @@ class SettingsOut(BaseModel):
     jumuah_pick: JumuahPickOut | None
     prayer_color_id: ColorId | None
     drive_color_id: ColorId | None
+    # Popup reminders, minutes before the event, 0 to 60. 0 means no notification.
+    leave_reminder_minutes: int = DEFAULT_LEAVE_REMINDER_MINUTES
+    home_reminder_minutes: int = DEFAULT_HOME_REMINDER_MINUTES
     # "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
     masjid_notices: list[str] = []
 
@@ -220,6 +225,9 @@ def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
         ),
         prayer_color_id=row.prayer_color_id,
         drive_color_id=row.drive_color_id,
+        # Empty, from before these were number boxes, also means no notification.
+        leave_reminder_minutes=row.leave_reminder_minutes or 0,
+        home_reminder_minutes=row.home_reminder_minutes or 0,
         masjid_notices=masjid_notices(db, labelled, now, zone),
     )
 
@@ -552,7 +560,7 @@ def save_weekly(request: WeeklyRequest, user: UserDep, db: DbDep, http: HttpDep,
 
 
 class OptionalRequest(BaseModel):
-    """A field left out gets its default: 5 minutes early for prayers and Jumuah, no short name, and Basil."""
+    """A field left out gets its default: 5 minutes early for prayers and Jumuah, no short name, Basil, and notifications 5 minutes before leaving and at home."""
 
     # strict: a whole number only. 2.5 or "5" is refused, not rounded.
     arrive_early_minutes: int = Field(default=DEFAULT_ARRIVE_EARLY_MINUTES, ge=0, le=60, strict=True)
@@ -562,6 +570,9 @@ class OptionalRequest(BaseModel):
     # null uses the Prayers calendar's own colour.
     prayer_color_id: ColorId | None = DEFAULT_COLOR_ID
     drive_color_id: ColorId | None = DEFAULT_COLOR_ID
+    # Whole minutes, 0 to 60, the same as "how early". 0 means no notification.
+    leave_reminder_minutes: int = Field(default=DEFAULT_LEAVE_REMINDER_MINUTES, ge=0, le=60, strict=True)
+    home_reminder_minutes: int = Field(default=DEFAULT_HOME_REMINDER_MINUTES, ge=0, le=60, strict=True)
 
 
 @router.put("/settings/optional", response_model=SaveResponse)
@@ -573,6 +584,8 @@ def save_optional(request: OptionalRequest, user: UserDep, db: DbDep, http: Http
     row.main_masjid_short_name = _optional_text(request.short_name) if has_masjid else None
     row.prayer_color_id = request.prayer_color_id
     row.drive_color_id = request.drive_color_id
+    row.leave_reminder_minutes = request.leave_reminder_minutes
+    row.home_reminder_minutes = request.home_reminder_minutes
     row.optional_saved = True
     return _saved(db, http, user, now)
 
