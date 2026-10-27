@@ -16,10 +16,16 @@ const TIME_ZONE = "America/Toronto";
 // Checked with the dataviz palette validator on white.
 const LINE = "#1f8a52";
 
-const H = 260;
-const PAD = { top: 20, right: 24, bottom: 40, left: 44 };
-// Closer than this, the dots would run into each other, so only the line is drawn (and the picked dot).
-const MIN_DOT_GAP = 16;
+// The card sits in the band above the plot, so it never covers the line.
+// The value labels go on the right, like YouTube Studio's graphs.
+const H = 300;
+// The left side has room for half a date, so the first one can sit centred under its point.
+const PAD = { top: 76, right: 48, bottom: 32, left: 22 };
+// The bottom labels are 11px, about 6.2px a character ("Oct 20" measured 36px). They also need a small gap.
+const CHAR_WIDTH = 6.2;
+const LABEL_GAP = 6;
+// Steps between bottom labels: round clock hours, or whole days.
+const STRIDES = { hour: [1, 2, 3, 4, 6, 8, 12, 24], day: [1, 2, 3, 5, 7, 10, 14, 15, 21, 30, 45, 60, 90, 120, 180, 365] };
 
 const RANGES: { value: GraphRange; label: string }[] = [
   { value: "1d", label: "1 day" },
@@ -39,6 +45,68 @@ function dayText(iso: string): string {
 // "Oct 26" for a day, "Oct 26, 2:00 PM" for an hour.
 function pointText(iso: string, step: UsersGraph["step"]): string {
   return step === "hour" ? `${dayText(iso)}, ${timeText(iso, TIME_ZONE)}` : dayText(iso);
+}
+
+// The hour on Toronto's clock, 0 to 23.
+function localHour(iso: string): number {
+  return Number(new Intl.DateTimeFormat("en-CA", { hour: "numeric", hourCycle: "h23", timeZone: TIME_ZONE }).format(new Date(iso)));
+}
+
+// A bottom label: "2 PM" for an hour, "Oct 26" for a day. Midnight shows the date,
+// so 2 or 3 days of hours still say which day is which.
+function axisText(iso: string, step: UsersGraph["step"]): string {
+  if (step === "day" || localHour(iso) === 0) return dayText(iso);
+  return timeText(iso, TIME_ZONE).replace(":00", ""); // "2:00 PM" -> "2 PM"
+}
+
+// "1,234"
+const count = (n: number) => n.toLocaleString("en-CA");
+
+// "950", "1K", "1.5K", "1.25K"
+function valueText(n: number): string {
+  if (n < 1000) return String(n);
+  return `${Number((n / 1000).toFixed(2))}K`;
+}
+
+/**
+ * The value labels: 4 or 5 of them, evenly spaced, from 0 to a round number
+ * just above the highest total. Steps are whole numbers (1, 2, 2.5, or 5,
+ * times 1, 10, 100...), so a graph with 3 users says 0, 1, 2, 3, 4, never 0.5.
+ */
+function valueTicks(highest: number): number[] {
+  for (let scale = 1; ; scale *= 10) {
+    for (const m of [1, 2, 2.5, 5]) {
+      const step = m * scale;
+      if (!Number.isInteger(step)) continue;
+      // Always above the highest total, so the line never touches the top.
+      const spans = Math.floor(highest / step) + 1;
+      if (spans <= 4) return Array.from({ length: Math.max(spans, 3) + 1 }, (_, i) => i * step);
+    }
+  }
+}
+
+/**
+ * Which points get a bottom label: up to 7, always the same step apart, and
+ * never so close that 2 labels touch. That gives 5 to 7 on every range, fewer
+ * only when there are fewer points. Hours land on round clock hours (every 4
+ * hours: 12 AM, 4 AM, 8 AM...). Days count back from today, so today always
+ * has a label.
+ */
+function labelledPoints(points: UsersGraph["points"], step: UsersGraph["step"], width: number): number[] {
+  const last = points.length - 1;
+  if (last <= 0) return points.length ? [0] : [];
+  const widest = Math.max(...points.map((p) => axisText(p.start, step).length)) * CHAR_WIDTH + LABEL_GAP;
+  const pick = (stride: number) =>
+    points
+      .map((_, i) => i)
+      .filter((i) => (step === "hour" ? localHour(points[i].start) % stride === 0 : (last - i) % stride === 0));
+  for (const stride of STRIDES[step]) {
+    const found = pick(stride);
+    // How far apart 2 labels a stride apart are, in pixels.
+    const apart = (width * stride) / last;
+    if (found.length <= 7 && apart >= widest) return found;
+  }
+  return pick(STRIDES[step][STRIDES[step].length - 1]);
 }
 
 // The graph is drawn at its real width, so its text stays 12px on a phone instead of shrinking.
@@ -63,7 +131,7 @@ function Graph({ graph }: { graph: UsersGraph }) {
   // A new range has different points, so the old pick means nothing.
   useEffect(() => setPicked(null), [graph]);
 
-  // On a phone, tapping anywhere outside the graph hides the box.
+  // On a phone, tapping anywhere outside the graph hides the card.
   useEffect(() => {
     if (picked === null) return;
     function hide(event: Event) {
@@ -75,16 +143,20 @@ function Graph({ graph }: { graph: UsersGraph }) {
 
   if (points.length === 0) return <p className="hint">Nobody has signed up yet.</p>;
 
-  const max = Math.max(1, ...points.map((p) => p.total));
+  const ticks = valueTicks(Math.max(...points.map((p) => p.total)));
+  const top = ticks[ticks.length - 1];
   const last = points.length - 1;
   const plotW = W - PAD.left - PAD.right;
   const x = (i: number) => PAD.left + (last === 0 ? plotW / 2 : (i / last) * plotW);
-  const y = (v: number) => PAD.top + (1 - v / max) * (H - PAD.top - PAD.bottom);
+  const y = (v: number) => PAD.top + (1 - v / top) * (H - PAD.top - PAD.bottom);
+  // Straight lines between points. A smoothed curve can dip where the total never did.
   const line = points.map((p, i) => `${i ? "L" : "M"}${x(i)},${y(p.total)}`).join(" ");
-  const ticks = [...new Set([0, Math.round(max / 2), max])];
-  const showDots = last === 0 || plotW / last >= MIN_DOT_GAP;
-  // The first and last labels need this much room between them, or they run into each other.
-  const labelRoom = step === "hour" ? 210 : 96;
+  const labelled = labelledPoints(points, step, plotW);
+  // Labels are centred under their point. Only one that would run off the graph lines up with its edge instead.
+  const anchor = (i: number, text: string) => {
+    const half = (text.length * CHAR_WIDTH) / 2;
+    return x(i) - half < 0 ? "start" : x(i) + half > W ? "end" : "middle";
+  };
 
   // The point closest to the pointer, along the x axis only, like YouTube's graphs.
   function nearest(event: PointerEvent<SVGRectElement>): number {
@@ -102,15 +174,11 @@ function Graph({ graph }: { graph: UsersGraph }) {
   }
 
   const point = picked === null ? null : points[picked];
-  // Near an edge, the box opens inward so it never runs off the graph. It sits
-  // just below a point in the top half, and just above one in the bottom half,
-  // so it never covers the point it's about.
-  const tipShift = picked === null ? 0 : x(picked) < 90 ? 0 : x(picked) > W - 90 ? -100 : -50;
-  const dotY = point ? y(point.total) : 0;
-  const below = dotY < H / 2;
+  // The card is centred over its point, but near an edge it slides inward so it never runs off the graph.
+  const tipShift = picked === null ? 0 : x(picked) < 80 ? 0 : x(picked) > W - 80 ? -100 : -50;
   return (
     <figure className="stats-graph">
-      <figcaption>
+      <figcaption className="visually-hidden">
         Total users, one point per {step}. Point at or tap the graph, or use the arrow keys, to see each {step}.
       </figcaption>
       <div className="graph-box" ref={ref}>
@@ -128,39 +196,31 @@ function Graph({ graph }: { graph: UsersGraph }) {
         >
           {ticks.map((t) => (
             <g key={t}>
-              <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} className="grid" />
-              <text x={PAD.left - 10} y={y(t)} dy="0.35em" textAnchor="end" className="tick">{t}</text>
+              <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} className={t === 0 ? "grid base" : "grid"} />
+              <text x={W - PAD.right + 10} y={y(t)} dy="0.35em" className="tick value">{valueText(t)}</text>
             </g>
           ))}
-          {/* Dates go below the axis, well clear of the 0 on the side. */}
-          <text x={x(0)} y={H - 10} textAnchor={last === 0 ? "middle" : "start"} className="tick date">
-            {pointText(points[0].start, step)}
-          </text>
-          {last > 0 && x(last) - x(0) >= labelRoom && (
-            <text x={x(last)} y={H - 10} textAnchor="end" className="tick date">{pointText(points[last].start, step)}</text>
-          )}
+          {labelled.map((i) => {
+            const text = axisText(points[i].start, step);
+            return (
+              <text key={i} x={x(i)} y={H - 8} textAnchor={anchor(i, text)} className="tick date">{text}</text>
+            );
+          })}
           {picked !== null && <line x1={x(picked)} x2={x(picked)} y1={PAD.top} y2={H - PAD.bottom} className="crosshair" />}
           <path d={line} stroke={LINE} className="series" />
-          {points.map((p, i) =>
-            showDots || picked === i ? (
-              <circle
-                key={p.start}
-                cx={x(i)}
-                cy={y(p.total)}
-                r={picked === i ? 6 : 4}
-                fill={LINE}
-                className={picked === i ? "dot picked" : "dot"}
-              />
-            ) : null,
+          {/* No dot on every point: only the one being looked at. */}
+          {point && picked !== null && (
+            <circle cx={x(picked)} cy={y(point.total)} r={5} fill={LINE} className="dot picked" />
           )}
           {/* Catches the mouse or a tap anywhere over the plot, and picks the closest point. */}
+          {/* It reaches the right edge too, so pointing at the value labels picks the newest point. */}
           <rect
-            x={PAD.left - 12}
+            x={PAD.left}
             y={0}
-            width={plotW + 24}
-            height={H - PAD.bottom + 8}
+            width={W - PAD.left}
+            height={H - PAD.bottom}
             className="plot-hit"
-            // A mouse shows the box only while it's over the graph.
+            // A mouse shows the card only while it's over the graph.
             onPointerMove={(e) => e.pointerType === "mouse" && setPicked(nearest(e))}
             onPointerLeave={(e) => e.pointerType === "mouse" && setPicked(null)}
             // A finger has no hover, so a tap shows it. Tapping outside the graph hides it (see above).
@@ -168,17 +228,11 @@ function Graph({ graph }: { graph: UsersGraph }) {
           />
         </svg>
         {point && picked !== null && (
-          <div
-            className="graph-tip"
-            style={{
-              left: x(picked),
-              top: below ? dotY + 14 : dotY - 14,
-              transform: `translate(${tipShift}%, ${below ? 0 : -100}%)`,
-            }}
-            role="status"
-          >
+          <div className="graph-tip" style={{ left: x(picked), transform: `translateX(${tipShift}%)` }} role="status">
             <span className="tip-day">{pointText(point.start, step)}</span>
-            <span><strong>{point.total}</strong> {point.total === 1 ? "user" : "users"}</span>
+            <span className="tip-total">
+              <strong>{count(point.total)}</strong> {point.total === 1 ? "user" : "users"}
+            </span>
           </div>
         )}
       </div>
@@ -204,15 +258,22 @@ function UsersCard() {
     };
   }, [range]);
 
+  // Every range ends now, so its last point is today's total.
+  const total = graph ? (graph.points.at(-1)?.total ?? 0) : null;
   return (
     <section className="card stats-section" aria-labelledby="graph-title">
-      <h2 id="graph-title">Total users over time</h2>
-      <label className="range-picker">
-        Show
-        <select value={range} onChange={(e) => setRange(e.target.value as GraphRange)}>
-          {RANGES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-        </select>
-      </label>
+      <div className="graph-head">
+        <h2 id="graph-title">Total users over time</h2>
+        <label className="range-picker">
+          Show
+          <select value={range} onChange={(e) => setRange(e.target.value as GraphRange)}>
+            {RANGES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+        </label>
+      </div>
+      {total !== null && !error && (
+        <p className="users-total">PrayerFit has {count(total)} {total === 1 ? "user" : "users"}</p>
+      )}
       {error ? (
         <p className="error" role="alert">{error}</p>
       ) : graph ? (

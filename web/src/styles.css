@@ -1473,14 +1473,37 @@ main.adding h1 {
   margin-bottom: 20px;
 }
 
-/* "Show [7 days]" above the graph. */
+/* The card's title on the left and "Show [7 days]" on the right. They stack on a narrow phone. */
+.graph-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.graph-head h2 {
+  margin: 0;
+}
+
+/* "Show [7 days]". */
 .range-picker {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
+  margin: 0;
   color: var(--muted);
   font-weight: 600;
+}
+
+/* "PrayerFit has 41 users": the one big number, like YouTube Studio's. */
+.users-total {
+  margin: 16px 0 4px;
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--text);
 }
 
 .range-picker select {
@@ -1515,19 +1538,32 @@ main.adding h1 {
   touch-action: pan-y;
 }
 
+/* Light grid lines, and a slightly darker one at 0. */
 .graph-box .grid {
   stroke: var(--line);
   stroke-width: 1;
+  opacity: 0.6;
+}
+
+.graph-box .grid.base {
+  opacity: 1;
 }
 
 .graph-box .tick {
   fill: var(--muted);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
+/* The dates and hours along the bottom are a bit smaller, so a whole week fits on a phone. */
+.graph-box .tick.date {
+  font-size: 11px;
+}
+
+/* One thin line. */
 .graph-box .series {
   fill: none;
-  stroke-width: 2;
+  stroke-width: 1.75;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
@@ -1535,6 +1571,7 @@ main.adding h1 {
 .graph-box .crosshair {
   stroke: var(--faint);
   stroke-width: 1;
+  stroke-dasharray: 3 3;
 }
 
 /* The invisible box over the plot that catches the mouse or a tap. */
@@ -1543,7 +1580,7 @@ main.adding h1 {
   cursor: crosshair;
 }
 
-/* A white ring keeps each dot clear of the line and the dots next to it. */
+/* The hover dot. A white ring keeps it clear of the line. */
 .graph-box .dot {
   stroke: var(--card);
   stroke-width: 2;
@@ -1556,13 +1593,14 @@ main.adding h1 {
   border-radius: 6px;
 }
 
+/* The card in the band above the plot, over the picked point. */
 .graph-tip {
   position: absolute;
-  top: 0;
+  top: 4px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px 12px;
+  gap: 0;
+  padding: 8px 14px;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -1575,6 +1613,19 @@ main.adding h1 {
 .tip-day {
   color: var(--muted);
   font-weight: 600;
+  font-size: 0.8125rem;
+}
+
+.tip-total {
+  color: var(--muted);
+}
+
+/* The total, large and bold. */
+.tip-total strong {
+  color: var(--text);
+  font-size: 1.375rem;
+  font-weight: 800;
+  line-height: 1.2;
 }
 
 /* Each masjid and how many users picked it, most first. */
