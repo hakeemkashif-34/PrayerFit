@@ -8,10 +8,9 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { api, ApiError } from "./api";
 import { ColourPicker } from "./ColourPicker";
 import { JumuahChooser } from "./JumuahChooser";
-import { EARLY_ERROR, LABELS, MAX_EARLY, wholeMinutes } from "./labels";
+import { EARLY_ERROR, LABELS, MAX_EARLY, REMINDER_HINT, wholeMinutes } from "./labels";
 import { MinutesField } from "./MinutesField";
-import { ReminderField } from "./ReminderField";
-import type { OptionalAnswers, ReminderMinutes, SaveResponse, Settings, SlotKey } from "./types";
+import type { OptionalAnswers, SaveResponse, Settings, SlotKey } from "./types";
 
 type EditorProps = {
   settings: Settings;
@@ -141,15 +140,23 @@ export const REMINDERS: Record<ReminderKind, { title: string; field: ReminderFie
   home: { title: LABELS.homeReminder, field: "home_reminder_minutes" },
 };
 
-// A notification dropdown, the same one setup's optional page uses.
+// A notification's number box, the same as setup's optional page. 0 means no notification.
 export function ReminderEditor({ settings, onSaved, onCancel, kind }: EditorProps & { kind: ReminderKind }) {
   const { title, field } = REMINDERS[kind];
-  const [minutes, setMinutes] = useState<ReminderMinutes | null>(settings[field]);
-  const id = `reminder-${kind}`;
+  const [text, setText] = useState(String(settings[field]));
+  const [error, setError] = useState("");
+
+  function save() {
+    const minutes = wholeMinutes(text, 0, MAX_EARLY);
+    setError(minutes === null ? EARLY_ERROR : "");
+    if (minutes === null) return null;
+    return api.saveOptional({ ...saved(settings), [field]: minutes }).then(onSaved);
+  }
+
   return (
-    <EditorForm title={title} onCancel={onCancel}
-      onSave={() => api.saveOptional({ ...saved(settings), [field]: minutes }).then(onSaved)}>
-      <ReminderField id={id} label={title} value={minutes} onChange={setMinutes} />
+    <EditorForm title={title} onSave={save} onCancel={onCancel}>
+      <MinutesField id={`reminder-${kind}`} label={title} value={text} onChange={setText} error={error}
+        min={0} max={MAX_EARLY} hint={REMINDER_HINT} />
     </EditorForm>
   );
 }

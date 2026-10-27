@@ -13,11 +13,10 @@ import { api, ApiError } from "../api";
 import { ColourPicker } from "../ColourPicker";
 import {
   DEFAULT_ARRIVE_EARLY, DEFAULT_COLOUR, DEFAULT_JUMUAH_ARRIVE_EARLY, DEFAULT_REMINDER, EARLY_ERROR, LABELS, MAX_EARLY,
-  QUESTIONS, wholeMinutes,
+  QUESTIONS, REMINDER_HINT, wholeMinutes,
 } from "../labels";
 import { MinutesField } from "../MinutesField";
-import { ReminderField } from "../ReminderField";
-import type { OptionalAnswers, ReminderMinutes, Settings } from "../types";
+import type { OptionalAnswers, Settings } from "../types";
 
 type Props = {
   settings: Settings;
@@ -48,9 +47,9 @@ export function OptionalPage({ settings, onFinishClick, onSaveFailed, onSaved }:
   const [jumuahEarly, setJumuahEarly] = useState(String(DEFAULT_JUMUAH_ARRIVE_EARLY));
   const [prayerColour, setPrayerColour] = useState<string | null>(DEFAULT_COLOUR);
   const [driveColour, setDriveColour] = useState<string | null>(DEFAULT_COLOUR);
-  const [leaveReminder, setLeaveReminder] = useState<ReminderMinutes | null>(DEFAULT_REMINDER);
-  const [homeReminder, setHomeReminder] = useState<ReminderMinutes | null>(DEFAULT_REMINDER);
-  const [errors, setErrors] = useState({ early: "", jumuahEarly: "" });
+  const [leaveReminder, setLeaveReminder] = useState(String(DEFAULT_REMINDER));
+  const [homeReminder, setHomeReminder] = useState(String(DEFAULT_REMINDER));
+  const [errors, setErrors] = useState({ early: "", jumuahEarly: "", leave: "", home: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -83,12 +82,16 @@ export function OptionalPage({ settings, onFinishClick, onSaveFailed, onSaved }:
     event.preventDefault();
     const minutes = wholeMinutes(early, 0, MAX_EARLY);
     const jumuahMinutes = hasJumuah ? wholeMinutes(jumuahEarly, 0, MAX_EARLY) : DEFAULT_JUMUAH_ARRIVE_EARLY;
+    const leave = wholeMinutes(leaveReminder, 0, MAX_EARLY);
+    const home = wholeMinutes(homeReminder, 0, MAX_EARLY);
     const found = {
       early: minutes === null ? EARLY_ERROR : "",
       jumuahEarly: jumuahMinutes === null ? EARLY_ERROR : "",
+      leave: leave === null ? EARLY_ERROR : "",
+      home: home === null ? EARLY_ERROR : "",
     };
     setErrors(found);
-    if (minutes === null || jumuahMinutes === null) return;
+    if (minutes === null || jumuahMinutes === null || leave === null || home === null) return;
 
     onFinishClick(prayerColour);
     void run(async () => {
@@ -98,8 +101,8 @@ export function OptionalPage({ settings, onFinishClick, onSaveFailed, onSaved }:
         short_name: masjid ? shortName.trim() || undefined : undefined,
         prayer_color_id: prayerColour,
         drive_color_id: driveColour,
-        leave_reminder_minutes: leaveReminder,
-        home_reminder_minutes: homeReminder,
+        leave_reminder_minutes: leave,
+        home_reminder_minutes: home,
       });
       return saved.settings;
     });
@@ -140,9 +143,11 @@ export function OptionalPage({ settings, onFinishClick, onSaveFailed, onSaved }:
         <ColourPicker label="Drive colour" value={driveColour} onChange={setDriveColour} />
       </div>
 
-      {/* The same labels, choices, and defaults as Settings. */}
-      <ReminderField id="leave-reminder" label={LABELS.leaveReminder} value={leaveReminder} onChange={setLeaveReminder} />
-      <ReminderField id="home-reminder" label={LABELS.homeReminder} value={homeReminder} onChange={setHomeReminder} />
+      {/* The same labels, boxes, and defaults as Settings. 0 means no notification. */}
+      <MinutesField id="leave-reminder" label={LABELS.leaveReminder} value={leaveReminder} onChange={setLeaveReminder}
+        error={errors.leave} min={0} max={MAX_EARLY} hint={REMINDER_HINT} />
+      <MinutesField id="home-reminder" label={LABELS.homeReminder} value={homeReminder} onChange={setHomeReminder}
+        error={errors.home} min={0} max={MAX_EARLY} hint={REMINDER_HINT} />
 
       {error && (
         <p className="error" role="alert">

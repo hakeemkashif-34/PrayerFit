@@ -1,6 +1,6 @@
 // Words shown on the page for the values the API uses.
 
-import type { Masjid, Prayer, ReminderMinutes, Settings } from "./types";
+import type { Masjid, Prayer, Settings } from "./types";
 
 export const PRAYERS: Prayer[] = ["fajr", "dhuhr", "asr", "maghrib", "isha"];
 export const PRAYER_NAMES: Record<Prayer, string> = {
@@ -65,12 +65,13 @@ export function minutesText(minutes: number): string {
   return `${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
-// The notification dropdown: "No notification" first, then minutes before.
-export const REMINDER_CHOICES: (ReminderMinutes | null)[] = [null, 5, 10, 15, 20, 30];
-
-export function reminderText(minutes: ReminderMinutes | null): string {
-  return minutes === null ? "No notification" : minutesText(minutes);
+// A notification's value on Settings: "5 minutes", or "No notification" for 0.
+export function reminderText(minutes: number): string {
+  return minutes === 0 ? "No notification" : minutesText(minutes);
 }
+
+// Under both notification boxes, on setup and Settings.
+export const REMINDER_HINT = "0 = no notification";
 
 // The setup questions, shown as labels on Settings too.
 export const QUESTIONS = {

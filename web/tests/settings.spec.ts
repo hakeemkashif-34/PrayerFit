@@ -344,17 +344,19 @@ test("existing users keep their own answers, not the new defaults", async ({ pag
   await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Calendar colour");
 });
 
-test("a bad how early number on the Settings page shows the error and saves nothing", async ({ page }) => {
+test("a bad minutes number on the Settings page shows the error and saves nothing", async ({ page }) => {
   const api = new MockApi().signedIn(finishedSettings());
   await api.install(page);
   await page.goto("/");
 
-  for (const [button, label] of [
-    ["Edit arrive before iqamah", "Arrive before iqamah"],
-    ["Edit arrive before jumuah", "Arrive before Jumuah"],
+  for (const [button, label, bad] of [
+    ["Edit arrive before iqamah", "Arrive before iqamah", "61"],
+    ["Edit arrive before jumuah", "Arrive before Jumuah", "-1"],
+    ["Edit notify before leaving for the masjid", "Notify before leaving for the masjid", "2.5"],
+    ["Edit notify for home prayers", "Notify for home prayers", "61"],
   ]) {
     await openEditor(page, button);
-    await page.getByRole("spinbutton", { name: label }).fill("61");
+    await page.getByRole("spinbutton", { name: label }).fill(bad);
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByRole("alert")).toHaveText("Enter a whole number of minutes from 0 to 60.");
     await page.getByRole("button", { name: "Cancel" }).click();
@@ -585,7 +587,7 @@ test("each label and its answer share a line when they fit, and wrap only when t
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
 });
 
-test("the 2 notification dropdowns save, show, and stay after a reload", async ({ page }) => {
+test("the 2 notification number boxes save, show, and stay after a reload", async ({ page }) => {
   const api = new MockApi().signedIn(finishedSettings());
   await api.install(page);
   await page.goto("/");
@@ -596,24 +598,31 @@ test("the 2 notification dropdowns save, show, and stay after a reload", async (
   await expect(page.getByText(/notif\w* before iqamah/i)).toHaveCount(0);
 
   const rows = {
-    leave: { name: "Notify before leaving for the masjid", question: "Notify before leaving for the masjid", start: "5 minutes", pick: "30 minutes" },
-    home: { name: "Notify for home prayers", question: "Notify for home prayers", start: "5 minutes", pick: "15 minutes" },
+    leave: { name: "Notify before leaving for the masjid", typed: "25", shown: "25 minutes" },
+    home: { name: "Notify for home prayers", typed: "7", shown: "7 minutes" },
   };
   for (const row of Object.values(rows)) {
     const region = page.getByRole("region", { name: row.name });
-    // The defaults: 5 minutes before leaving and before home prayers.
-    await expect(region.locator("h3")).toHaveText(row.question);
-    await expect(region.locator(".row-value")).toHaveText(row.start);
+    // The default: 5 minutes.
+    await expect(region.locator("h3")).toHaveText(row.name);
+    await expect(region.locator(".row-value")).toHaveText("5 minutes");
     await openEditor(page, `Edit ${row.name.toLowerCase()}`);
-    const select = region.getByRole("combobox", { name: row.question });
-    await expect(select.locator("option")).toHaveText(["No notification", "5 minutes", "10 minutes", "15 minutes", "20 minutes", "30 minutes"]);
-    await select.selectOption({ label: row.pick });
+    // A number box like "how early": "minutes" after it, the number keypad on a phone, and the hint about 0.
+    const box = region.getByRole("spinbutton", { name: row.name });
+    await expect(box).toHaveValue("5");
+    await expect(box).toHaveAttribute("inputmode", "numeric");
+    await expect(box).toHaveAttribute("min", "0");
+    await expect(box).toHaveAttribute("max", "60");
+    await expect(region.locator(".minutes-field")).toContainText("minutes");
+    await expect(region.getByText("0 = no notification")).toBeVisible();
+    await expect(box).toHaveAccessibleDescription("0 = no notification");
+    await box.fill(row.typed);
     await region.getByRole("button", { name: "Save" }).click();
-    await expect(region.locator(".row-value")).toHaveText(row.pick);
+    await expect(region.locator(".row-value")).toHaveText(row.shown);
   }
   const lastSave = () => api.calls("PUT", "/api/settings/optional").at(-1)!.body as Record<string, number | null>;
   const sent = lastSave();
-  expect([sent.leave_reminder_minutes, sent.home_reminder_minutes]).toEqual([30, 15]);
+  expect([sent.leave_reminder_minutes, sent.home_reminder_minutes]).toEqual([25, 7]);
   expect(sent).not.toHaveProperty("masjid_reminder_minutes");
 
   // Saving another optional setting keeps the notifications.
@@ -621,17 +630,50 @@ test("the 2 notification dropdowns save, show, and stay after a reload", async (
   await page.getByRole("spinbutton", { name: "Arrive before iqamah" }).fill("7");
   await page.getByRole("region", { name: "Arrive before iqamah" }).getByRole("button", { name: "Save" }).click();
   const after = lastSave();
-  expect([after.leave_reminder_minutes, after.home_reminder_minutes]).toEqual([30, 15]);
+  expect([after.leave_reminder_minutes, after.home_reminder_minutes]).toEqual([25, 7]);
 
   await page.reload();
   for (const row of Object.values(rows)) {
-    await expect(page.getByRole("region", { name: row.name }).locator(".row-value")).toHaveText(row.pick);
+    await expect(page.getByRole("region", { name: row.name }).locator(".row-value")).toHaveText(row.shown);
   }
 
-  // Back to "No notification" sends null, not 0.
+  // 0 means no notification.
   await openEditor(page, "Edit notify for home prayers");
-  await page.getByRole("combobox", { name: rows.home.question }).selectOption({ label: "No notification" });
+  await page.getByRole("spinbutton", { name: rows.home.name }).fill("0");
   await page.getByRole("region", { name: rows.home.name }).getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("region", { name: rows.home.name }).locator(".row-value")).toHaveText("No notification");
-  expect(lastSave().home_reminder_minutes).toBeNull();
+  expect(lastSave().home_reminder_minutes).toBe(0);
+});
+
+test("0 minutes early means arriving right at iqamah or Jumuah, with no hint", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  await api.install(page);
+  await page.goto("/");
+  for (const name of ["Arrive before iqamah", "Arrive before Jumuah"]) {
+    await openEditor(page, `Edit ${name.toLowerCase()}`);
+    const region = page.getByRole("region", { name });
+    await expect(region.getByRole("spinbutton", { name })).toHaveAttribute("inputmode", "numeric");
+    await expect(region.getByText("0 = no notification")).toHaveCount(0);
+    await region.getByRole("spinbutton", { name }).fill("0");
+    await region.getByRole("button", { name: "Save" }).click();
+    await expect(region.locator(".row-value")).toHaveText("0 minutes");
+  }
+  const sent = api.calls("PUT", "/api/settings/optional").at(-1)!.body as Record<string, number>;
+  expect([sent.arrive_early_minutes, sent.jumuah_arrive_early_minutes]).toEqual([0, 0]);
+});
+
+test("if the server refuses a minutes number, its message shows and the editor stays open", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  // What the backend answers for anything that isn't a whole number from 0 to 60.
+  api.failNext["/api/settings/optional"] = {
+    status: 422, detail: { message: "Enter a whole number of minutes from 0 to 60.", field: "leave_reminder_minutes" },
+  };
+  await api.install(page);
+  await page.goto("/");
+  await openEditor(page, "Edit notify before leaving for the masjid");
+  const region = page.getByRole("region", { name: "Notify before leaving for the masjid" });
+  await region.getByRole("spinbutton").fill("20");
+  await region.getByRole("button", { name: "Save" }).click();
+  await expect(region.getByRole("alert")).toHaveText("Enter a whole number of minutes from 0 to 60.");
+  await expect(region.getByRole("button", { name: "Save" })).toBeVisible();
 });

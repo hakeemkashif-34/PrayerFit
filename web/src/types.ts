@@ -53,9 +53,9 @@ export type Settings = {
   jumuah_pick: SlotKey | null;
   prayer_color_id: string | null;
   drive_color_id: string | null;
-  // Google Calendar popup reminders, in minutes before the event. null means no notification.
-  leave_reminder_minutes: ReminderMinutes | null;
-  home_reminder_minutes: ReminderMinutes | null;
+  // Google Calendar popup reminders, in minutes before the event, 0 to 60. 0 means no notification.
+  leave_reminder_minutes: number;
+  home_reminder_minutes: number;
   // "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
   masjid_notices: string[];
 };
@@ -66,13 +66,10 @@ export type OptionalAnswers = {
   short_name?: string;
   prayer_color_id: string | null;
   drive_color_id: string | null;
-  // Left out means no notification, like setup's optional page.
-  leave_reminder_minutes?: ReminderMinutes | null;
-  home_reminder_minutes?: ReminderMinutes | null;
+  // Left out gets the default, 5 minutes.
+  leave_reminder_minutes?: number;
+  home_reminder_minutes?: number;
 };
-
-// The notification dropdown's choices, in minutes.
-export type ReminderMinutes = 5 | 10 | 15 | 20 | 30;
 
 export type CalendarUpdate = {
   // "adding" is the website's own, while setup's first update runs.
