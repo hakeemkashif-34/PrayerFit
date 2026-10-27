@@ -289,3 +289,32 @@ def test_migration_0013_counts_existing_users_by_sign_up_hour(db):
         ]
     finally:
         command.upgrade(config, "head")
+
+
+def test_migration_0014_gives_existing_users_no_notifications(db):
+    """Users from before the notification settings start with "No notification" for all 3."""
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import text
+
+    config = Config("alembic.ini")
+    config.attributes["configure_logger"] = False
+    command.downgrade(config, "0013")
+    try:
+        with db.begin() as connection:
+            connection.execute(text("""
+                INSERT INTO users (id, google_sub, email) VALUES
+                    ('00000000-0000-0000-0000-00000000000a', 'old-user', 'old@example.com');
+                INSERT INTO user_settings (id, user_id, time_zone, arrive_early_minutes, optional_saved, updated_at) VALUES
+                    (gen_random_uuid(), '00000000-0000-0000-0000-00000000000a', 'America/Toronto', 5, true, now());
+            """))
+        command.upgrade(config, "0014")
+
+        with db.connect() as connection:
+            row = connection.execute(text(
+                "SELECT masjid_reminder_minutes, leave_reminder_minutes, home_reminder_minutes, arrive_early_minutes "
+                "FROM user_settings"
+            )).one()
+        assert tuple(row) == (None, None, None, 5)
+    finally:
+        command.upgrade(config, "head")

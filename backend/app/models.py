@@ -129,7 +129,7 @@ class PrayerEvent(Base):
     kind: Mapped[str] = mapped_column(String(8), default="prayer", server_default="prayer")
     # Google's event colour, "1" to "11". Empty uses the calendar's colour.
     color_id: Mapped[str | None] = mapped_column(String(2))
-    # A popup this many minutes before the start. Empty sends no reminder settings.
+    # A popup this many minutes before the start. Empty means no reminder at all.
     reminder_minutes: Mapped[int | None] = mapped_column(SmallInteger)
     # "normal", "moved" (busy times moved it), or "clash" (no free time at all).
     # When free/busy fails, moved and clash rows are kept as they are.
@@ -194,6 +194,11 @@ class UserSettings(Base):
     # Google event colours, "1" to "11". Empty uses the calendar's colour.
     prayer_color_id: Mapped[str | None] = mapped_column(String(2))
     drive_color_id: Mapped[str | None] = mapped_column(String(2))
+    # Google Calendar popup reminders, in minutes before the event. Empty means no reminder at all.
+    # Before iqamah: masjid prayer blocks, Jumuah too. Before leaving: drive blocks. At home: home prayers.
+    masjid_reminder_minutes: Mapped[int | None] = mapped_column(SmallInteger)
+    leave_reminder_minutes: Mapped[int | None] = mapped_column(SmallInteger)
+    home_reminder_minutes: Mapped[int | None] = mapped_column(SmallInteger)
     setup_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
