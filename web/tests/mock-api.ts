@@ -437,3 +437,17 @@ export const GOOGLE_CALENDAR = "https://calendar.google.com/calendar/r?authuser=
 export function updated(sent: number) {
   return { status: "updated", sent, waiting: 0, message: `Calendar updated. ${sent} events sent to Google.` };
 }
+
+// Opens a Settings row with its Edit button. A row that opens or closes eases
+// its height for 220ms, with its overflow hidden, and everything under it moves.
+// A click in that time can land on nothing. A person never taps that fast, but
+// a test does, so this waits for the rows to settle before and after the click.
+export async function openEditor(page: Page, button: string) {
+  await settled(page);
+  await page.getByRole("button", { name: button }).click();
+  await settled(page);
+}
+
+function settled(page: Page) {
+  return page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running"));
+}

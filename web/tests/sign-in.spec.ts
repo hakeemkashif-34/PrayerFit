@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { finishedSettings, MockApi } from "./mock-api";
+import { finishedSettings, MockApi, openEditor } from "./mock-api";
 
 const HADITH = "The Prophet ﷺ was asked which deed is most beloved to Allah, and he said praying on time.";
 
@@ -161,7 +161,7 @@ test("Google expiring in the middle of an edit switches to Sign in again", async
   const api = new MockApi().signedIn(finishedSettings());
   await api.install(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Edit prayers at the masjid" }).click();
+  await openEditor(page, "Edit prayers at the masjid");
 
   api.failNext["/api/settings/weekly"] = {
     status: 401,

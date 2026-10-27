@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { finishedSettings, GOOGLE_CALENDAR, KMA, MockApi } from "./mock-api";
+import { finishedSettings, GOOGLE_CALENDAR, KMA, MockApi, openEditor } from "./mock-api";
 
 test("Settings has 2 cards, Required and Optional, each item with its own Edit", async ({ page }) => {
   await new MockApi().signedIn(finishedSettings()).install(page);
@@ -91,7 +91,7 @@ test("editing a setting saves it and says what changed in the calendar", async (
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit prayers at the masjid" }).click();
+  await openEditor(page, "Edit prayers at the masjid");
   await page.getByLabel("Asr on Monday at the masjid").check();
   await page.getByRole("button", { name: "Save" }).click();
 
@@ -113,7 +113,7 @@ test("a save that can't reach Google offers Sign in again", async ({ page }) => 
   );
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit prayers at the masjid" }).click();
+  await openEditor(page, "Edit prayers at the masjid");
   await page.getByRole("button", { name: "Save" }).click();
 
   await expect(page.getByRole("status")).toContainText("Saved. Sign in again so your calendar can update.");
@@ -125,7 +125,7 @@ test("editing the location picks a new place from the suggestions", async ({ pag
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit location" }).click();
+  await openEditor(page, "Edit location");
   await page.getByRole("combobox").pressSequentially("Robson", { delay: 30 });
   await page.getByRole("option", { name: "1 Robson Street, Vancouver, British Columbia, Canada" }).click();
 
@@ -138,7 +138,7 @@ test("cancel leaves the setting as it was", async ({ page }) => {
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit prayers at the masjid" }).click();
+  await openEditor(page, "Edit prayers at the masjid");
   await page.getByLabel("Asr on Monday at the masjid").check();
   await page.getByRole("button", { name: "Cancel" }).click();
 
@@ -152,7 +152,7 @@ test("picking a masjid after praying at home asks for the weekly grid", async ({
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit main masjid" }).click();
+  await openEditor(page, "Edit main masjid");
   await page.getByRole("combobox").pressSequentially("Stittsville", { delay: 30 });
   await page.getByRole("option", { name: /^Stittsville Masjid/ }).click();
   await page.getByRole("button", { name: "Save" }).click();
@@ -167,7 +167,7 @@ test("picking a different masjid clears the old short name", async ({ page }) =>
   await page.goto("/");
   await expect(page.getByRole("region", { name: "Short name" })).toContainText("KMA");
 
-  await page.getByRole("button", { name: "Edit main masjid" }).click();
+  await openEditor(page, "Edit main masjid");
   await expect(page.getByRole("textbox", { name: /Short name/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Change" }).click();
   await page.getByRole("combobox").pressSequentially("Stittsville", { delay: 30 });
@@ -178,7 +178,7 @@ test("picking a different masjid clears the old short name", async ({ page }) =>
     choice: "masjid", masjid_id: "22222222-2222-2222-2222-222222222222",
   });
   await expect(page.getByRole("region", { name: "Short name" })).toContainText("None");
-  await page.getByRole("button", { name: "Edit short name" }).click();
+  await openEditor(page, "Edit short name");
   await expect(page.getByLabel("Short name for Stittsville Masjid")).toHaveValue("");
 });
 
@@ -194,7 +194,7 @@ test("how early for prayers is edited on its own", async ({ page }) => {
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit arrive before iqamah" }).click();
+  await openEditor(page, "Edit arrive before iqamah");
   const early = page.getByRole("spinbutton", { name: "Arrive before iqamah" });
   await expect(early).toHaveValue("5");
   await early.fill("45");
@@ -212,7 +212,7 @@ test("how early for Jumuah is edited on its own", async ({ page }) => {
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit arrive before jumuah" }).click();
+  await openEditor(page, "Edit arrive before jumuah");
   await page.getByRole("spinbutton", { name: "Arrive before Jumuah" }).fill("0");
   await page.getByRole("button", { name: "Save" }).click();
 
@@ -225,7 +225,7 @@ test("the short name is edited on its own", async ({ page }) => {
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit short name" }).click();
+  await openEditor(page, "Edit short name");
   const shortName = page.getByLabel("Short name for Kanata Muslim Association");
   await expect(shortName).toHaveValue("KMA");
   await shortName.fill("Kanata");
@@ -241,7 +241,7 @@ test("each colour is edited on its own", async ({ page }) => {
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit prayer colour" }).click();
+  await openEditor(page, "Edit prayer colour");
   await expect(page.getByRole("button", { name: /^Prayer colour/ })).toContainText("Peacock");
   await page.getByRole("button", { name: /^Prayer colour/ }).click();
   await page.getByRole("option", { name: "Calendar colour" }).click();
@@ -249,7 +249,7 @@ test("each colour is edited on its own", async ({ page }) => {
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({ ...SAVED_OPTIONAL, prayer_color_id: null });
   await expect(page.getByRole("region", { name: "Prayer colour" })).toContainText("Calendar colour");
 
-  await page.getByRole("button", { name: "Edit drive colour" }).click();
+  await openEditor(page, "Edit drive colour");
   await page.getByRole("button", { name: /^Drive colour/ }).click();
   await page.getByRole("option", { name: "Banana" }).click();
   await page.getByRole("button", { name: "Save" }).click();
@@ -264,7 +264,7 @@ test("cancel leaves an optional item as it was", async ({ page }) => {
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit arrive before iqamah" }).click();
+  await openEditor(page, "Edit arrive before iqamah");
   await page.getByRole("spinbutton", { name: "Arrive before iqamah" }).fill("0");
   await page.getByRole("button", { name: "Cancel" }).click();
 
@@ -276,7 +276,7 @@ test("only one item is edited at a time", async ({ page }) => {
   await new MockApi().signedIn(finishedSettings()).install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit short name" }).click();
+  await openEditor(page, "Edit short name");
   await expect(page.getByRole("button", { name: "Edit location" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Edit prayer colour" })).toBeDisabled();
 });
@@ -288,7 +288,7 @@ test("a new main masjid moves Jumuah there too, starting at its 1st Jumuah", asy
   const pick = page.getByRole("region", { name: "Preferred Jumuah" });
   await expect(pick.locator(".row-value")).toHaveText("2nd Jumuah");
 
-  await page.getByRole("button", { name: "Edit main masjid" }).click();
+  await openEditor(page, "Edit main masjid");
   await page.getByRole("button", { name: "Change" }).click();
   await page.getByRole("combobox").pressSequentially("Stittsville", { delay: 30 });
   await page.getByRole("option", { name: /^Stittsville Masjid/ }).click();
@@ -303,7 +303,7 @@ test("I pray at home on the settings page moves every prayer home", async ({ pag
   await api.install(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Edit main masjid" }).click();
+  await openEditor(page, "Edit main masjid");
   await page.getByRole("button", { name: "I pray at home" }).click();
 
   expect((await api.sent("PUT", "/api/settings/main-masjid", 1))[0].body).toEqual({ choice: "home" });
@@ -337,10 +337,10 @@ test("existing users keep their own answers, not the new defaults", async ({ pag
   await expect(page.getByRole("region", { name: "Arrive before iqamah" }).locator(".row-value")).toHaveText("0 minutes");
   await expect(page.getByRole("region", { name: "Prayer colour" })).toContainText("Calendar colour");
 
-  await page.getByRole("button", { name: "Edit arrive before iqamah" }).click();
+  await openEditor(page, "Edit arrive before iqamah");
   await expect(page.getByRole("spinbutton", { name: "Arrive before iqamah" })).toHaveValue("0");
   await page.getByRole("button", { name: "Cancel" }).click();
-  await page.getByRole("button", { name: "Edit drive colour" }).click();
+  await openEditor(page, "Edit drive colour");
   await expect(page.getByRole("button", { name: /^Drive colour/ })).toContainText("Calendar colour");
 });
 
@@ -353,7 +353,7 @@ test("a bad how early number on the Settings page shows the error and saves noth
     ["Edit arrive before iqamah", "Arrive before iqamah"],
     ["Edit arrive before jumuah", "Arrive before Jumuah"],
   ]) {
-    await page.getByRole("button", { name: button }).click();
+    await openEditor(page, button);
     await page.getByRole("spinbutton", { name: label }).fill("61");
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByRole("alert")).toHaveText("Enter a whole number of minutes from 0 to 60.");
@@ -467,7 +467,7 @@ test("an item opens and closes smoothly, and not at all with motion turned off",
   const easing = () => row.evaluate((el) => el.getAnimations().length);
   // Nothing moves on page load.
   expect(await easing()).toBe(0);
-  await page.getByRole("button", { name: "Edit location" }).click();
+  await openEditor(page, "Edit location");
   expect(await easing()).toBeGreaterThan(0);
   await page.waitForTimeout(400);
   await row.getByRole("button", { name: "Cancel" }).click();
@@ -475,7 +475,7 @@ test("an item opens and closes smoothly, and not at all with motion turned off",
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.waitForTimeout(400);
-  await page.getByRole("button", { name: "Edit location" }).click();
+  await openEditor(page, "Edit location");
   expect(await easing()).toBe(0);
 });
 
@@ -517,7 +517,7 @@ test("Location shows the time zone, and no line about the calculation method", a
 test("the Required and Optional cards and the calendar message share one background", async ({ page }) => {
   await new MockApi().signedIn(finishedSettings()).install(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Edit prayers at the masjid" }).click();
+  await openEditor(page, "Edit prayers at the masjid");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("status")).toHaveText(/^Calendar updated/);
   const background = (selector: string) =>
@@ -551,7 +551,7 @@ test("each label and its answer share a line when they fit, and wrap only when t
   }
 
   // While editing, the label and its box share a line on desktop. A phone has no room, so the box goes under it.
-  await page.getByRole("button", { name: "Edit arrive before iqamah" }).click();
+  await openEditor(page, "Edit arrive before iqamah");
   const editing = await sideBySide(page, `${row("Arrive before iqamah")} .inline-field label`, `${row("Arrive before iqamah")} .minutes-field`);
   expect(editing).toBe(info.project.name === "desktop");
 
@@ -579,7 +579,7 @@ test("the 2 notification dropdowns save, show, and stay after a reload", async (
     // The defaults: 5 minutes before leaving and before home prayers.
     await expect(region.locator("h3")).toHaveText(row.question);
     await expect(region.locator(".row-value")).toHaveText(row.start);
-    await page.getByRole("button", { name: `Edit ${row.name.toLowerCase()}` }).click();
+    await openEditor(page, `Edit ${row.name.toLowerCase()}`);
     const select = region.getByRole("combobox", { name: row.question });
     await expect(select.locator("option")).toHaveText(["No notification", "5 minutes", "10 minutes", "15 minutes", "20 minutes", "30 minutes"]);
     await select.selectOption({ label: row.pick });
@@ -592,7 +592,7 @@ test("the 2 notification dropdowns save, show, and stay after a reload", async (
   expect(sent).not.toHaveProperty("masjid_reminder_minutes");
 
   // Saving another optional setting keeps the notifications.
-  await page.getByRole("button", { name: "Edit arrive before iqamah" }).click();
+  await openEditor(page, "Edit arrive before iqamah");
   await page.getByRole("spinbutton", { name: "Arrive before iqamah" }).fill("7");
   await page.getByRole("region", { name: "Arrive before iqamah" }).getByRole("button", { name: "Save" }).click();
   const after = lastSave();
@@ -604,7 +604,7 @@ test("the 2 notification dropdowns save, show, and stay after a reload", async (
   }
 
   // Back to "No notification" sends null, not 0.
-  await page.getByRole("button", { name: "Edit notify before home prayers" }).click();
+  await openEditor(page, "Edit notify before home prayers");
   await page.getByRole("combobox", { name: rows.home.question }).selectOption({ label: "No notification" });
   await page.getByRole("region", { name: rows.home.name }).getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("region", { name: rows.home.name }).locator(".row-value")).toHaveText("No notification");
