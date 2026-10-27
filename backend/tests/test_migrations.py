@@ -291,8 +291,8 @@ def test_migration_0013_counts_existing_users_by_sign_up_hour(db):
         command.upgrade(config, "head")
 
 
-def test_migration_0014_gives_existing_users_no_notifications(db):
-    """Users from before the notification settings start with "No notification" for all 3."""
+def test_migration_0014_gives_existing_users_the_defaults(db):
+    """Users from before the notification settings get 5 minutes before leaving and at home, and none before iqamah."""
     from alembic import command
     from alembic.config import Config
     from sqlalchemy import text
@@ -315,6 +315,6 @@ def test_migration_0014_gives_existing_users_no_notifications(db):
                 "SELECT masjid_reminder_minutes, leave_reminder_minutes, home_reminder_minutes, arrive_early_minutes "
                 "FROM user_settings"
             )).one()
-        assert tuple(row) == (None, None, None, 5)
+        assert tuple(row) == (None, 5, 5, 5)
     finally:
         command.upgrade(config, "head")

@@ -37,6 +37,8 @@ from app.user_settings import (
     PRAYERS,
     DEFAULT_ARRIVE_EARLY_MINUTES,
     DEFAULT_COLOR_ID,
+    DEFAULT_HOME_REMINDER_MINUTES,
+    DEFAULT_LEAVE_REMINDER_MINUTES,
     DEFAULT_JUMUAH_ARRIVE_EARLY_MINUTES,
     find_settings,
     get_settings,
@@ -116,8 +118,8 @@ class SettingsOut(BaseModel):
     drive_color_id: ColorId | None
     # Popup reminders, minutes before the event. null means no notification.
     masjid_reminder_minutes: ReminderMinutes | None = None
-    leave_reminder_minutes: ReminderMinutes | None = None
-    home_reminder_minutes: ReminderMinutes | None = None
+    leave_reminder_minutes: ReminderMinutes | None = DEFAULT_LEAVE_REMINDER_MINUTES
+    home_reminder_minutes: ReminderMinutes | None = DEFAULT_HOME_REMINDER_MINUTES
     # "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
     masjid_notices: list[str] = []
 
@@ -561,7 +563,7 @@ def save_weekly(request: WeeklyRequest, user: UserDep, db: DbDep, http: HttpDep,
 
 
 class OptionalRequest(BaseModel):
-    """A field left out gets its default: 5 minutes early for prayers and Jumuah, no short name, Basil, and no notifications."""
+    """A field left out gets its default: 5 minutes early for prayers and Jumuah, no short name, Basil, and notifications 5 minutes before leaving and at home."""
 
     # strict: a whole number only. 2.5 or "5" is refused, not rounded.
     arrive_early_minutes: int = Field(default=DEFAULT_ARRIVE_EARLY_MINUTES, ge=0, le=60, strict=True)
@@ -573,8 +575,8 @@ class OptionalRequest(BaseModel):
     drive_color_id: ColorId | None = DEFAULT_COLOR_ID
     # null means no notification. Only the dropdown's choices are allowed.
     masjid_reminder_minutes: ReminderMinutes | None = None
-    leave_reminder_minutes: ReminderMinutes | None = None
-    home_reminder_minutes: ReminderMinutes | None = None
+    leave_reminder_minutes: ReminderMinutes | None = DEFAULT_LEAVE_REMINDER_MINUTES
+    home_reminder_minutes: ReminderMinutes | None = DEFAULT_HOME_REMINDER_MINUTES
 
 
 @router.put("/settings/optional", response_model=SaveResponse)

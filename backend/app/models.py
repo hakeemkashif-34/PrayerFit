@@ -195,10 +195,11 @@ class UserSettings(Base):
     prayer_color_id: Mapped[str | None] = mapped_column(String(2))
     drive_color_id: Mapped[str | None] = mapped_column(String(2))
     # Google Calendar popup reminders, in minutes before the event. Empty means no reminder at all.
+    # New and existing users start with 5 minutes before leaving and at home, and none before iqamah.
     # Before iqamah: masjid prayer blocks, Jumuah too. Before leaving: drive blocks. At home: home prayers.
     masjid_reminder_minutes: Mapped[int | None] = mapped_column(SmallInteger)
-    leave_reminder_minutes: Mapped[int | None] = mapped_column(SmallInteger)
-    home_reminder_minutes: Mapped[int | None] = mapped_column(SmallInteger)
+    leave_reminder_minutes: Mapped[int | None] = mapped_column(SmallInteger, default=5, server_default="5")
+    home_reminder_minutes: Mapped[int | None] = mapped_column(SmallInteger, default=5, server_default="5")
     setup_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

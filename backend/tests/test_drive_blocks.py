@@ -117,11 +117,13 @@ def test_drive_blocks_have_stable_ids_and_never_duplicate(db, http, fetched, fak
     assert len(fake_ors.requests) == 1
 
 
-def test_no_reminders_until_the_user_picks_one(db, http, fetched, fake_google):
-    # The "before leaving" setting starts at "No notification" (see test_reminders.py).
+def test_drive_blocks_get_a_popup_5_minutes_before_leaving(db, http, fetched, fake_google):
+    # "Before leaving" starts at 5 minutes (see test_reminders.py for every setting).
     refresh(db, http, fetched, NOW)
     events = google_events(fake_google)
-    assert all(e["reminders"] == {"useDefault": False, "overrides": []} for e in events)
+    drives = [e for e in events if e["summary"].startswith("Drive")]
+    assert drives
+    assert all(e["reminders"] == {"useDefault": False, "overrides": [{"method": "popup", "minutes": 5}]} for e in drives)
     assert all("colorId" not in e for e in events)  # no colour picked: the calendar's colour
 
 
