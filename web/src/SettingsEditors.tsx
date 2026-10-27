@@ -8,8 +8,9 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { api, ApiError } from "./api";
 import { ColourPicker } from "./ColourPicker";
 import { JumuahChooser } from "./JumuahChooser";
-import { EARLY_ERROR, LABELS, MAX_EARLY, REMINDER_CHOICES, reminderText, wholeMinutes } from "./labels";
+import { EARLY_ERROR, LABELS, MAX_EARLY, wholeMinutes } from "./labels";
 import { MinutesField } from "./MinutesField";
+import { ReminderField } from "./ReminderField";
 import type { OptionalAnswers, ReminderMinutes, SaveResponse, Settings, SlotKey } from "./types";
 
 type EditorProps = {
@@ -140,7 +141,7 @@ export const REMINDERS: Record<ReminderKind, { title: string; field: ReminderFie
   home: { title: LABELS.homeReminder, field: "home_reminder_minutes" },
 };
 
-// A dropdown: No notification, or 5 to 30 minutes before. It becomes a Google Calendar popup.
+// A notification dropdown, the same one setup's optional page uses.
 export function ReminderEditor({ settings, onSaved, onCancel, kind }: EditorProps & { kind: ReminderKind }) {
   const { title, field } = REMINDERS[kind];
   const [minutes, setMinutes] = useState<ReminderMinutes | null>(settings[field]);
@@ -148,15 +149,7 @@ export function ReminderEditor({ settings, onSaved, onCancel, kind }: EditorProp
   return (
     <EditorForm title={title} onCancel={onCancel}
       onSave={() => api.saveOptional({ ...saved(settings), [field]: minutes }).then(onSaved)}>
-      <div className="inline-field">
-        <label htmlFor={id}>{title}</label>
-        <select id={id} value={minutes ?? ""}
-          onChange={(e) => setMinutes(e.target.value === "" ? null : (Number(e.target.value) as ReminderMinutes))}>
-          {REMINDER_CHOICES.map((choice) => (
-            <option key={choice ?? "none"} value={choice ?? ""}>{reminderText(choice)}</option>
-          ))}
-        </select>
-      </div>
+      <ReminderField id={id} label={title} value={minutes} onChange={setMinutes} />
     </EditorForm>
   );
 }

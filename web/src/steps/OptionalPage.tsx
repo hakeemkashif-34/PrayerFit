@@ -1,6 +1,7 @@
 // Setup page 2, "Optional": short name, how early for prayers and for
-// Jumuah, and colours. Every answer has a default, so Skip (top right)
-// saves the defaults and finishes.
+// Jumuah, colours, and the 2 notifications. Every answer has a default, so
+// Skip (top right) saves the defaults and finishes. The notifications are
+// saved here, so the very first calendar already has them.
 //
 // Finish saves the answers,
 // then App fills the calendar. Nothing goes to Google Calendar before that.
@@ -11,10 +12,12 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api";
 import { ColourPicker } from "../ColourPicker";
 import {
-  DEFAULT_ARRIVE_EARLY, DEFAULT_COLOUR, DEFAULT_JUMUAH_ARRIVE_EARLY, EARLY_ERROR, MAX_EARLY, QUESTIONS, wholeMinutes,
+  DEFAULT_ARRIVE_EARLY, DEFAULT_COLOUR, DEFAULT_JUMUAH_ARRIVE_EARLY, DEFAULT_REMINDER, EARLY_ERROR, LABELS, MAX_EARLY,
+  QUESTIONS, wholeMinutes,
 } from "../labels";
 import { MinutesField } from "../MinutesField";
-import type { OptionalAnswers, Settings } from "../types";
+import { ReminderField } from "../ReminderField";
+import type { OptionalAnswers, ReminderMinutes, Settings } from "../types";
 
 type Props = {
   settings: Settings;
@@ -31,6 +34,8 @@ const DEFAULTS: OptionalAnswers = {
   jumuah_arrive_early_minutes: DEFAULT_JUMUAH_ARRIVE_EARLY,
   prayer_color_id: DEFAULT_COLOUR,
   drive_color_id: DEFAULT_COLOUR,
+  leave_reminder_minutes: DEFAULT_REMINDER,
+  home_reminder_minutes: DEFAULT_REMINDER,
 };
 
 export function OptionalPage({ settings, onFinishClick, onSaveFailed, onSaved }: Props) {
@@ -43,6 +48,8 @@ export function OptionalPage({ settings, onFinishClick, onSaveFailed, onSaved }:
   const [jumuahEarly, setJumuahEarly] = useState(String(DEFAULT_JUMUAH_ARRIVE_EARLY));
   const [prayerColour, setPrayerColour] = useState<string | null>(DEFAULT_COLOUR);
   const [driveColour, setDriveColour] = useState<string | null>(DEFAULT_COLOUR);
+  const [leaveReminder, setLeaveReminder] = useState<ReminderMinutes | null>(DEFAULT_REMINDER);
+  const [homeReminder, setHomeReminder] = useState<ReminderMinutes | null>(DEFAULT_REMINDER);
   const [errors, setErrors] = useState({ early: "", jumuahEarly: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -91,6 +98,8 @@ export function OptionalPage({ settings, onFinishClick, onSaveFailed, onSaved }:
         short_name: masjid ? shortName.trim() || undefined : undefined,
         prayer_color_id: prayerColour,
         drive_color_id: driveColour,
+        leave_reminder_minutes: leaveReminder,
+        home_reminder_minutes: homeReminder,
       });
       return saved.settings;
     });
@@ -130,6 +139,10 @@ export function OptionalPage({ settings, onFinishClick, onSaveFailed, onSaved }:
         <ColourPicker label="Prayer colour" value={prayerColour} onChange={setPrayerColour} />
         <ColourPicker label="Drive colour" value={driveColour} onChange={setDriveColour} />
       </div>
+
+      {/* The same labels, choices, and defaults as Settings. */}
+      <ReminderField id="leave-reminder" label={LABELS.leaveReminder} value={leaveReminder} onChange={setLeaveReminder} />
+      <ReminderField id="home-reminder" label={LABELS.homeReminder} value={homeReminder} onChange={setHomeReminder} />
 
       {error && (
         <p className="error" role="alert">

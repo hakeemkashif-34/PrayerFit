@@ -189,6 +189,8 @@ test("the full setup: required page, optional page, then a filled calendar", asy
   // Finish saves the other answers, then finishes.
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({
     arrive_early_minutes: 10, jumuah_arrive_early_minutes: 15, short_name: "KMA", prayer_color_id: "7", drive_color_id: "11",
+    // The notifications weren't touched, so they keep their 5-minute defaults.
+    leave_reminder_minutes: 5, home_reminder_minutes: 5,
   });
   await expectGoogleCalendar(page, api);
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
@@ -535,6 +537,7 @@ test("Skip saves the defaults", async ({ page }) => {
 
   expect((await api.sent("PUT", "/api/settings/optional", 1))[0].body).toEqual({
     arrive_early_minutes: 5, jumuah_arrive_early_minutes: 5, prayer_color_id: "10", drive_color_id: "10",
+    leave_reminder_minutes: 5, home_reminder_minutes: 5,
   });
   await expectGoogleCalendar(page, api);
   expect(api.calls("POST", "/api/setup/finish")).toHaveLength(1);
@@ -766,4 +769,39 @@ test("a failed Jumuah pick save stays on page 1 with the error", async ({ page }
 
   await expect(page.getByRole("alert")).toHaveText("The server is busy. Try again.");
   await expectPage(page, 1);
+});
+
+test("the 2 notifications are on page 2 too, saved during setup, and Settings shows the same", async ({ page }) => {
+  const api = new MockApi().signedIn();
+  await api.install(page);
+  await page.goto("/");
+  await toOptionalAtKma(page);
+
+  // The same labels, choices, and 5-minute defaults as Settings.
+  const leave = page.getByRole("combobox", { name: "Notify before leaving for the masjid" });
+  const home = page.getByRole("combobox", { name: "Notify for home prayers" });
+  for (const box of [leave, home]) {
+    await expect(box.locator("option")).toHaveText(["No notification", "5 minutes", "10 minutes", "15 minutes", "20 minutes", "30 minutes"]);
+    await expect(box.locator("option:checked")).toHaveText("5 minutes");
+  }
+  await leave.selectOption({ label: "15 minutes" });
+  await home.selectOption({ label: "No notification" });
+  await page.getByRole("button", { name: "Finish" }).click();
+
+  // Saved before the first calendar update, so it already has them.
+  const saves = await api.sent("PUT", "/api/settings/optional", 1);
+  expect(saves[0].body).toMatchObject({ leave_reminder_minutes: 15, home_reminder_minutes: null });
+  await expectGoogleCalendar(page, api);
+  expect(api.requests.findIndex((r) => r.path === "/api/settings/optional")).toBeLessThan(
+    api.requests.findIndex((r) => r.path === "/api/setup/finish"),
+  );
+
+  // Settings shows the same choices, and they're still there after a reload.
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  const value = (name: string) => page.getByRole("region", { name }).locator(".row-value");
+  await expect(value("Notify before leaving for the masjid")).toHaveText("15 minutes");
+  await expect(value("Notify for home prayers")).toHaveText("No notification");
+  await page.reload();
+  await expect(value("Notify before leaving for the masjid")).toHaveText("15 minutes");
+  await expect(value("Notify for home prayers")).toHaveText("No notification");
 });
