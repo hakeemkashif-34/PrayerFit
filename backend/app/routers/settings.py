@@ -56,6 +56,8 @@ OSM_CREDIT = "© OpenStreetMap contributors"
 OSM_CREDIT_URL = "https://www.openstreetmap.org/copyright"
 # Google Calendar's fixed event colours. The website shows their names and swatches.
 ColorId = Literal["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]
+# The notification dropdown's choices, in minutes. "No notification" is null.
+ReminderMinutes = Literal[5, 10, 15, 20, 30]
 
 UserDep = Annotated[User, Depends(current_user)]
 DbDep = Annotated[Session, Depends(get_db)]
@@ -112,6 +114,10 @@ class SettingsOut(BaseModel):
     jumuah_pick: JumuahPickOut | None
     prayer_color_id: ColorId | None
     drive_color_id: ColorId | None
+    # Popup reminders, minutes before the event. null means no notification.
+    masjid_reminder_minutes: ReminderMinutes | None = None
+    leave_reminder_minutes: ReminderMinutes | None = None
+    home_reminder_minutes: ReminderMinutes | None = None
     # "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
     masjid_notices: list[str] = []
 
@@ -220,6 +226,9 @@ def settings_out(db: Session, user_id: uuid.UUID, now: datetime) -> SettingsOut:
         ),
         prayer_color_id=row.prayer_color_id,
         drive_color_id=row.drive_color_id,
+        masjid_reminder_minutes=row.masjid_reminder_minutes,
+        leave_reminder_minutes=row.leave_reminder_minutes,
+        home_reminder_minutes=row.home_reminder_minutes,
         masjid_notices=masjid_notices(db, labelled, now, zone),
     )
 
@@ -552,7 +561,7 @@ def save_weekly(request: WeeklyRequest, user: UserDep, db: DbDep, http: HttpDep,
 
 
 class OptionalRequest(BaseModel):
-    """A field left out gets its default: 5 minutes early for prayers and Jumuah, no short name, and Basil."""
+    """A field left out gets its default: 5 minutes early for prayers and Jumuah, no short name, Basil, and no notifications."""
 
     # strict: a whole number only. 2.5 or "5" is refused, not rounded.
     arrive_early_minutes: int = Field(default=DEFAULT_ARRIVE_EARLY_MINUTES, ge=0, le=60, strict=True)
@@ -562,6 +571,10 @@ class OptionalRequest(BaseModel):
     # null uses the Prayers calendar's own colour.
     prayer_color_id: ColorId | None = DEFAULT_COLOR_ID
     drive_color_id: ColorId | None = DEFAULT_COLOR_ID
+    # null means no notification. Only the dropdown's choices are allowed.
+    masjid_reminder_minutes: ReminderMinutes | None = None
+    leave_reminder_minutes: ReminderMinutes | None = None
+    home_reminder_minutes: ReminderMinutes | None = None
 
 
 @router.put("/settings/optional", response_model=SaveResponse)
@@ -573,6 +586,9 @@ def save_optional(request: OptionalRequest, user: UserDep, db: DbDep, http: Http
     row.main_masjid_short_name = _optional_text(request.short_name) if has_masjid else None
     row.prayer_color_id = request.prayer_color_id
     row.drive_color_id = request.drive_color_id
+    row.masjid_reminder_minutes = request.masjid_reminder_minutes
+    row.leave_reminder_minutes = request.leave_reminder_minutes
+    row.home_reminder_minutes = request.home_reminder_minutes
     row.optional_saved = True
     return _saved(db, http, user, now)
 

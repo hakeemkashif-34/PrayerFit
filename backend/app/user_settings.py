@@ -138,6 +138,10 @@ class Setup:
     # Google event colours, "1" to "11". None uses the calendar's colour.
     prayer_color_id: str | None = None
     drive_color_id: str | None = None
+    # Popup reminders, minutes before the event. None means no reminder.
+    masjid_reminder_minutes: int | None = None
+    leave_reminder_minutes: int | None = None
+    home_reminder_minutes: int | None = None
 
     @property
     def jumuah_masjid(self) -> Masjid | None:
@@ -200,4 +204,7 @@ def load_setup(db: Session, user_id: uuid.UUID, preview: bool = False) -> Setup 
         ),
         prayer_color_id=row.prayer_color_id,
         drive_color_id=row.drive_color_id,
+        masjid_reminder_minutes=row.masjid_reminder_minutes,
+        leave_reminder_minutes=row.leave_reminder_minutes,
+        home_reminder_minutes=row.home_reminder_minutes,
     )
