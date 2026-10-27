@@ -1670,15 +1670,15 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
 | How early do you want to arrive before Jumuah (Friday prayer)? | Arrive before Jumuah |
 | Prayer colour | Prayer colour |
 | Drive colour | Drive colour |
-| How early do you want to be notified before leaving for the masjid? | Notify before leaving |
-| How early do you want to be notified before prayer at home? | Notify before home prayers |
+| How early do you want to be notified before leaving for the masjid? | Notify before leaving for the masjid |
+| How early do you want to be notified before prayer at home? | Notify for home prayers |
 
    b) Setup keeps the full questions (`QUESTIONS`), since that's where people first answer them. The location, masjid, and weekly editors on Settings are setup's own steps, so they still show setup's questions while open.
    c) Each row's label is also its name for screen readers and its Edit button, like "Edit arrive before iqamah". Before, those used separate names like "How early for prayers", so a screen reader heard something different from what was on screen.
    d) While editing, the form's title said the same thing as the field's label, so the title is now only for screen readers (`visually-hidden`).
 3. **One line per setting** (`styles.css`, `.row-text`):
    a) Each row is a wrapping flex line: the label, then the answer, then **Edit**.
-   b) The label and the answer each take their own width. If they fit side by side, they share the line. If they don't, the answer wraps under the label. On desktop, every Optional row fits. On a phone, short pairs like "Arrive before iqamah" and "5 minutes" fit, and longer ones like "Notify before home prayers" wrap.
+   b) The label and the answer each take their own width. If they fit side by side, they share the line. If they don't, the answer wraps under the label. On desktop, every Optional row fits. On a phone, short pairs like "Arrive before iqamah" and "5 minutes" fit, and longer ones like "Notify for home prayers" wrap.
    c) Headings use `text-wrap: balance` everywhere else, but in these rows it split short labels onto 2 lines when there was room, so the rows turn it off.
    d) While editing, `.inline-field` puts the label and its box or dropdown on one line the same way. It only applies inside `.settings-page`, because setup uses the same `MinutesField` and stays stacked there.
    e) A Playwright test measures the boxes on both screens and checks which rows share a line.
@@ -1687,11 +1687,11 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
    b) There was a 3rd setting, "before iqamah at the masjid". I removed it, so masjid prayer blocks (Jumuah too) never get a reminder. The drive block's reminder comes before them anyway. Migration `0014` wasn't on `main` yet, so I changed it instead of adding a migration that drops the column.
    c) A new user's settings row is built in Python before it's saved, and a column default only applies when the row is saved. So `_empty()` in `user_settings.py` sets the 2 defaults itself, or a brand new user's Settings page would show "No notification". The API's optional step uses the same defaults when a field is left out, so skipping setup's optional page gives them too.
    d) The API only takes the dropdown's choices: 5, 10, 15, 20, 30, or null. 7, 0, 60, and "5" get 422.
-   e) `event_plan.py` puts each one on the right events: drive blocks use "before leaving", and every home prayer uses "before home prayers". A masjid prayer moved home because the user is busy is a home prayer. No drive time means no drive block, so "before leaving" adds nothing.
+   e) `event_plan.py` puts each one on the right events: drive blocks use "before leaving", and every home prayer uses "for home prayers". A masjid prayer moved home because the user is busy is a home prayer. No drive time means no drive block, so "before leaving" adds nothing.
    f) They're Google Calendar popup reminders (`reminders.overrides`), so there's no web push and no new service.
    g) **"No notification" really means none.** Before, an event with no reminder left out the `reminders` field, so Google used the calendar's own default reminders. Now every event sends `{"useDefault": false, "overrides": []}` when there's no reminder. Masjid prayer blocks always send that.
    h) **Drive blocks changed.** They used to get a popup right when it was time to leave. Now they follow "before leaving", which starts at 5 minutes before.
-   i) **Only changed events are sent.** The calendar update already compares a hash of what Google would get with what Google last got. A new reminder changes the hash, so only events whose reminder changed go back to Google. Past events are never touched. A test changes "before home prayers" at 3 pm and checks that only future home prayers were sent.
+   i) **Only changed events are sent.** The calendar update already compares a hash of what Google would get with what Google last got. A new reminder changes the hash, so only events whose reminder changed go back to Google. Past events are never touched. A test changes "for home prayers" at 3 pm and checks that only future home prayers were sent.
    j) Because of g) and h), the first update after this goes out sends every upcoming event once, since each one's `reminders` changed. After that, only real changes are sent.
    k) Every Settings editor sends both notification values with its own change. Otherwise saving a colour would turn the notifications off. A Playwright test checks that.
 5. **Tests**: `test_reminders.py` (the defaults, "No notification" on both, each setting on its own events, no reminder on masjid prayers or Jumuah, a prayer moved home, no drive block, changing a setting, and the API), `test_migrations.py` (0014), and `settings.spec.ts` (every label, the highlight, the one-line layout, and both dropdowns saving and staying after a reload on desktop and phone). Counts: `pytest` gives `873 passed`, and `npx playwright test` gives `280 passed`.
@@ -1717,7 +1717,7 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
 6. **Hover**: an invisible box over the plot finds the point closest to the pointer, left to right. It reaches the right edge, so pointing at the value labels picks the newest point. A dot appears there with a dashed line down to 0. The card sits in a band above the plot, centred over the dot, so it never covers the line. Near either edge it slides inward. The total is large and bold. Tapping, the arrow keys, Home, and End work as before.
 7. **Phones**: the graph is drawn at its real width, so its text keeps its size. The title and the dropdown wrap onto 2 lines when they don't fit side by side.
 8. **A flaky Settings test, fixed**: 2 Settings tests sometimes failed in a full run and passed on their own. Both opened "Prayers at the masjid" and clicked Save straight away. A Settings row eases its height for 220ms when it opens or closes, with its overflow hidden. Playwright's trace showed it clicked Save in that window, and the click landed on nothing. A person can't tap that fast, but a test can. The short labels changed the row heights on phones, which made it happen more often. Now every test opens a row with `openEditor` (`tests/mock-api.ts`), which waits for the page's animations to finish before and after clicking Edit. The one test that checks the row eases open still uses a plain click, since it has to see the animation running.
-   a) A 2nd test was too strict. It named phone rows that only just fit side by side, like "Notify before leaving" and "5 minutes". GitHub's computer renders fonts a pixel or 2 wider, so that row wrapped there. Now the test checks the rule on every row: it measures the label, the 16px gap, and the answer. If they clearly fit, they must share the line. If they clearly don't, the answer must wrap. A pair within 2px of fitting can go either way, so it isn't checked.
+   a) A 2nd test was too strict. It named phone rows that only just fit side by side, like "Notify before leaving for the masjid" and "5 minutes". GitHub's computer renders fonts a pixel or 2 wider, so that row wrapped there. Now the test checks the rule on every row: it measures the label, the 16px gap, and the answer. If they clearly fit, they must share the line. If they clearly don't, the answer must wrap. A pair within 2px of fitting can go either way, so it isn't checked.
 9. **Tests** (`stats.spec.ts`):
    a) The sentence: "user" for 1, and "1,234" style numbers.
    b) The line: straight segments only, at most 2px wide, and no dots until you point.
@@ -1725,3 +1725,12 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
    d) The bottom labels: 5 to 7, evenly spaced to within a pixel, and never touching, for every range on desktop and phone.
    e) Hover: the dot, the card above it, and the large bold total.
    f) Tapping, the keyboard, and the card staying inside the graph.
+
+### 17. The notifications on setup's optional page
+
+1. **Labels**: "Notify before leaving" became "Notify before leaving for the masjid", which says where you're leaving for. "Notify before home prayers" became "Notify for home prayers", which is shorter and still clear.
+2. **One dropdown, 2 pages**: `web/src/ReminderField.tsx` is the label and the dropdown. Setup's optional page and the Settings editor both use it, so the labels, the 6 choices, and the 5-minute default (`DEFAULT_REMINDER` in `labels.ts`) can't drift apart.
+3. **Setup saves them**: Finish sends both values in the same `PUT /settings/optional` as the other optional answers, before `POST /setup/finish` fills the calendar. So the very first calendar already has the reminders. Skip sends the defaults, 5 and 5.
+4. **Look**: on Settings, the label and the dropdown share a line when they fit. On setup, they stack like every other question there. The dropdown's border and size come from `.reminder-select`, so it looks the same on both pages.
+5. **Test** (`setup.spec.ts`): both dropdowns start at 5 minutes with the same 6 choices. The test changes them to 15 minutes and No notification, finishes setup, and checks that the save came before the first calendar update. Then it checks that Settings shows the same 2 values, and still shows them after a reload.
+6. **Counts**: `pytest` gives `873 passed`, and `npx playwright test` gives `320 passed`.
