@@ -59,9 +59,10 @@ export function emptySettings(): Settings {
     jumuah_pick: null,
     prayer_color_id: null,
     drive_color_id: null,
+    // The defaults: none before iqamah, 5 minutes before leaving and at home.
     masjid_reminder_minutes: null,
-    leave_reminder_minutes: null,
-    home_reminder_minutes: null,
+    leave_reminder_minutes: 5,
+    home_reminder_minutes: 5,
     masjid_notices: [],
   };
 }
@@ -84,9 +85,10 @@ export function finishedSettings(): Settings {
     jumuah_pick: null,
     prayer_color_id: "7",
     drive_color_id: null,
+    // The defaults: none before iqamah, 5 minutes before leaving and at home.
     masjid_reminder_minutes: null,
-    leave_reminder_minutes: null,
-    home_reminder_minutes: null,
+    leave_reminder_minutes: 5,
+    home_reminder_minutes: 5,
     masjid_notices: [],
   };
 }
@@ -390,8 +392,9 @@ export class MockApi {
           prayer_color_id: body.prayer_color_id ?? null,
           drive_color_id: body.drive_color_id ?? null,
           masjid_reminder_minutes: body.masjid_reminder_minutes ?? null,
-          leave_reminder_minutes: body.leave_reminder_minutes ?? null,
-          home_reminder_minutes: body.home_reminder_minutes ?? null,
+          // Left out gets the default, like the backend. null is "No notification".
+          leave_reminder_minutes: body.leave_reminder_minutes === undefined ? 5 : body.leave_reminder_minutes,
+          home_reminder_minutes: body.home_reminder_minutes === undefined ? 5 : body.home_reminder_minutes,
         });
         return json(200, this.saved(updated(20)));
       case "POST /api/setup/finish":

@@ -185,7 +185,7 @@ test("picking a different masjid clears the old short name", async ({ page }) =>
 const SAVED_OPTIONAL = {
   arrive_early_minutes: 5, jumuah_arrive_early_minutes: 10, short_name: "KMA", prayer_color_id: "7", drive_color_id: null,
   // Every editor sends the notifications too, so saving one setting never turns them off.
-  masjid_reminder_minutes: null, leave_reminder_minutes: null, home_reminder_minutes: null,
+  masjid_reminder_minutes: null, leave_reminder_minutes: 5, home_reminder_minutes: 5,
 };
 
 test("how early for prayers is edited on its own", async ({ page }) => {
@@ -563,15 +563,15 @@ test("the 3 notification dropdowns save, show, and stay after a reload", async (
   await expect(page.locator("mark.highlight")).toHaveText("Updates and changes");
 
   const rows = {
-    masjid: { name: "Notify before iqamah", question: "How early do you want to be notified before iqamah at the masjid?", pick: "10 minutes" },
-    leave: { name: "Notify before leaving", question: "How early do you want to be notified before leaving for the masjid?", pick: "30 minutes" },
-    home: { name: "Notify at home", question: "How early do you want to be notified before prayer at home?", pick: "5 minutes" },
+    masjid: { name: "Notify before iqamah", question: "How early do you want to be notified before iqamah at the masjid?", start: "No notification", pick: "10 minutes" },
+    leave: { name: "Notify before leaving", question: "How early do you want to be notified before leaving for the masjid?", start: "5 minutes", pick: "30 minutes" },
+    home: { name: "Notify at home", question: "How early do you want to be notified before prayer at home?", start: "5 minutes", pick: "15 minutes" },
   };
   for (const row of Object.values(rows)) {
     const region = page.getByRole("region", { name: row.name });
-    // Everyone starts with no notification.
+    // The defaults: none before iqamah, 5 minutes before leaving and at home.
     await expect(region.locator("h3")).toHaveText(row.question);
-    await expect(region.locator(".row-value")).toHaveText("No notification");
+    await expect(region.locator(".row-value")).toHaveText(row.start);
     await page.getByRole("button", { name: `Edit ${row.name.toLowerCase()}` }).click();
     const select = region.getByLabel(row.question);
     await expect(select.locator("option")).toHaveText(["No notification", "5 minutes", "10 minutes", "15 minutes", "20 minutes", "30 minutes"]);
@@ -581,14 +581,14 @@ test("the 3 notification dropdowns save, show, and stay after a reload", async (
   }
   const lastSave = () => api.calls("PUT", "/api/settings/optional").at(-1)!.body as Record<string, number | null>;
   const sent = lastSave();
-  expect([sent.masjid_reminder_minutes, sent.leave_reminder_minutes, sent.home_reminder_minutes]).toEqual([10, 30, 5]);
+  expect([sent.masjid_reminder_minutes, sent.leave_reminder_minutes, sent.home_reminder_minutes]).toEqual([10, 30, 15]);
 
   // Saving another optional setting keeps the notifications.
   await page.getByRole("button", { name: "Edit how early for prayers" }).click();
   await page.getByLabel("How early do you want to arrive before iqamah (daily prayers)?").fill("7");
   await page.getByRole("region", { name: "How early for prayers" }).getByRole("button", { name: "Save" }).click();
   const after = lastSave();
-  expect([after.masjid_reminder_minutes, after.leave_reminder_minutes, after.home_reminder_minutes]).toEqual([10, 30, 5]);
+  expect([after.masjid_reminder_minutes, after.leave_reminder_minutes, after.home_reminder_minutes]).toEqual([10, 30, 15]);
 
   await page.reload();
   for (const row of Object.values(rows)) {
