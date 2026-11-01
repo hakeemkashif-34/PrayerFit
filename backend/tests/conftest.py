@@ -146,6 +146,18 @@ def no_real_list_on_start(request, monkeypatch):
         monkeypatch.setattr(app.main, "load_list_on_start", lambda engine: None)
 
 
+@pytest.fixture(autouse=True)
+def no_real_announcements(request, monkeypatch, tmp_path_factory):
+    """The real announced times (like KMA's for November 2026) would change any
+    test that uses KMA's MAWAQIT ID on those dates. So tests read an empty
+    folder, and test_announced.py points at its own files. A test with
+    @pytest.mark.real_announcements reads the real folder."""
+    if request.node.get_closest_marker("real_announcements") is None:
+        from app.masjid_times import announced
+
+        monkeypatch.setattr(announced, "ANNOUNCED_DIR", tmp_path_factory.getbasetemp() / "no-announcements")
+
+
 def new_client() -> TestClient:
     """A browser of its own, with its own cookies, on this app's origin."""
     return TestClient(app, headers={"Origin": "http://testserver"}, follow_redirects=False)
