@@ -448,11 +448,11 @@ export DATABASE_URL=postgresql://prayerfit:change-me@localhost:5432/prayerfit
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `890 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `942 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`438 passed, 452 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`461 passed, 481 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
