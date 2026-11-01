@@ -70,6 +70,8 @@ class Suggestion:
     street_address: str | None = None
     osm_type: str | None = None
     osm_id: int | None = None
+    # Set when it came from my MAWAQIT list (masjid_search.py), like "id/17559".
+    list_external_id: str | None = None
 
 
 def normalize(query: str) -> str:

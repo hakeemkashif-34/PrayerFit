@@ -96,11 +96,11 @@ def weekly_rows(db: Session, user_id: uuid.UUID) -> list[WeeklyMasjidPrayers]:
 
 
 def usable_masjid(db: Session, user_id: uuid.UUID, masjid_id: uuid.UUID) -> Masjid | None:
-    """A masjid this user may pick: any OpenStreetMap one, or one they typed in."""
+    """A masjid this user may pick: any one from my list or OpenStreetMap, or one they typed in."""
     return db.scalars(
         select(Masjid).where(
             Masjid.id == masjid_id,
-            or_(Masjid.source == "openstreetmap", Masjid.created_by_user_id == user_id),
+            or_(Masjid.source.in_(("list", "openstreetmap")), Masjid.created_by_user_id == user_id),
         )
     ).first()
 
