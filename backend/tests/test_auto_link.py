@@ -78,7 +78,10 @@ def kma_page(fake_mawaqit):
 
 
 def test_picking_a_listed_masjid_links_it_and_reads_its_times_straight_away(signed_in, db, kma_page):
-    put_on_list(db)
+    # Listed under a name "Kanata" doesn't find, so the pick is Photon's
+    # masjid and it's linked by distance. Picks from the list itself are in
+    # test_masjid_search.py.
+    put_on_list(db, name="KMA Centre")
     picked = pick_masjid(signed_in, "Kanata", KMA_LABEL)
 
     source = source_of(db, picked["id"])
@@ -102,7 +105,7 @@ def test_picking_it_again_doesnt_read_mawaqit_again(signed_in, db, kma_page):
 
 
 def test_a_masjid_that_isnt_listed_isnt_linked(signed_in, db, kma_page):
-    put_on_list(db, metres_north=250)
+    put_on_list(db, name="KMA Centre", metres_north=250)
     picked = pick_masjid(signed_in, "Kanata", KMA_LABEL)
     assert source_of(db, picked["id"]) is None
     assert kma_page.requests == []

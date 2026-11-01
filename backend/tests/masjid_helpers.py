@@ -42,8 +42,15 @@ def add_masjid(engine, name: str, latitude: float = 45.43, longitude: float = -7
 
 
 def link(engine, masjid: uuid.UUID, slug: str, fake_mawaqit=None, data: dict | None = None, at: datetime | None = None) -> None:
-    """Link a masjid to a MAWAQIT page, and put that page on the fake MAWAQIT."""
+    """Link a masjid to a MAWAQIT page, and put that page on the fake MAWAQIT.
+
+    Replaces any link it already has, like one from my list when it was picked.
+    """
     with Session(engine) as db:
+        existing = db.get(MasjidSource, masjid)
+        if existing is not None:
+            db.delete(existing)
+            db.flush()
         db.add(MasjidSource(masjid_id=masjid, source="mawaqit", external_id=slug, **({"linked_at": at} if at else {})))
         db.commit()
     if fake_mawaqit is not None:

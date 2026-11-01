@@ -135,6 +135,17 @@ def throttle_waits(monkeypatch):
     return waits
 
 
+@pytest.fixture(autouse=True)
+def no_real_list_on_start(request, monkeypatch):
+    """The app loads my real MAWAQIT list when it starts. In tests it doesn't,
+    so each test puts only the list masjids it needs on the list. Otherwise the
+    real KMA would show up first in every "Kanata" search."""
+    if request.node.get_closest_marker("real_list") is None:
+        import app.main
+
+        monkeypatch.setattr(app.main, "load_list_on_start", lambda engine: None)
+
+
 def new_client() -> TestClient:
     """A browser of its own, with its own cookies, on this app's origin."""
     return TestClient(app, headers={"Origin": "http://testserver"}, follow_redirects=False)
