@@ -57,6 +57,7 @@ else:
 1. Each prayer's time ends at: Fajr, sunrise. Dhuhr, Asr. Asr, Maghrib. Maghrib, Isha. Isha, midnight (halfway between Maghrib and the next Fajr).
 2. A prayer shrinks to fit a short gap, down to 10 minutes.
 3. Jumuah uses your pick (1st, 2nd, or 3rd) if it fits, otherwise the earliest Jumuah that fits, and the 1st Jumuah, flagged, if none do.
+4. All-day events, like a trip or "out of office", don't count as busy.
 
 For example, a class from 3:00 to 4:21 covers the start of Asr, so Asr moves to 4:21, right after class.
 
