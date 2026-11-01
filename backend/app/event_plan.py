@@ -35,19 +35,22 @@ Reminders follow the user's 2 notification settings: drive blocks use
 Masjid prayer blocks (Jumuah too) never get one. None means no reminder at all.
 """
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from app.event_times import trip
-from app.fit_prayers import Fit, PrayerWindow, fit_prayer, masjid_is_free, prayer_windows
+from app.fit_prayers import Fit, PrayerWindow, busy_in, fit_prayer, is_empty, masjid_is_free, prayer_windows
 from app.jumuah import DEFAULT_JUMUAH_MINUTES, JumuahChoice, JumuahSlot, choose_jumuah
 from app.masjid_times.store import MasjidTimes
 from app.models import Masjid
 from app.prayer_sync import ASR_NAMES, METHOD_NAMES, PRAYER_LENGTHS, PRAYER_TITLES, PRAYERS, event_end, source_description
 from app.prayer_times import DailyPrayerTimes, PrayerTime, calculate_prayer_times
 from app.user_settings import Setup
+
+logger = logging.getLogger("app.event_plan")
 
 FRIDAY = 4
 # A fixed namespace, so a drive block's ID only depends on its prayer event's ID.
@@ -153,8 +156,26 @@ def moved_text(title: str, start: datetime, placed: datetime) -> str:
     return f"Moved because of an event in your calendar ({when})."
 
 
-def clash_text(title: str) -> str:
-    return f"Your event covers all of {title}'s time today, so figure out a way to fit it in."
+def busy_text(start: datetime, end: datetime, local_date: date, time_zone: str) -> str:
+    """"4:30 to 6:15 pm", or "11:30 am to 1:15 pm". A time on another day gets its date, like "Oct 26, 11:00 pm"."""
+    zone = ZoneInfo(time_zone)
+    start, end = start.astimezone(zone), end.astimezone(zone)
+    other_day = start.date() != local_date or end.date() != local_date
+    same_half = not other_day and (start.hour < 12) == (end.hour < 12)
+
+    def when(moment: datetime, suffix: bool) -> str:
+        clock = _short_clock(moment) if suffix else _short_clock(moment).rsplit(" ", 1)[0]
+        return f"{moment:%b} {moment.day}, {clock}" if moment.date() != local_date else clock
+
+    return f"{when(start, not same_half)} to {when(end, True)}"
+
+
+def clash_text(title: str, busy: list[tuple[datetime, datetime]] = (), local_date: date | None = None, time_zone: str = "") -> str:
+    """The clash description. Busy times only, never what the event is, since the app never sees that."""
+    text = f"Your event covers all of {title}'s time today, so figure out a way to fit it in."
+    if busy and local_date is not None:
+        text += " Busy from " + " and ".join(busy_text(s, e, local_date, time_zone) for s, e in busy) + "."
+    return text
 
 
 @dataclass(frozen=True)
@@ -325,7 +346,19 @@ def _windows(
     next_fajr = _home_time("fajr", next_date, next_day, main, next_main)[0]
     # MAWAQIT's sunrise isn't saved, so Fajr ends at the calculated sunrise
     # (rounded down, the safe side).
-    return prayer_windows(starts, day.sunrise.time, next_fajr)
+    windows = prayer_windows(starts, day.sunrise.time, next_fajr)
+    if main_day is None:
+        return windows
+    # A masjid's times can give an empty window, like a Fajr adhan after the
+    # calculated sunrise. Nothing could fit, so every busy prayer would clash.
+    # The calculated window is used for that prayer instead.
+    calculated = {name: getattr(day, name).time for name in PRAYERS}
+    fallback = prayer_windows(calculated, day.sunrise.time, next_day.fajr.time)
+    for name, window in windows.items():
+        if is_empty(window):
+            logger.warning("Masjid %s gives an empty %s window on %s, so the calculated one is used", main.masjid.id, name, local_date)
+            windows[name] = fallback[name]
+    return windows
 
 
 def _home_event(
@@ -406,7 +439,8 @@ def plan_day(
             # Just the prayer's name. Only masjid prayers say where.
             event = _home_event(setup, local_date, name, fit, source, title, "", user_zone)
         elif fit.kind == "clash":
-            event = _home_event(setup, local_date, name, fit, source, f"{title} (clash)", clash_text(title), user_zone)
+            description = clash_text(title, busy_in(windows[name], busy), local_date, user_zone)
+            event = _home_event(setup, local_date, name, fit, source, f"{title} (clash)", description, user_zone)
         else:
             # Moved in time, or a masjid prayer prayed at home instead.
             moved = Fit("moved", fit.starts_at, fit.length)
