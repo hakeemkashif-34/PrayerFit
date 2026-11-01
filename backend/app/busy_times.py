@@ -10,13 +10,26 @@ Any problem (a dead sign-in, a Google error) means the busy times are
 unknown ("failed"). The calendar update never fails because of it, and it
 never undoes a move because of it (see calendar_window.save_window).
 Without free/busy access ("no_access"), nothing moves at all.
+
+All-day and multi-day events don't count. Free/busy only sends start and
+end times, so the app can't tell an all-day event from a long timed one.
+Any busy block of 23 hours or more is treated as one and left out (23, so
+an all-day event on the spring daylight saving day counts too). An all-day
+event marks the day, like a trip, a holiday, or "out of office". It
+almost never means there's no time to pray, and counting it made every
+prayer that day a clash.
+
+Google decides what counts as busy, and the app can't see any event's
+details. An event marked "Free" (transparent) doesn't block time, so it's
+never in the answer. Declined events should be left out the same way, but
+I haven't checked that against a test calendar yet.
 """
 
 import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx2
@@ -31,6 +44,9 @@ from app.http_client import log_failure
 from app.models import GoogleToken
 
 logger = logging.getLogger("app.busy_times")
+
+# A busy block this long is an all-day or multi-day event. See the top of this file.
+ALL_DAY = timedelta(hours=23)
 
 
 @dataclass(frozen=True)
@@ -78,7 +94,11 @@ def busy_between(
         # The calendar update reports a dead sign-in itself. Here it only means "unknown".
         log_failure("Google free/busy", type(error).__name__, started)
         return failed
-    primary = (answer.get("calendars") or {}).get("primary") or {}
+    primary = (answer.get("calendars") or {}).get("primary")
+    if not isinstance(primary, dict):
+        # No answer for the primary calendar is "unknown", not "free all day".
+        log_failure("Google free/busy", "no answer for the primary calendar", started)
+        return failed
     if primary.get("errors"):
         log_failure("Google free/busy", "errors for the primary calendar", started)
         return failed
@@ -87,4 +107,9 @@ def busy_between(
     except (KeyError, TypeError, ValueError):
         log_failure("Google free/busy", "answer couldn't be read", started)
         return failed
-    return BusyTimes(busy=busy, status="checked")
+    return BusyTimes(busy=without_all_day(busy), status="checked")
+
+
+def without_all_day(busy: list[tuple[datetime, datetime]]) -> list[tuple[datetime, datetime]]:
+    """The busy blocks shorter than 23 hours. Compared in real time, not wall clock time."""
+    return [(s, e) for s, e in busy if e.astimezone(UTC) - s.astimezone(UTC) < ALL_DAY]
