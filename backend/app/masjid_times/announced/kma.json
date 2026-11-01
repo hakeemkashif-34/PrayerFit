@@ -1,0 +1,22 @@
+{
+  "label": "KMA announcement",
+  "mawaqit_ids": ["id/9793", "kma-masjid-ottawa"],
+  "entries": [
+    {
+      "note": "Daily iqamah after the clocks fall back on November 1, 2026",
+      "start": "2026-11-01",
+      "end": "2026-11-30",
+      "iqamah": {
+        "fajr": "adhan + 15",
+        "dhuhr": "12:30",
+        "asr": "15:15",
+        "maghrib": "sunset + 5",
+        "isha": "19:40"
+      }
+    },
+    {"start": "2026-11-06", "end": "2026-11-06", "jumuah": ["11:30", "12:40", "13:40"]},
+    {"start": "2026-11-13", "end": "2026-11-13", "jumuah": ["11:30", "12:40", "13:35"]},
+    {"start": "2026-11-20", "end": "2026-11-20", "jumuah": ["11:30", "12:40", "13:30"]},
+    {"start": "2026-11-27", "end": "2026-11-27", "jumuah": ["11:30", "12:40", "13:30"]}
+  ]
+}
