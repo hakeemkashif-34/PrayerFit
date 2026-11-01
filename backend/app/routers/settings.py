@@ -7,6 +7,7 @@ calendar straight away, but only the future events that changed.
 
 import uuid
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Annotated, Literal
 
 import httpx2
@@ -27,6 +28,7 @@ from app.geo.timezones import timezone_for
 from app.google_errors import CalendarAccessMissing, GoogleError, ReauthRequired
 from app.http_client import get_http
 from app.event_plan import date_text
+from app.masjid_times.announced import announcement_for
 from app.masjid_times.auto_link import link_and_fetch
 from app.masjid_times.freshness import FRESH_FOR, USABLE_FOR, Freshness, freshness
 from app.jumuah_choices import JumuahChoices, jumuah_choices
@@ -140,6 +142,16 @@ def times_status(db: Session, masjid: Masjid, now: datetime, time_zone: str) -> 
     source = db.get(MasjidSource, masjid.id)
     if source is None:
         return "Not linked to MAWAQIT, so calculated times are used"
+    status = _mawaqit_status(source, now, time_zone)
+    announcement = announcement_for(source.external_id, source.list_external_id)
+    covering = announcement.range_covering(now.astimezone(ZoneInfo(time_zone)).date()) if announcement else None
+    if covering is None:
+        return status
+    start, end = covering
+    return f"{status}. Iqamah and Jumuah times from the {announcement.label} are used from {start:%b} {start.day} to {end:%b} {end.day}, {end.year}"
+
+
+def _mawaqit_status(source: MasjidSource, now: datetime, time_zone: str) -> str:
     age = freshness(source.last_success_at, now)
     if age is Freshness.NEVER:
         return "Linked to MAWAQIT. Its times haven't been read yet"
