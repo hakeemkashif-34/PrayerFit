@@ -14,7 +14,7 @@ from tests.conftest import new_client
 from tests.masjid_helpers import add_user, masjid_id
 
 NOW = datetime(2026, 10, 26, 12, 0, tzinfo=UTC)
-HEADER = "name,mawaqit_link,latitude,longitude\n"
+HEADER = "name,short_name,address,mawaqit_link,latitude,longitude\n"
 
 
 def saved(db) -> dict[str, MawaqitListEntry]:
@@ -35,7 +35,7 @@ def test_the_real_file_has_23_masjids_with_valid_links():
     rows = read_file()
     assert len(rows) == 23
     by_id = {r.external_id: r for r in rows}
-    assert by_id["id/9793"] == ListRow("id/9793", "Kanata Muslim Association", 45.356128, -75.9283718)
+    assert by_id["id/9793"] == ListRow("id/9793", "Kanata Muslim Association", 45.356128, -75.9283718, "KMA")
     # The one name link: saved as its page name.
     assert by_id["cio-gatineau"].name == "Mosquee de Gatineau - CIO"
     # Every masjid is around Ottawa (Deep River is the furthest, about 170 km away).
@@ -54,6 +54,7 @@ def test_each_listed_masjid_loads_once(db):
     assert {e.added_by for e in saved(db).values()} == {"file"}
 
 
+@pytest.mark.real_list
 def test_the_app_loads_the_list_when_it_starts(db):
     with new_client() as client:  # "with" runs the app's start-up
         assert client.get("/health").status_code == 200
@@ -71,28 +72,28 @@ def test_a_fixed_name_or_location_replaces_the_saved_one(db):
 
 
 def test_spaces_after_commas_are_fine(tmp_path):
-    path = write(tmp_path, HEADER + "Jami Omar, https://mawaqit.net/en/id/32986, 45.311606, -75.828449\n")
+    path = write(tmp_path, HEADER + "Jami Omar,,,https://mawaqit.net/en/id/32986, 45.311606, -75.828449\n")
     assert read_file(path) == [ListRow("id/32986", "Jami Omar", 45.311606, -75.828449)]
 
 
 @pytest.mark.parametrize(
     "line, reason",
     [
-        ("Jami Omar,https://example.com/en/id/1,45.3,-75.8", "mawaqit.net"),
-        ("Jami Omar,https://mawaqit.net/en/id/abc,45.3,-75.8", "ends in a number"),
-        (",https://mawaqit.net/en/id/1,45.3,-75.8", "name is empty"),
-        ("Jami Omar,https://mawaqit.net/en/id/1,145.3,-75.8", "latitude"),
-        ("Jami Omar,https://mawaqit.net/en/id/1,north,-75.8", "could not convert"),
+        ("Jami Omar,,,https://example.com/en/id/1,45.3,-75.8", "mawaqit.net"),
+        ("Jami Omar,,,https://mawaqit.net/en/id/abc,45.3,-75.8", "ends in a number"),
+        (",,,https://mawaqit.net/en/id/1,45.3,-75.8", "name is empty"),
+        ("Jami Omar,,,https://mawaqit.net/en/id/1,145.3,-75.8", "latitude"),
+        ("Jami Omar,,,https://mawaqit.net/en/id/1,north,-75.8", "could not convert"),
     ],
 )
 def test_a_bad_line_says_which_line(tmp_path, line, reason):
-    path = write(tmp_path, HEADER + "Kanata Muslim Association,https://mawaqit.net/en/id/9793,45.35,-75.92\n" + line + "\n")
+    path = write(tmp_path, HEADER + "Kanata Muslim Association,,,https://mawaqit.net/en/id/9793,45.35,-75.92\n" + line + "\n")
     with pytest.raises(BadListRow, match=f"line 3: .*{reason}"):
         read_file(path)
 
 
 def test_the_same_masjid_twice_is_refused(tmp_path):
-    path = write(tmp_path, HEADER + "A,https://mawaqit.net/en/id/1,45.3,-75.8\nB,https://mawaqit.net/id/1,45.3,-75.8\n")
+    path = write(tmp_path, HEADER + "A,,,https://mawaqit.net/en/id/1,45.3,-75.8\nB,,,https://mawaqit.net/id/1,45.3,-75.8\n")
     with pytest.raises(BadListRow, match="line 3: id/1 is already in the file"):
         read_file(path)
 

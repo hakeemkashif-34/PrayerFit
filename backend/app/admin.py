@@ -5,7 +5,7 @@ these, so a user can't link the wrong page for everyone.
     python -m app.admin link-mawaqit --masjid <masjid id> --url <MAWAQIT page link>
     python -m app.admin unlink-mawaqit --masjid <masjid id>
     python -m app.admin fetch-mawaqit --masjid <masjid id>
-    python -m app.admin add-mawaqit <MAWAQIT link> --name "<name>" --lat <latitude> --lon <longitude>
+    python -m app.admin add-mawaqit <MAWAQIT link> --name "<name>" --lat <latitude> --lon <longitude> [--short-name BIC --address "<address>"]
     python -m app.admin scan-area [--lat 45.4215 --lon -75.6972 --km 40]
     python -m app.admin set-jumuah-length --masjid <masjid id> --minutes 40
     python -m app.admin stats            total users and each masjid's users, never anyone's details
@@ -97,10 +97,13 @@ def link_mawaqit(db: Session, masjid_id: str, link: str, now: datetime) -> str:
     return f"Linked {masjid.name or masjid.id} to MAWAQIT {external_id}. The worker reads it within a minute."
 
 
-def add_mawaqit(db: Session, link: str, name: str, latitude: str, longitude: str, now: datetime) -> list[str]:
+def add_mawaqit(
+    db: Session, link: str, name: str, latitude: str, longitude: str, now: datetime,
+    short_name: str | None = None, address: str | None = None,
+) -> list[str]:
     """Add a masjid to my MAWAQIT list, then link any masjid users picked that matches it."""
     try:
-        row = check_row(name, link, latitude, longitude)
+        row = check_row(name, link, latitude, longitude, short_name, address)
     except BadLink as error:
         raise SystemExit(str(error))
     except ValueError as error:
@@ -189,6 +192,8 @@ def main(argv: list[str] | None = None) -> None:
     # Strings, so a typo gets this command's own message instead of argparse's.
     add.add_argument("--lat", required=True, help="latitude, like 45.356128")
     add.add_argument("--lon", required=True, help="longitude, like -75.9283718")
+    add.add_argument("--short-name", help='what people call it, like "BIC". Setup finds it by this too')
+    add.add_argument("--address", help='shown under its name in setup, like "3971 Greenbank Road, Ottawa"')
     scan = commands.add_parser("scan-area", help="match every masjid on OpenStreetMap near a point against my list")
     scan.add_argument("--lat", type=float, default=OTTAWA[0])
     scan.add_argument("--lon", type=float, default=OTTAWA[1])
@@ -205,7 +210,7 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "link-mawaqit":
             print(link_mawaqit(db, args.masjid, args.url, now))
         elif args.command == "add-mawaqit":
-            print("\n".join(add_mawaqit(db, args.link, args.name, args.lat, args.lon, now)))
+            print("\n".join(add_mawaqit(db, args.link, args.name, args.lat, args.lon, now, args.short_name, args.address)))
         elif args.command == "scan-area":
             print("\n".join(scan_area(db, args.lat, args.lon, args.km)))
         elif args.command == "unlink-mawaqit":

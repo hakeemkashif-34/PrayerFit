@@ -39,6 +39,8 @@ class Listed:
     name: str
     latitude: float
     longitude: float
+    short_name: str | None = None
+    address: str | None = None
 
 
 @dataclass(frozen=True)
