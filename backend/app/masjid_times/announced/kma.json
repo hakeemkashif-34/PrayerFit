@@ -3,11 +3,11 @@
   "mawaqit_ids": ["id/9793", "kma-masjid-ottawa"],
   "entries": [
     {
-      "note": "Daily iqamah after the clocks fall back on November 1, 2026",
+      "note": "Daily iqamah after the clocks fall back on November 1, 2026. Fajr: Athan + 15 minutes (+30 from Sun.)",
       "start": "2026-11-01",
       "end": "2026-11-30",
       "iqamah": {
-        "fajr": "adhan + 15",
+        "fajr": "adhan + 30",
         "dhuhr": "12:30",
         "asr": "15:15",
         "maghrib": "sunset + 5",
