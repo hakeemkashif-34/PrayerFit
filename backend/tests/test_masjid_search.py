@@ -125,7 +125,7 @@ def pick(client, query: str, label: str) -> dict:
 def test_picking_bic_from_the_list_links_it_to_its_mawaqit_page(signed_in, db, fake_mawaqit):
     from tests.mawaqit_pages import conf, page
 
-    fake_mawaqit.pages["id/17559"] = page(conf(jumua="12:45", jumua2="14:30"))
+    fake_mawaqit.pages["id/17559"] = page(conf(jumua="13:00", jumua2="14:30"))
     put_on_list(db, *ENTRIES)
     picked = pick(signed_in, "bic", "Barrhaven Islamic Centre")
     assert (picked["source"], picked["address"]) == ("list", "3971 Greenbank Road, Ottawa")
