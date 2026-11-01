@@ -95,8 +95,14 @@ class FakeGoogle:
         self._event_writes = 0
         # Busy times in each user's primary calendar, as (start, end) RFC 3339 strings.
         self.busy: dict[str, list[tuple[str, str]]] = {}
+        # Events in the user's primary calendar, like {"start": ..., "end": ...,
+        # "transparency": "transparent"} or {"responseStatus": "declined"}.
+        # Free/busy only counts the ones Google would: not Free, not declined.
+        self.primary_events: dict[str, list[dict]] = {}
         # Set to a status code (like 500) to make free/busy fail.
         self.freebusy_failure: int | None = None
+        # Set to a whole answer, to send a 200 that's odd inside, like one with no "primary".
+        self.freebusy_answer: dict | None = None
         # True: every call fails like Google can't be reached.
         self.unreachable = False
         # Tokens sent to the revoke endpoint, in order.
@@ -317,11 +323,18 @@ class FakeGoogle:
     def _free_busy(self, sub: str, body: dict) -> httpx2.Response:
         if self.freebusy_failure is not None:
             return httpx2.Response(self.freebusy_failure, json={"error": {"code": self.freebusy_failure}})
+        if self.freebusy_answer is not None:
+            return httpx2.Response(200, json=self.freebusy_answer)
         start, end = body["timeMin"], body["timeMax"]
         calendars = {}
         for item in body["items"]:
             if item["id"] == "primary":
                 busy = [{"start": s, "end": e} for s, e in self.busy.get(sub, [])]
+                busy += [
+                    {"start": e["start"], "end": e["end"]}
+                    for e in self.primary_events.get(sub, [])
+                    if e.get("transparency") != "transparent" and e.get("responseStatus") != "declined"
+                ]
                 calendars["primary"] = {"busy": busy}
         # Like a real answer that also has another calendar in it. The app must ignore it.
         for calendar in self.calendars_of(sub):
