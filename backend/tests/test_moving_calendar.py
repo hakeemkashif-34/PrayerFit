@@ -98,7 +98,9 @@ def test_asr_with_class_from_3_to_6_30_is_a_clash_at_iqamah(db, http, user, fake
     run(db, http, user)
     asr = titled(google_events(fake_google), TUESDAY, "Asr (clash)")
     assert (clock(asr), clock(asr, end=True)) == ("16:15", "16:25")
-    assert asr["description"] == "Your event covers all of Asr's time today, so figure out a way to fit it in."
+    assert asr["description"] == (
+        "Your event covers all of Asr's time today, so figure out a way to fit it in. Busy from 3:00 to 6:30 pm."
+    )
 
 
 def test_asr_with_class_from_3_to_4_21_is_prayed_at_4_21(db, http, user, fake_google):

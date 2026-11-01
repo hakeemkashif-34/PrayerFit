@@ -142,10 +142,20 @@ How matching, freshness, and the fallback work is in [TECHNICAL.md](TECHNICAL.md
 MAWAQIT's search needs a login and it has no sitemap, so the app can't find a masjid's page by itself. I keep my own list in `backend/app/data/mawaqit_masjids.csv`, one masjid per line:
 
 ```
-name,mawaqit_link,latitude,longitude
-Kanata Muslim Association,https://mawaqit.net/en/id/9793,45.356128,-75.9283718
-Mosquee de Gatineau - CIO,https://mawaqit.net/en/cio-gatineau,45.4290189,-75.732133
+name,short_name,address,mawaqit_link,latitude,longitude
+Kanata Muslim Association,KMA,,https://mawaqit.net/en/id/9793,45.356128,-75.9283718
+Barrhaven Islamic Centre,BIC,"3971 Greenbank Road, Ottawa",https://mawaqit.net/en/id/17559,45.2364361,-75.7255711
 ```
+
+| Column | Required | What it's for |
+|---|---|---|
+| `name` | yes | The name shown in setup and on /stats |
+| `short_name` | no | What people call it, like "BIC". Setup's search finds it by this too |
+| `address` | no | Shown under its name in setup. Put it in quotes if it has a comma |
+| `mawaqit_link` | yes | The masjid's MAWAQIT link |
+| `latitude`, `longitude` | yes | Where it is, for matching and distances |
+
+The first line must be exactly `name,short_name,address,mawaqit_link,latitude,longitude`. If it isn't, or any line is bad, the backend logs "Couldn't load the MAWAQIT list" and keeps the rows it already saved. A test reads the file on every push, so a typo shows up there first.
 
 It has 23 masjids around Ottawa. The link is either a share link (`https://mawaqit.net/en/id/9793`, from MAWAQIT's Share button) or a page link (`https://mawaqit.net/en/cio-gatineau`). The app saves `id/9793` or `cio-gatineau` and reads the times from that link. A share link answers with the masjid's page straight away.
 
@@ -154,10 +164,10 @@ The backend and the worker load the file every time they start. Loading it again
 **To add a masjid to the list**, add a line to the CSV and deploy. Or add it straight away on the server, then add the same line to the CSV so it's kept:
 
 ```bash
-docker compose exec backend python -m app.admin add-mawaqit https://mawaqit.net/en/id/9793 --name "Kanata Muslim Association" --lat 45.356128 --lon -75.9283718
+docker compose exec backend python -m app.admin add-mawaqit https://mawaqit.net/en/id/17559 --name "Barrhaven Islamic Centre" --lat 45.2364361 --lon -75.7255711 --short-name BIC --address "3971 Greenbank Road, Ottawa"
 ```
 
-It prints any users' masjids it linked.
+`--short-name` and `--address` are optional, like their columns. It prints any users' masjids it linked.
 
 **To check how well the list covers an area**, `scan-area` asks OpenStreetMap's free Overpass API for every masjid within 40 km of Ottawa (or `--lat`, `--lon`, `--km`), and prints each one as `linked`, `no match`, or `unclear`. It only reports. Nothing is saved.
 
@@ -200,6 +210,54 @@ docker compose exec backend python -m app.admin scan-area
    ```
 
    `list-masjids` shows each masjid's length, or "Jumuah length not set (45 min estimated)". Changing it updates the calendars of everyone who uses that masjid.
+
+### Announced times
+
+Use this when a masjid announces new times (on a poster, its website, or its own page) that its MAWAQIT page doesn't show yet. How it works is in [TECHNICAL.md](TECHNICAL.md#announced-times).
+
+1. Make a file for the masjid in `backend/app/masjid_times/announced/`, like `kma.json`. One file per masjid. To add to a masjid that has a file, add entries to it.
+
+   ```json
+   {
+     "label": "KMA announcement",
+     "mawaqit_ids": ["id/9793", "kma-masjid-ottawa"],
+     "entries": [
+       {
+         "note": "Daily iqamah after the clocks fall back",
+         "start": "2026-11-01",
+         "end": "2026-11-30",
+         "iqamah": {
+           "fajr": "adhan + 30",
+           "dhuhr": "12:30",
+           "asr": "15:15",
+           "maghrib": "sunset + 5",
+           "isha": "19:40"
+         }
+       },
+       {"start": "2026-11-06", "end": "2026-11-06", "jumuah": ["11:30", "12:40", "13:40"]}
+     ]
+   }
+   ```
+
+   | Key | What it's for |
+   |---|---|
+   | `label` | The source shown on Settings and saved with each event, like "KMA announcement" |
+   | `mawaqit_ids` | The masjid's MAWAQIT IDs, as `list-masjids` shows them. `id/9793` for a share link, the page name for a page link |
+   | `start`, `end` | The first and last date, both included, like `"2026-11-01"` |
+   | `iqamah` | Any of the 5 prayers. A 24-hour clock time (`"19:40"`), `"adhan + 30"`, or `"sunset + 5"`. Prayers left out keep MAWAQIT's iqamah |
+   | `jumuah` | Up to 3 clock times, earliest first, used on every Friday from `start` to `end` |
+   | `note` | Optional. Ignored by the app, for whoever reviews the PR |
+
+2. Copy the times from the masjid's own announcement only. Never guess one.
+3. Run `pytest tests/test_announced.py`. If a file has a mistake (a bad time, an end before a start, or 2 entries giving the same prayer on the same date), the whole file is skipped and the backend logs `Announced times in kma.json weren't used: ...`.
+4. Open a PR, merge it, and run `deploy/update.sh`. The backend and the worker read the folder when they start.
+5. To update calendars straight away instead of at the nightly job:
+
+   ```bash
+   dc exec worker python -m app.worker run-now --force
+   ```
+
+6. Once the masjid's MAWAQIT page catches up, the entries can stay until their end date, or be removed in a PR.
 
 ## Drive times
 
@@ -438,11 +496,11 @@ export DATABASE_URL=postgresql://prayerfit:change-me@localhost:5432/prayerfit
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `890 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `976 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`438 passed, 452 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`478 passed, 498 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 

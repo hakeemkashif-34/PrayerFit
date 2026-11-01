@@ -219,6 +219,6 @@ def send_to_google(
             row.google_calendar_id = calendar_id
             row.synced_hash = event_hash(row)
             row.sync_status = "synced"
-        row.synced_at = datetime.now(UTC)
+        row.synced_at = now
         row.last_error = None
         db.commit()

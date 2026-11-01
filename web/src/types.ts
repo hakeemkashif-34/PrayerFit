@@ -15,7 +15,7 @@ export type Masjid = {
   name: string | null;
   address: string | null;
   // "user" means picked by its address.
-  source: "openstreetmap" | "user";
+  source: "list" | "openstreetmap" | "user";
   distance_km: number | null;
   // Where its times come from, like "Times from MAWAQIT, updated Oct 25, 2026".
   iqamah_status: string;

@@ -5,9 +5,10 @@ from datetime import date, datetime
 from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from app.clock import get_now
 from app.prayer_times import (
     DEFAULT_TIMEZONE,
     AsrMethod,
@@ -49,6 +50,7 @@ def _zone(name: str) -> ZoneInfo:
 
 @router.get("/prayer-times", response_model=PrayerTimesResponse)
 def get_prayer_times(
+    now: Annotated[datetime, Depends(get_now)],
     latitude: Annotated[float, Query(ge=-90, le=90)],
     longitude: Annotated[float, Query(ge=-180, le=180)],
     # Called on_date in Python so it doesn't hide the date type. It's still ?date= in the URL.
@@ -62,7 +64,7 @@ def get_prayer_times(
     zone = _zone(timezone)
     if on_date is None:
         # "Today" in the place's time zone, not the server's.
-        on_date = datetime.now(zone).date()
+        on_date = now.astimezone(zone).date()
 
     try:
         result = calculate_prayer_times(latitude, longitude, on_date, timezone, method, asr_method)

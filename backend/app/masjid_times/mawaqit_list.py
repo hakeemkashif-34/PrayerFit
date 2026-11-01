@@ -26,7 +26,7 @@ from app.masjid_times.mawaqit import BadLink, external_id_from_link
 from app.models import MawaqitListEntry
 
 LIST_FILE = Path(__file__).resolve().parent.parent / "data" / "mawaqit_masjids.csv"
-COLUMNS = ["name", "mawaqit_link", "latitude", "longitude"]
+COLUMNS = ["name", "short_name", "address", "mawaqit_link", "latitude", "longitude"]
 
 
 class BadListRow(ValueError):
@@ -39,9 +39,23 @@ class ListRow:
     name: str
     latitude: float
     longitude: float
+    # Both optional. Setup's search uses them.
+    short_name: str | None = None
+    address: str | None = None
 
 
-def check_row(name: str, link: str, latitude: str | float, longitude: str | float) -> ListRow:
+def _optional(text: str | None) -> str | None:
+    return " ".join((text or "").split()) or None
+
+
+def check_row(
+    name: str,
+    link: str,
+    latitude: str | float,
+    longitude: str | float,
+    short_name: str | None = None,
+    address: str | None = None,
+) -> ListRow:
     """One masjid's details, checked. Raises BadLink or ValueError with a short reason."""
     name = " ".join((name or "").split())
     if not name:
@@ -50,7 +64,7 @@ def check_row(name: str, link: str, latitude: str | float, longitude: str | floa
     lat, lon = float(latitude), float(longitude)
     if not -90 <= lat <= 90 or not -180 <= lon <= 180:
         raise ValueError("latitude must be from -90 to 90 and longitude from -180 to 180")
-    return ListRow(external_id, name, lat, lon)
+    return ListRow(external_id, name, lat, lon, _optional(short_name), _optional(address))
 
 
 def read_file(path: Path = LIST_FILE) -> list[ListRow]:
@@ -62,7 +76,9 @@ def read_file(path: Path = LIST_FILE) -> list[ListRow]:
             raise BadListRow(f"{path.name} must start with the line: {','.join(COLUMNS)}")
         for line, raw in enumerate(reader, start=2):
             try:
-                row = check_row(raw["name"], raw["mawaqit_link"], raw["latitude"], raw["longitude"])
+                row = check_row(
+                    raw["name"], raw["mawaqit_link"], raw["latitude"], raw["longitude"], raw["short_name"], raw["address"]
+                )
             except (BadLink, ValueError, TypeError) as error:
                 raise BadListRow(f"{path.name} line {line}: {error}") from error
             if row.external_id in rows:
@@ -75,7 +91,10 @@ def save_rows(db: Session, rows: list[ListRow], added_by: str, now: datetime) ->
     """Add new rows and update changed ones. Returns how many were added or changed."""
     changed = 0
     for row in rows:
-        values = {"name": row.name, "latitude": row.latitude, "longitude": row.longitude}
+        values = {
+            "name": row.name, "short_name": row.short_name, "address": row.address,
+            "latitude": row.latitude, "longitude": row.longitude,
+        }
         saved = db.execute(
             insert(MawaqitListEntry)
             .values(external_id=row.external_id, added_by=added_by, added_at=now, **values)
@@ -85,6 +104,8 @@ def save_rows(db: Session, rows: list[ListRow], added_by: str, now: datetime) ->
                 # Only when something is different, so an unchanged row counts as 0.
                 where=or_(
                     MawaqitListEntry.name.is_distinct_from(row.name),
+                    MawaqitListEntry.short_name.is_distinct_from(row.short_name),
+                    MawaqitListEntry.address.is_distinct_from(row.address),
                     MawaqitListEntry.latitude.is_distinct_from(row.latitude),
                     MawaqitListEntry.longitude.is_distinct_from(row.longitude),
                 ),
@@ -97,6 +118,6 @@ def save_rows(db: Session, rows: list[ListRow], added_by: str, now: datetime) ->
 
 def listed(db: Session) -> list[Listed]:
     return [
-        Listed(e.external_id, e.name, e.latitude, e.longitude)
+        Listed(e.external_id, e.name, e.latitude, e.longitude, e.short_name, e.address)
         for e in db.scalars(select(MawaqitListEntry).order_by(MawaqitListEntry.name))
     ]

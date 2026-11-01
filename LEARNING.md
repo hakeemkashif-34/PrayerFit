@@ -1757,3 +1757,71 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
 7. **Tests**:
    a) `test_reminders.py` covers any whole number (7 and 60), 0 meaning no reminder on the events, an empty value reading as 0, and the clear message. The message test runs for each of the 4 fields with 61, -1, 2.5, "5", and null.
    b) `settings.spec.ts` and `setup.spec.ts` cover the boxes, the hint, the keypad, 0, bad numbers, and the server's message. Counts: `pytest` gives `890 passed`, and `npx playwright test` gives `324 passed`.
+
+### 19. False clashes: a whole day of "(clash)"
+
+1. **The report**: one day, Fajr, Dhuhr, Asr, Maghrib, and Isha were all clashes. The only event that day was a call at 6:30 pm.
+2. **What I ruled out first**: a 6:30 pm call alone never clashes, on any day or at any time of day, including Nov 1 when the clocks go back (`test_a_6_30_call_alone_never_clashes`). A clash needs the normal time busy and no 10-minute gap left before the prayer's time ends. For all 5 to clash, something had to make the whole day look busy.
+3. **The cause**: an all-day or multi-day event marked Busy, like an "Out of office" day or a trip. Free/busy only sends start and end times, and it joins overlapping blocks. So an all-day event and the call came back as one block, midnight to midnight. `test_reported_bug_an_all_day_event_with_a_call_makes_every_prayer_clash` reproduced it before the fix. I can't see the user's calendar, so this is the cause that matches the report, not one I could check on his account.
+4. **How all-day events count now**: they don't. `busy_times.py` leaves out any busy block of 23 hours or more (`ALL_DAY`).
+   a) Why: an all-day event marks the day. It almost never means there's no time to pray, and 5 clashes help nobody.
+   b) Why 23 hours and not 24: the spring daylight saving day is only 23 hours long, so its all-day event is too.
+   c) Why a length and not "midnight to midnight": a Google Calendar set to another time zone puts an all-day event at 8 pm to 8 pm in Ottawa.
+   d) The catch: free/busy joins the call into the all-day block, so the call is left out too. The app can't split them without reading events, and that needs a wider scope than `calendar.freebusy`.
+5. **The other 6 things I checked**:
+   a) The Prayers calendar and drive blocks: only "primary" is asked for, so the app's own events never count. A test runs the update twice, so the Prayers calendar is full, and nothing clashes.
+   b) Google failing: a 500, errors for the primary calendar, or an unreadable answer already meant "unknown", and nothing new gets flagged. The 5-minute check sends 0 writes. One real bug: an answer with no "primary" at all was read as "free all day", which would put moved prayers back. Now it's "unknown" too.
+   c) Events marked Free don't block time in free/busy, so they never reach the app. Declined events should be left out the same way, but I still need to check that against a test calendar. The fake Google now leaves both out, like Google does.
+   d) Daylight saving: Nov 1 has every prayer in order on its own date, each window has its start before its end, and Isha's midnight counts real hours. The free/busy request starts and ends at local midnights, with `-04:00` before the change and `-05:00` after.
+   e) Empty windows: a typo on a masjid's page, like Fajr after sunrise, gave Fajr an empty window, so a busy Fajr always clashed. Now that prayer uses its calculated window instead, and the worker logs a warning with the masjid's ID.
+   f) Time zones: Google answers in UTC, and the server can be in any time zone (the test sets Tokyo). Every comparison is in UTC, so nothing changes.
+6. **The busy time in a clash**: the description now ends with when the user was busy, like "Busy from 3:00 to 6:30 pm." Times only, never what the event is, since free/busy never sends that. A time on another day gets its date, like "Oct 26, 11:00 pm to 7:00 am".
+7. **Tests**: `test_false_clashes.py`, with a test for each case above.
+
+### 20. Masjid search: my list first
+
+1. **The report**: a user typed "Barrhaven Islamic Centre" in setup and it didn't show up.
+2. **Why**:
+   a) Not the distance. Photon already searches 100 km from home, and Barrhaven is about 15 km from Kanata. 100 km covers the whole Ottawa area, so I left it.
+   b) Photon only finds what OpenStreetMap has, under the name and tags it has there. The masjid search asks only for `amenity=place_of_worship`. If BIC is missing, named differently, or not tagged that way, Photon can't find it. I couldn't check OpenStreetMap from the sandbox, since its network blocks Photon and OpenStreetMap.
+   c) Photon matches names closely, so a typo can miss.
+3. **The fix** (`app/masjid_search.py`): setup searches my own MAWAQIT list first.
+   a) Every word typed has to match a word of the name or the short name. A word matches if it's the same, the start of one ("barr" finds "barrhaven"), or close with a small typo ("barhaven" finds "barrhaven"). Words like "masjid", "mosque", and "centre" are skipped, the same list auto-linking uses.
+   b) List matches come first, best match first, then nearest. Distance doesn't matter for them, since I picked each one by hand.
+   c) Photon's results come after. Any that's the same masjid as a list one already shown is dropped: within 100 m, within 200 m with a close name (the auto-link rules), or the same name within 2 km.
+   d) At most 5 in total, like before. If Photon is down and the list found something, the list results still show.
+4. **Short name and address**: the list file has 2 new optional columns, `short_name` and `address`. KMA has "KMA". BIC has "BIC" and "3971 Greenbank Road, Ottawa". `add-mawaqit` takes `--short-name` and `--address` too. Migration `0015` adds both columns.
+5. **Picking a list masjid**: it gets a row in `masjids` with `source = "list"` and `list_external_id`, which is unique, so picking it again reuses the row. It's linked to its MAWAQIT page straight away (distance 0), never over a link I made or removed by hand. If someone already picked the same masjid from OpenStreetMap and it's linked to that entry, that row is reused, so `/stats` counts it once.
+6. **Tests**:
+   a) `test_masjid_search.py` covers "barrhaven", "BIC", "barhaven islamic", the full name, a short name in brackets, text that shouldn't match, list masjids at any distance, duplicates dropped, Photon being down, and picking and reusing rows.
+   b) The app loads the real list when it starts. Tests now turn that off (`no_real_list_on_start` in `conftest.py`), so each test puts only the masjids it needs on the list. Otherwise the real KMA showed up first in every "Kanata" search. The one test that checks the real loading has `@pytest.mark.real_list`.
+
+### 21. BIC on MAWAQIT, and test fixes
+
+1. **BIC's page**: `tests/fixtures/mawaqit/bic_page.html` is BIC's real page (https://mawaqit.net/en/id/17559), saved on November 1, 2026 and trimmed like KMA's. Tests only read the saved copy.
+   a) It publishes 2 Jumuah times: 1:00 pm and 2:30 pm. `jumua3` is empty, so the parser gives 2 slots, numbered 1 and 2.
+   b) `test_mawaqit_bic.py` checks Nov 1's adhan and iqamah, the clock change, both Jumuah times, and that every day of the year passes the checks.
+2. **A flaky test**: one of my new tests failed once in a full run and passed the next time. The test helper `rows()` had no `ORDER BY`, and the test checked the order of the rows. Postgres doesn't promise an order without one, and an update can move a row. Now `rows()` sorts by date, start time, and kind.
+3. **The real clock**: I looked for code reading the real time instead of the time a test sets.
+   a) `synced_at` now uses the `now` it's already given, and `/prayer-times` uses the same `get_now` dependency as the settings routes.
+   b) The worker, the admin commands, and the start-up loading read the clock once and pass it down. That's where the time comes from.
+   c) Sign-in sessions and Google token expiry use the real clock on purpose. A cookie has to expire on real time.
+4. **Timeouts**: `pytest-timeout` stops any test after 10 seconds (`timeout = 10` in `pytest.ini`). Tests only use fakes, so a hang means a real network call or a loop that never ends. The slowest test takes about 1 second.
+
+### 22. Announced masjid times
+
+1. **The problem**: KMA announced new iqamah and Jumuah times for when the clocks fell back on November 1, 2026. Its MAWAQIT page had the new Dhuhr, Asr, and Maghrib, but still showed Fajr at adhan + 15 (the announcement says "Athan + 15 minutes (+30 from Sun.)", so adhan + 30 from November 1), Isha at 6:40 pm (the announcement says 7:40 pm), and Jumuah at 12:45, 2:00, and 2:50 (the announcement says 11:30, 12:40, and 1:40 on Nov 6). My demo is the week of Nov 6, so it had to show the announced times.
+2. **Why a file in the repo**: CLAUDE.md says a masjid time change must come from the masjid's own published source or a masjid admin. An announcement is the masjid's own source, but typing it into the server would skip review. A JSON file per masjid in `backend/app/masjid_times/announced/` goes through a PR like code, so every change is reviewed and has a history.
+3. **The file** (`kma.json`): a label ("KMA announcement"), the masjid's MAWAQIT IDs, and entries. Each entry has a start date, an end date, and iqamah times, Jumuah times, or both.
+   a) An iqamah is a clock time ("12:30") or an offset ("adhan + 30", "sunset + 5"). Offsets matter because KMA's Fajr and Maghrib move every day with the adhan.
+   b) Jumuah is up to 3 clock times, used on every Friday in the range. KMA's 3rd Jumuah changes each week, so each Friday has its own 1-day entry.
+   c) The file names MAWAQIT IDs, not a database ID, because the database ID is different on my laptop and on the server.
+4. **How it fits in** (`announced.py`):
+   a) `load_masjid_times` attaches the masjid's announcement to its `MasjidTimes`. `announced_day(date)` gives that date's announced times, or None.
+   b) In `event_plan.py`, `_masjid_time` checks the announcement before MAWAQIT's iqamah, and `jumuah_slots` checks it before MAWAQIT's Jumuah. So the drive block, the leave time, the Jumuah pick, and moving around busy times all use the announced time with no other changes. The Jumuah chooser in setup uses `jumuah_slots` too, so it shows the announced times.
+   c) Home prayers still use the adhan. `_home_time` and the prayer windows never look at the announcement.
+   d) A later Friday gets Jumuah when it has announced times. Before, only the coming Friday could, since MAWAQIT only has this week's.
+5. **Offsets**: "adhan + 30" counts from KMA's MAWAQIT adhan when its times are usable, otherwise from the calculated adhan. "Sunset" is the Maghrib adhan, since Maghrib starts at sunset. The source says which, like "30 minutes after KMA's adhan time from MAWAQIT". The minutes are added in UTC, so a clock change can't make 30 minutes into 1 hour 30.
+6. **Strict checks**: a bad time, an end before a start, Jumuah times out of order, Jumuah with no Friday in the range, or 2 entries giving the same prayer on the same date refuses the whole file. A half-read file could give a wrong time, and a wrong time means a missed prayer. The error is logged, and that masjid falls back to MAWAQIT as normal.
+7. **Settings**: the masjid's line adds "Iqamah and Jumuah times from the KMA announcement are used from Nov 1 to Nov 30, 2026", so the user can see where the times came from.
+8. **Tests** (`test_announced.py`): a date inside the range, a date outside it, home prayers keeping the adhan, offsets across the Nov 1 clock change from MAWAQIT and from calculated times, the drive block, a busy announced iqamah moving home, the Jumuah pick on all 4 Fridays, a busy pick using the earliest announced Jumuah, a later Friday, broken and missing files, and every check on a bad entry. Like the real MAWAQIT list, the real announcement folder is off in every other test (`no_real_announcements` in `conftest.py`), and `@pytest.mark.real_announcements` turns it on.

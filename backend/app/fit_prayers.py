@@ -82,13 +82,24 @@ def prayer_windows(starts: dict[str, datetime], sunrise: datetime, next_fajr: da
     }
 
 
+def is_empty(window: PrayerWindow) -> bool:
+    """True when the window ends at or before it starts, so nothing could ever fit."""
+    return _utc(window.ends_at) <= _utc(window.starts_at)
+
+
+def busy_in(window: PrayerWindow, busy: Busy) -> list[tuple[datetime, datetime]]:
+    """The joined busy blocks that overlap the window, for the clash description."""
+    start, end = _utc(window.starts_at), _utc(window.ends_at)
+    return [(s, e) for s, e in merged(busy) if s < end and start < e]
+
+
 def is_free(start: datetime, end: datetime, busy: Busy) -> bool:
     """True when nothing in busy overlaps start to end. Touching ends don't count."""
     start, end = _utc(start), _utc(end)
     return not any(start < _utc(b_end) and _utc(b_start) < end for b_start, b_end in busy)
 
 
-def _merged(busy: Busy) -> list[tuple[datetime, datetime]]:
+def merged(busy: Busy) -> list[tuple[datetime, datetime]]:
     """Busy times in UTC, sorted, with overlapping ones joined."""
     merged: list[tuple[datetime, datetime]] = []
     for start, end in sorted((_utc(s), _utc(e)) for s, e in busy):
@@ -109,7 +120,7 @@ def earliest_gap(
         # A moved prayer never goes in the past.
         cursor = max(cursor, _ceil_minute(_utc(not_before)))
     window_end = _utc(window.ends_at)
-    for busy_start, busy_end in _merged(busy) + [(window_end, window_end)]:
+    for busy_start, busy_end in merged(busy) + [(window_end, window_end)]:
         if busy_end <= cursor:
             continue
         gap_end = min(busy_start, window_end)

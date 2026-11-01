@@ -7,12 +7,13 @@ calendar straight away, but only the future events that changed.
 
 import uuid
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Annotated, Literal
 
 import httpx2
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -21,11 +22,13 @@ from app.calendar_window import SetupIncomplete, preview_week
 from app.clock import get_now
 from app.db import get_db
 from app.geo.distance import distance_km
-from app.geo.photon import MAX_SUGGESTIONS, MIN_QUERY_LENGTH, Suggestion, suggest, suggest_masjids
+from app.geo.photon import MAX_SUGGESTIONS, MIN_QUERY_LENGTH, Suggestion, suggest
+from app.masjid_search import suggest as suggest_masjids
 from app.geo.timezones import timezone_for
 from app.google_errors import CalendarAccessMissing, GoogleError, ReauthRequired
 from app.http_client import get_http
 from app.event_plan import date_text
+from app.masjid_times.announced import announcement_for
 from app.masjid_times.auto_link import link_and_fetch
 from app.masjid_times.freshness import FRESH_FOR, USABLE_FOR, Freshness, freshness
 from app.jumuah_choices import JumuahChoices, jumuah_choices
@@ -73,7 +76,7 @@ class MasjidOut(BaseModel):
     # Empty for a masjid picked by its address.
     name: str | None
     address: str | None
-    # "openstreetmap", or "user" (picked by its address)
+    # "list" (my MAWAQIT list), "openstreetmap", or "user" (picked by its address)
     source: str
     distance_km: float | None = None
     # Where this masjid's times come from, like "Times from MAWAQIT, updated Oct 25, 2026".
@@ -139,6 +142,16 @@ def times_status(db: Session, masjid: Masjid, now: datetime, time_zone: str) -> 
     source = db.get(MasjidSource, masjid.id)
     if source is None:
         return "Not linked to MAWAQIT, so calculated times are used"
+    status = _mawaqit_status(source, now, time_zone)
+    announcement = announcement_for(source.external_id, source.list_external_id)
+    covering = announcement.range_covering(now.astimezone(ZoneInfo(time_zone)).date()) if announcement else None
+    if covering is None:
+        return status
+    start, end = covering
+    return f"{status}. Iqamah and Jumuah times from the {announcement.label} are used from {start:%b} {start.day} to {end:%b} {end.day}, {end.year}"
+
+
+def _mawaqit_status(source: MasjidSource, now: datetime, time_zone: str) -> str:
     age = freshness(source.last_success_at, now)
     if age is Freshness.NEVER:
         return "Linked to MAWAQIT. Its times haven't been read yet"
@@ -404,8 +417,10 @@ class MasjidSuggestResponse(BaseModel):
 
 @router.post("/setup/masjid/suggest", response_model=MasjidSuggestResponse)
 def suggest_masjid(request: SuggestRequest, user: UserDep, db: DbDep, http: HttpDep, now: NowDep) -> MasjidSuggestResponse:
-    """Up to 5 masjids within 100 km for what the user has typed, closest to home first. Saves nothing.
+    """Up to 5 masjids for what the user has typed. Saves nothing.
 
+    Masjids on my MAWAQIT list come first, whatever the distance. Then
+    Photon's masjids within 100 km, closest to home first (masjid_search.py).
     If the text looks like an address (it has a number), addresses near home
     are included, so a masjid that isn't on the map can still be picked.
     An empty list means nothing nearby matched.
@@ -436,8 +451,55 @@ class PickRequest(BaseModel):
         return _one_line(value)
 
 
-def _masjid_from(db: Session, user_id: uuid.UUID, picked: Suggestion) -> Masjid:
+def _masjid_from_list(db: Session, picked: Suggestion, now: datetime) -> Masjid:
+    """The masjid for a pick from my MAWAQIT list, linked to its page straight away.
+
+    If someone already picked the same masjid from OpenStreetMap and it's
+    linked to this list entry, that row is reused, so it isn't counted twice.
+    """
+    external_id = picked.list_external_id
+    existing = db.scalars(
+        select(Masjid)
+        .join(MasjidSource, MasjidSource.masjid_id == Masjid.id)
+        .where(
+            Masjid.source == "openstreetmap",
+            or_(MasjidSource.list_external_id == external_id, MasjidSource.external_id == external_id),
+        )
+        .order_by(Masjid.updated_at)
+    ).first()
+    if existing is not None:
+        return existing
+    values = {
+        "name": picked.name,
+        "latitude": picked.latitude,
+        "longitude": picked.longitude,
+        "address": picked.street_address,
+        "updated_at": func.now(),
+    }
+    masjid_id = db.execute(
+        insert(Masjid)
+        .values(id=uuid.uuid4(), source="list", list_external_id=external_id, **values)
+        .on_conflict_do_update(index_elements=["list_external_id"], set_=values)
+        .returning(Masjid.id)
+    ).scalar_one()
+    masjid = db.get(Masjid, masjid_id, populate_existing=True)
+    if not masjid.no_auto_link:
+        # Its own list entry, so the distance is 0. Never over a link I made or removed by hand.
+        db.execute(
+            insert(MasjidSource)
+            .values(
+                masjid_id=masjid_id, source="mawaqit", external_id=external_id, origin="auto",
+                list_external_id=external_id, match_distance_m=0, linked_at=now,
+            )
+            .on_conflict_do_nothing()
+        )
+    return masjid
+
+
+def _masjid_from(db: Session, user_id: uuid.UUID, picked: Suggestion, now: datetime) -> Masjid:
     """Find or add the masjid for a picked suggestion. Nothing is made up."""
+    if picked.list_external_id is not None:
+        return _masjid_from_list(db, picked, now)
     if picked.kind == "masjid" and picked.osm_type and picked.osm_id is not None:
         values = {
             "name": picked.name,
@@ -484,7 +546,7 @@ def masjid_from_suggestion(request: PickRequest, user: UserDep, db: DbDep, http:
         raise HTTPException(
             status_code=404, detail={"message": "That masjid isn't in the list any more. Search again."}
         )
-    masjid = _masjid_from(db, user.id, found[request.index])
+    masjid = _masjid_from(db, user.id, found[request.index], now)
     db.commit()
     # Link it to MAWAQIT from my list and read its times now, so the Jumuah question has real times.
     link_and_fetch(db, http, masjid, now)

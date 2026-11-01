@@ -206,23 +206,29 @@ class UserSettings(Base):
 
 
 class Masjid(Base):
-    """A masjid a user picked: one Photon found on OpenStreetMap, or an address.
+    """A masjid a user picked: one from my MAWAQIT list, one Photon found on
+    OpenStreetMap, or an address.
 
-    OpenStreetMap masjids are public, so every user can pick them. A masjid
+    List and OpenStreetMap masjids are public, so every user can pick them. A masjid
     picked by its address has created_by_user_id, and only that user sees
     it. Nothing here is made up: no guessed name or address, and no times.
     """
 
     __tablename__ = "masjids"
     # Postgres allows many NULLs here, so typed-in masjids don't clash.
-    __table_args__ = (UniqueConstraint("osm_type", "osm_id"),)
+    __table_args__ = (
+        UniqueConstraint("osm_type", "osm_id"),
+        UniqueConstraint("list_external_id", name="uq_masjids_list_external_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    # "openstreetmap" or "user"
+    # "list" (my MAWAQIT list), "openstreetmap", or "user"
     source: Mapped[str] = mapped_column(String(16))
     # "node", "way", or "relation". OSM IDs are only unique within a type.
     osm_type: Mapped[str | None] = mapped_column(String(8))
     osm_id: Mapped[int | None] = mapped_column(BigInteger)
+    # The list entry it was picked from, like "id/17559". Unique, so it's never added twice.
+    list_external_id: Mapped[str | None] = mapped_column(String(200))
     # Some masjids on OpenStreetMap have no name.
     name: Mapped[str | None] = mapped_column(Text)
     latitude: Mapped[float | None] = mapped_column(Float)
@@ -255,6 +261,10 @@ class MawaqitListEntry(Base):
     # "id/9793" for a share link (mawaqit.net/en/id/9793), or a page name like "cio-gatineau".
     external_id: Mapped[str] = mapped_column(String(200), primary_key=True)
     name: Mapped[str] = mapped_column(Text)
+    # Like "BIC". Setup's search finds a masjid by it. Optional.
+    short_name: Mapped[str | None] = mapped_column(Text)
+    # Like "3971 Greenbank Road, Ottawa", shown under the name in setup. Optional.
+    address: Mapped[str | None] = mapped_column(Text)
     latitude: Mapped[float] = mapped_column(Float)
     longitude: Mapped[float] = mapped_column(Float)
     # "file" (the CSV) or "admin" (python -m app.admin add-mawaqit).
