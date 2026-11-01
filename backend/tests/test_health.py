@@ -1,7 +1,7 @@
 """Tests for the /health endpoint.
 
 These need a real Postgres running, with DATABASE_URL pointing at it.
-See the README for how to start one.
+See docs/SETUP.md for how to start one.
 """
 
 import pytest
