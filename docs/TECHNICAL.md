@@ -80,16 +80,28 @@ Masjid times come from each masjid's public page on [MAWAQIT](https://mawaqit.ne
 MAWAQIT's search needs a login and it has no sitemap, so the app can't find a masjid's page by itself. I keep my own list in `backend/app/data/mawaqit_masjids.csv`, one masjid per line:
 
 ```
-name,mawaqit_link,latitude,longitude
-Kanata Muslim Association,https://mawaqit.net/en/id/9793,45.356128,-75.9283718
-Mosquee de Gatineau - CIO,https://mawaqit.net/en/cio-gatineau,45.4290189,-75.732133
+name,short_name,address,mawaqit_link,latitude,longitude
+Kanata Muslim Association,KMA,,https://mawaqit.net/en/id/9793,45.356128,-75.9283718
+Barrhaven Islamic Centre,BIC,"3971 Greenbank Road, Ottawa",https://mawaqit.net/en/id/17559,45.2364361,-75.7255711
 ```
 
-It has 23 masjids around Ottawa. The link is either a share link (`https://mawaqit.net/en/id/9793`, from MAWAQIT's Share button) or a page link (`https://mawaqit.net/en/cio-gatineau`). The app saves `id/9793` or `cio-gatineau` and reads the times from that link. A share link answers with the masjid's page straight away.
+It has 23 masjids around Ottawa. `short_name` and `address` are optional. Setup's search finds a masjid by its short name too, and shows the address under its name. The link is either a share link (`https://mawaqit.net/en/id/9793`, from MAWAQIT's Share button) or a page link (`https://mawaqit.net/en/cio-gatineau`). The app saves `id/9793` or `cio-gatineau` and reads the times from that link. A share link answers with the masjid's page straight away.
 
 The backend and the worker load the file every time they start. Loading it again never adds a copy. If I fix a name or a location in the file, the saved one changes too.
 
-When a user picks a masjid in setup, the app matches it against the list straight away:
+### Masjid search in setup
+
+Setup searches my list first, then Photon (`backend/app/masjid_search.py`). I built it this way because a user typed "Barrhaven Islamic Centre" and it didn't show up. Photon only finds what OpenStreetMap has, under the name and tags it has there, and it doesn't forgive typos well.
+
+1. Every word typed has to match a word of the name or the short name. A word matches if it's the same, the start of one ("barr" finds "barrhaven"), or close with a small typo ("barhaven" finds "barrhaven"). Words like "masjid", "mosque", and "centre" are skipped. So "barrhaven", "BIC", and "barhaven islamic" all find BIC.
+2. List masjids come first, best match first, then nearest, whatever the distance, since I picked each one by hand.
+3. Photon's results come after. Any that's the same masjid as a list one already shown is dropped: within 100 m, within 200 m with a close name, or the same name within 2 km.
+4. At most 5 in total. If Photon is down, the list results still show.
+5. Picking a list masjid saves it with `source = "list"` and links it to its MAWAQIT page straight away. Picking it again reuses the same row. If someone already picked the same masjid from OpenStreetMap and it's linked to that list entry, that row is reused, so /stats counts it once.
+
+### Matching a masjid from OpenStreetMap
+
+When a user picks a masjid from Photon in setup, the app matches it against the list straight away:
 
 1. Within 100 m: a match, even if the names are different. Map names are often spelled differently, like "MAC QIC".
 2. From 100 m to 200 m: a match only if the names closely match, ignoring words like masjid, mosque, association, centre, and Ottawa.
@@ -100,6 +112,13 @@ Then it reads the masjid's page right away, so the Jumuah question in setup alre
 When the list changes, the masjids users already picked are matched again. An automatic link never replaces one I made with `link-mawaqit`, and a masjid I unlinked with `unlink-mawaqit` is never linked again automatically.
 
 Masjids that aren't on MAWAQIT get calculated prayer start times only, with no iqamah, for now.
+
+### BIC
+
+Barrhaven Islamic Centre (BIC) is the 2nd masjid with a saved MAWAQIT page in the tests, after KMA. `backend/tests/fixtures/mawaqit/bic_page.html` is its real page (https://mawaqit.net/en/id/17559), saved on November 1, 2026. Tests only read the saved copy.
+
+1. It publishes 2 Jumuah times, 1:00 pm and 2:30 pm. Its 3rd Jumuah is empty, so the parser gives 2 slots, numbered 1 and 2.
+2. `test_mawaqit_bic.py` checks Nov 1's adhan and iqamah, the clock change, both Jumuah times, and that every day of the year passes the checks.
 
 ### What it changes in the calendar
 
@@ -128,9 +147,22 @@ Anything in my primary Google Calendar comes first, and each prayer works around
 1. **At the masjid**: a masjid prayer stays at the masjid only if the drive, the "how early" minutes, and the prayer block are all free. Otherwise it's prayed at home that day, and its drive block is deleted.
 2. **At the normal time** if that's free. The normal time is the iqamah for a masjid prayer that can't go to the masjid, and the adhan for every other prayer.
 3. **Otherwise, the earliest free time** of at least 10 minutes, from the start of the prayer's time to its end. A gap shorter than the prayer's usual length shrinks it to fit, down to 10 minutes. For example, a 12-minute gap fits Isha as a 12-minute block. The description says how far after the prayer's start time (the adhan) it went, like `Moved because of an event in your calendar (42 minutes after Dhuhr's start time).` Over an hour it says `1 hour 12 minutes`, and right at the adhan it says `(at Dhuhr's start time)`.
-4. **No free time at all**: it stays at the normal time, titled `Asr (clash)`, and the description says `Your event covers all of Asr's time today, so figure out a way to fit it in.`
+4. **No free time at all**: it stays at the normal time, titled `Asr (clash)`, and the description says `Your event covers all of Asr's time today, so figure out a way to fit it in. Busy from 3:00 to 6:30 pm.` The "Busy from" part lists each busy time inside that prayer's time, joined with "and". A time on another day gets its date, like `Oct 26, 11:00 pm to 7:00 am`.
 
-Those are the only descriptions. The app only knows when I'm busy, never what my events are, so a description never names the event.
+Those are the only descriptions. The app only knows when I'm busy, never what my events are, so a description never names the event. The "Busy from" part is times only.
+
+**All-day events don't count.** Free/busy only sends start and end times, so the app can't tell an all-day event from a long timed one. `busy_times.py` leaves out any busy block of 23 hours or more (`ALL_DAY`).
+1. Why: an all-day event, like a trip or "out of office", marks the day. It almost never means there's no time to pray. Counting it made every prayer that day a clash.
+2. Why 23 hours and not 24: the spring daylight saving day is only 23 hours long, so its all-day event is too.
+3. Why a length and not "midnight to midnight": a Google Calendar set to another time zone puts an all-day event at 8 pm to 8 pm in Ottawa.
+4. The catch: free/busy joins overlapping blocks, so a call during an all-day event is left out too. Splitting them would need a wider scope than `calendar.freebusy`.
+
+Events marked "Free" don't block time in free/busy, so they never reach the app. Declined events should be left out the same way, but I still need to check that against a test calendar.
+
+**When Google fails** (a 500, errors for the primary calendar, an answer that can't be read, or an answer with no primary calendar at all), the busy times are "unknown", never "free all day":
+1. Nothing new gets flagged as a clash or moved.
+2. Prayers that were already moved or flagged stay as they are, so nothing flips back and forth.
+3. The 5-minute check writes nothing to Google and tries again next time.
 
 Each prayer's time ends at: Fajr, sunrise. Dhuhr, Asr. Asr, Maghrib. Maghrib, Isha. Isha, midnight, which is halfway between Maghrib and the next day's Fajr, so it never suggests 2 am.
 
@@ -152,7 +184,7 @@ Things that never happen:
 1. Events that already started are never moved. That includes a masjid prayer once its drive has started.
 2. A moved prayer is never put in the past.
 3. The Prayers calendar never counts as busy.
-4. If free/busy doesn't answer, nothing that was moved is put back. The 5-minute check changes nothing at all and tries again next time.
+4. If free/busy doesn't answer, nothing that was moved is put back, and nothing new is flagged. The 5-minute check changes nothing at all and tries again next time.
 5. Users who didn't allow free/busy get no moving. Everything works as before for them.
 
 ## Nightly job
@@ -202,7 +234,7 @@ Through nginx, every endpoint below is under `/api` (like `/api/me`), except the
 | `GET /settings` | Your saved setup answers |
 | `POST /setup/location/suggest` | Up to 5 address suggestions from Photon for what's typed so far. Saves nothing |
 | `PUT /settings/location` | Saves the suggestion the user picked (encrypted) and its time zone |
-| `POST /setup/masjid/suggest` | Up to 5 masjids from Photon for what's typed so far, closest to home first, with distances. Adds addresses near home when no masjid matches. Saves nothing |
+| `POST /setup/masjid/suggest` | Up to 5 masjids for what's typed so far: matches from my MAWAQIT list first, then Photon's, closest to home first, with distances. Adds addresses near home when no masjid matches. Saves nothing |
 | `POST /masjids/from-suggestion` | Saves the picked suggestion as a masjid, for the main masjid or Jumuah |
 | `PUT /settings/main-masjid` | Saves the main masjid, or "home". Picking a different masjid clears its short name |
 | `PUT /settings/weekly` | Saves the weekly grid (7 days) |
