@@ -1807,3 +1807,21 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
    b) The worker, the admin commands, and the start-up loading read the clock once and pass it down. That's where the time comes from.
    c) Sign-in sessions and Google token expiry use the real clock on purpose. A cookie has to expire on real time.
 4. **Timeouts**: `pytest-timeout` stops any test after 10 seconds (`timeout = 10` in `pytest.ini`). Tests only use fakes, so a hang means a real network call or a loop that never ends. The slowest test takes about 1 second.
+
+### 22. Announced masjid times
+
+1. **The problem**: KMA announced new iqamah and Jumuah times for when the clocks fell back on November 1, 2026. Its MAWAQIT page had the new Fajr, Dhuhr, Asr, and Maghrib, but still showed Isha at 6:40 pm (the announcement says 7:40 pm) and Jumuah at 12:45, 2:00, and 2:50 (the announcement says 11:30, 12:40, and 1:40 on Nov 6). My demo is the week of Nov 6, so it had to show the announced times.
+2. **Why a file in the repo**: CLAUDE.md says a masjid time change must come from the masjid's own published source or a masjid admin. An announcement is the masjid's own source, but typing it into the server would skip review. A JSON file per masjid in `backend/app/masjid_times/announced/` goes through a PR like code, so every change is reviewed and has a history.
+3. **The file** (`kma.json`): a label ("KMA announcement"), the masjid's MAWAQIT IDs, and entries. Each entry has a start date, an end date, and iqamah times, Jumuah times, or both.
+   a) An iqamah is a clock time ("12:30") or an offset ("adhan + 15", "sunset + 5"). Offsets matter because KMA's Fajr and Maghrib move every day with the adhan.
+   b) Jumuah is up to 3 clock times, used on every Friday in the range. KMA's 3rd Jumuah changes each week, so each Friday has its own 1-day entry.
+   c) The file names MAWAQIT IDs, not a database ID, because the database ID is different on my laptop and on the server.
+4. **How it fits in** (`announced.py`):
+   a) `load_masjid_times` attaches the masjid's announcement to its `MasjidTimes`. `announced_day(date)` gives that date's announced times, or None.
+   b) In `event_plan.py`, `_masjid_time` checks the announcement before MAWAQIT's iqamah, and `jumuah_slots` checks it before MAWAQIT's Jumuah. So the drive block, the leave time, the Jumuah pick, and moving around busy times all use the announced time with no other changes. The Jumuah chooser in setup uses `jumuah_slots` too, so it shows the announced times.
+   c) Home prayers still use the adhan. `_home_time` and the prayer windows never look at the announcement.
+   d) A later Friday gets Jumuah when it has announced times. Before, only the coming Friday could, since MAWAQIT only has this week's.
+5. **Offsets**: "adhan + 15" counts from KMA's MAWAQIT adhan when its times are usable, otherwise from the calculated adhan. "Sunset" is the Maghrib adhan, since Maghrib starts at sunset. The source says which, like "15 minutes after KMA's adhan time from MAWAQIT". The minutes are added in UTC, so a clock change can't make 15 minutes into 1 hour 15.
+6. **Strict checks**: a bad time, an end before a start, Jumuah times out of order, Jumuah with no Friday in the range, or 2 entries giving the same prayer on the same date refuses the whole file. A half-read file could give a wrong time, and a wrong time means a missed prayer. The error is logged, and that masjid falls back to MAWAQIT as normal.
+7. **Settings**: the masjid's line adds "Iqamah and Jumuah times from the KMA announcement are used from Nov 1 to Nov 30, 2026", so the user can see where the times came from.
+8. **Tests** (`test_announced.py`): a date inside the range, a date outside it, home prayers keeping the adhan, offsets across the Nov 1 clock change from MAWAQIT and from calculated times, the drive block, a busy announced iqamah moving home, the Jumuah pick on all 4 Fridays, a busy pick using the earliest announced Jumuah, a later Friday, broken and missing files, and every check on a bad entry. Like the real MAWAQIT list, the real announcement folder is off in every other test (`no_real_announcements` in `conftest.py`), and `@pytest.mark.real_announcements` turns it on.
