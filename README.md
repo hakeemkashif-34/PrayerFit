@@ -6,6 +6,12 @@ A demo of setting up PrayerFit and connecting it to Google Calendar.
 
 https://github.com/user-attachments/assets/692cedce-c39d-45ee-bee5-ea631ed26695
 
+## Try it
+
+[prayerfit.me](https://prayerfit.me)
+
+Sign in with Google and answer 3 quick questions. Your prayers show up in a new "Prayers" calendar in your Google Calendar.
+
 ## The problem
 
 Is it ever annoying to keep track of how your prayer times shift over time?
@@ -29,16 +35,6 @@ It's live at prayerfit.me and has over 40 users in Ottawa.
 5. Prayers that move around your classes and meetings, re-checked every 5 minutes.
 6. The Jumuah slot that fits your Friday.
 7. Popup reminders, a Settings page to change any answer, and a button to delete your account and everything stored.
-
-## Try it
-
-⚠️ Sign-in won't work unless you request access first.
-
-[prayerfit.me](https://prayerfit.me)
-
-Google hasn't verified the app yet. Until it does, Google only lets accounts I add by hand sign in.
-
-To request access, email hakeemkashif34@gmail.com.
 
 ## How it plans around your day
 
