@@ -19,7 +19,8 @@ What each part of the app does and why it was built that way. Updated after each
    c) Why: new developers (and CI, and Azure later) can see what's needed without anyone sharing secrets.
 
 3. **`README.md`**
-   a) How to run the app and the tests. The first thing a recruiter or teammate reads.
+   a) The problem, how the app plans around your day, and how it's built. The first thing a recruiter or teammate reads, so it stays short.
+   b) `docs/TECHNICAL.md` has the deeper details, and `docs/SETUP.md` has every step to run, deploy, and test it.
 
 ### 2. Backend (`backend/`)
 
@@ -479,7 +480,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 ### 9. How to check it works
 
 1. **Tests**: `pytest` in `backend` with Postgres running. You should see `311 passed`. GitHub Actions runs the same tests with no Google keys.
-2. **For real**: follow "Google Calendar" in the README to set up Google Cloud, fill in `.env`, sign in, and run `POST /prayers/today` from `/docs`.
+2. **For real**: follow "Google Calendar" in `docs/SETUP.md` to set up Google Cloud, fill in `.env`, sign in, and run `POST /prayers/today` from `/docs`.
 3. **Checks I couldn't automate** (they need the real Google):
    a) Delete one prayer in Google Calendar, run `POST /prayers/today` again, and check it comes back exactly once.
    b) Delete the whole Prayers calendar, run it again, and check a new one appears with all 5 prayers.
@@ -691,7 +692,7 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 ### 10. How to check it works
 
 1. **Tests**: `pytest` in `backend` (`432 passed`) and `npx playwright test` in `web` (`60 passed`).
-2. **For real**: follow "Go through setup" in the README with your test Google account. The Prayers calendar should have 70 events.
+2. **For real**: follow "Go through setup" in `docs/SETUP.md` with your test Google account. The Prayers calendar should have 70 events.
 3. **Change a setting**: tick one more prayer on one weekday. The message should say 2 events were sent, and only those 2 change in Google Calendar.
 4. **Nightly job**: `docker compose exec worker python -m app.worker run-now --email you@gmail.com`, then again, then with `--force`. Still 70 events.
 5. **Checks I couldn't automate** (they need the real services):
@@ -848,7 +849,7 @@ Setup is now 2 pages, so this "step" became page 2 (section 21). The rest of thi
 
 1. **Tests**: `pytest` in `backend` (`683 passed`) and `npx playwright test` in `web` (`170 passed`).
 2. **Google Cloud Console**: in **Google Auth Platform > Data Access**, add `https://www.googleapis.com/auth/calendar.freebusy`. Then sign out and in again, and the banner on Settings goes away.
-3. **For real**: get a free ORS key and put it in `.env`. Then follow "Masjid times from MAWAQIT" in the README to link KMA, and run `run-now --force`. In Google Calendar: masjid prayers at KMA's iqamah, home prayers at KMA's adhan, each with its source, a drive block with a reminder before each masjid prayer, Jumuah on the coming Friday if KMA is a Jumuah masjid, every event private, and the colours I picked.
+3. **For real**: get a free ORS key and put it in `.env`. Then follow "Masjid times from MAWAQIT" in `docs/SETUP.md` to link KMA, and run `run-now --force`. In Google Calendar: masjid prayers at KMA's iqamah, home prayers at KMA's adhan, each with its source, a drive block with a reminder before each masjid prayer, Jumuah on the coming Friday if KMA is a Jumuah masjid, every event private, and the colours I picked.
 4. **Jumuah and busy times**: pick KMA's 1st Jumuah, then put a test event in my main calendar over it on the coming Friday. Run `run-now --force` and check Jumuah moved to the 2nd in Google Calendar, with "Your pick (1st Jumuah) clashes with your calendar" in its description.
 5. **Checks I couldn't do here**: reading KMA's live MAWAQIT page (only the saved copy), a real ORS key, real free/busy answers, and `authuser` with an email on the real Google Calendar. All of those hosts were blocked where I built this.
 
@@ -1456,7 +1457,7 @@ Section 34 simplified this: the /stats page is now total users, a graph of total
 6. **What didn't change**:
    a) The Google calendar the app makes is still called "Prayers".
    b) The GitHub repo kept its name until this PR was merged. Section 36 renamed the Docker project, the volume, and the database user and name too.
-   c) The app name on Google's sign-in screen comes from my Google Cloud project's settings, so I change that in the Google Cloud console. The README says where.
+   c) The app name on Google's sign-in screen comes from my Google Cloud project's settings, so I change that in the Google Cloud console. `docs/SETUP.md` says where.
 7. **Tests**:
    a) Backend: total users, the daily points (including a sign-up at 10:30 pm in Ottawa that's already the next day in UTC, and days with 0), the masjid counts (home users and masjids with 0 users left out, the address never shown), the command's output, and that the snapshot table is gone.
    b) Playwright: only the 3 parts, a dot per day, hover, tap, and keyboard, no labels overlapping and 12px text on a phone, the box staying inside the graph and off its dot, the table with its tags, and the empty states. Also the new landing page text and the tab title.
@@ -1522,7 +1523,7 @@ Section 34 simplified this: the /stats page is now total users, a graph of total
 | `deploy/update.sh` | Puts the latest `main` on the server |
 | `web/src/PrivacyPage.tsx` | The privacy policy at `/privacy` |
 
-The README's "Deploy" section has every step in the Azure portal, on the server, and in Google Cloud Console, in order.
+The "Deploy" section in `docs/SETUP.md` has every step in the Azure portal, on the server, and in Google Cloud Console, in order.
 
 ### 2. Why one Linux VM
 
@@ -1624,7 +1625,7 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
 
 1. On my machine, the whole production stack (with `SITE_ADDRESS=:80`, plain http) started: `/api/health` answered through Caddy, `/privacy` loaded, another host name got a 308 to `APP_ORIGIN`, `/auth/google/login` sent me to Google with the production redirect URI, a POST from another site still got 403, only Caddy had public ports, and the worker logged "Worker started".
 2. Backup and restore worked as in section 8.
-3. Not tested here: `server-setup.sh` on a real Azure VM, and the Let's Encrypt certificate, which needs the real address. The README's "Check it works" list covers those on the server.
+3. Not tested here: `server-setup.sh` on a real Azure VM, and the Let's Encrypt certificate, which needs the real address. The "Check it works" list in `docs/SETUP.md` covers those on the server.
 
 ### 14. The /stats page: a range dropdown and a line that goes down
 

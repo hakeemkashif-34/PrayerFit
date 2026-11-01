@@ -2,7 +2,7 @@
 # Saves the whole database to ~/prayerfit-backups/prayerfit-YYYY-MM-DD.sql.gz
 # and deletes backups older than 14 days. Cron runs it every day at 3:30 am
 # (set up by server-setup.sh). Run it by hand any time:  deploy/backup.sh
-# How to restore one is in the README, under "Deploy".
+# How to restore one is in docs/SETUP.md, under "Deploy".
 
 set -euo pipefail
 

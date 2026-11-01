@@ -26,7 +26,7 @@ Masjid times: read from each masjid's public MAWAQIT page. MAWAQIT may block thi
 Drive time: OpenRouteService's free plan, with no live traffic. Each masjid prayer has 2 events: a drive block from the leave time to the arrival time, then the prayer block. Every event the app makes is private
 Background jobs: a nightly job that updates every user's prayers
 Hosting: one Azure B2pts v2 Linux VM (Arm64, free tier) named prayerfit in Canada Central, on student credit, running the same Docker Compose setup plus Caddy for free HTTPS (docker-compose.prod.yml, deploy/). Only the static public IP uses credit, about $3 to $4 a month
-Server: the repo is at ~/prayerfit, secrets only in ~/prayerfit/.env on the server, and deploy/update.sh puts the latest main on it. Address: https://prayerfit.canadacentral.cloudapp.azure.com until the switch to prayerfit.me (steps in the README's Deploy section)
+Server: the repo is at ~/prayerfit, secrets only in ~/prayerfit/.env on the server, and deploy/update.sh puts the latest main on it. Address: https://prayerfit.canadacentral.cloudapp.azure.com until the switch to prayerfit.me (steps in the Deploy section of docs/SETUP.md)
 Google sign-in stays in Testing mode with test users until prayerfit.me is verified, then it gets published. The privacy policy is at /privacy, and it must stay in step with what the app stores and sends
 
 ## How we work
