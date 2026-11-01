@@ -1,6 +1,8 @@
 # Everything in requirements.txt, plus tools for testing.
 -r requirements.txt
 pytest==9.1.1
+# Stops any test that runs over the limit in pytest.ini, so a hang fails fast.
+pytest-timeout==2.4.0
 # Well-known prayer time libraries. Only the tests use them, to check our own maths.
 adhanpy==1.0.5  # Python version of the adhan library
 praytimes==2.3.2  # Python version of PrayTimes.org
