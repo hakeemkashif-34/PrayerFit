@@ -39,7 +39,9 @@ def titled(events: list[dict], day: date, summary: str) -> dict:
 
 def rows(engine, user: uuid.UUID) -> list[PrayerEvent]:
     with Session(engine) as db:
-        return list(db.scalars(select(PrayerEvent).where(PrayerEvent.user_id == user)))
+        # Ordered, since Postgres gives no order without ORDER BY, and an update can move a row.
+        query = select(PrayerEvent).where(PrayerEvent.user_id == user)
+        return list(db.scalars(query.order_by(PrayerEvent.local_date, PrayerEvent.starts_at, PrayerEvent.kind)))
 
 
 def clock(event: dict, end: bool = False) -> str:
