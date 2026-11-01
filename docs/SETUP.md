@@ -227,7 +227,7 @@ Use this when a masjid announces new times (on a poster, its website, or its own
          "start": "2026-11-01",
          "end": "2026-11-30",
          "iqamah": {
-           "fajr": "adhan + 15",
+           "fajr": "adhan + 30",
            "dhuhr": "12:30",
            "asr": "15:15",
            "maghrib": "sunset + 5",
@@ -244,7 +244,7 @@ Use this when a masjid announces new times (on a poster, its website, or its own
    | `label` | The source shown on Settings and saved with each event, like "KMA announcement" |
    | `mawaqit_ids` | The masjid's MAWAQIT IDs, as `list-masjids` shows them. `id/9793` for a share link, the page name for a page link |
    | `start`, `end` | The first and last date, both included, like `"2026-11-01"` |
-   | `iqamah` | Any of the 5 prayers. A 24-hour clock time (`"19:40"`), `"adhan + 15"`, or `"sunset + 5"`. Prayers left out keep MAWAQIT's iqamah |
+   | `iqamah` | Any of the 5 prayers. A 24-hour clock time (`"19:40"`), `"adhan + 30"`, or `"sunset + 5"`. Prayers left out keep MAWAQIT's iqamah |
    | `jumuah` | Up to 3 clock times, earliest first, used on every Friday from `start` to `end` |
    | `note` | Optional. Ignored by the app, for whoever reviews the PR |
 
