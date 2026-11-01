@@ -16,7 +16,7 @@ Changes go through a PR, the same as code. The file says:
 3. entries: each with a start date, an end date (both included), and
    iqamah times, Jumuah times, or both.
 
-An iqamah is a clock time ("12:30", 24-hour) or an offset ("adhan + 15",
+An iqamah is a clock time ("12:30", 24-hour) or an offset ("adhan + 30",
 "sunset + 5"). Jumuah is a list of up to 3 clock times, used on every
 Friday in the entry's range.
 
@@ -45,7 +45,7 @@ logger = logging.getLogger("app.masjid_times.announced")
 ANNOUNCED_DIR = Path(__file__).resolve().parent / "announced"
 FRIDAY = 4
 CLOCK = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
-# "adhan + 15" or "sunset + 5". Spaces are optional.
+# "adhan + 30" or "sunset + 5". Spaces are optional.
 OFFSET = re.compile(r"^(adhan|sunset)\s*\+\s*(\d{1,3})$")
 # Over 2 hours after the adhan or sunset is almost surely a typo.
 MAX_OFFSET_MINUTES = 120
@@ -66,7 +66,7 @@ class Rule:
     minutes: int = 0
 
     def text(self) -> str:
-        """"12:30", "15 minutes after the adhan", "5 minutes after sunset"."""
+        """"12:30", "30 minutes after the adhan", "5 minutes after sunset"."""
         if self.clock is not None:
             return self.clock.strftime("%H:%M")
         what = "the adhan" if self.base == "adhan" else "sunset"
@@ -137,7 +137,7 @@ def _rule(value: object, what: str) -> Rule:
     try:
         return Rule(clock=_clock(value, what))
     except BadAnnouncement:
-        raise BadAnnouncement(f'{what} must be a clock time like "12:30", or "adhan + 15", or "sunset + 5"') from None
+        raise BadAnnouncement(f'{what} must be a clock time like "12:30", or "adhan + 30", or "sunset + 5"') from None
 
 
 def _date(value: object, what: str) -> date:

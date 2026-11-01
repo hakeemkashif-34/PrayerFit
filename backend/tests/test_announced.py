@@ -59,7 +59,7 @@ def test_the_real_kma_file_loads():
     assert announcement_for("kma-masjid-ottawa") is kma
     day = kma.day(date(2026, 11, 6))
     assert day.iqamah == {
-        "fajr": Rule(base="adhan", minutes=15),
+        "fajr": Rule(base="adhan", minutes=30),
         "dhuhr": Rule(clock=datetime(2026, 1, 1, 12, 30).time()),
         "asr": Rule(clock=datetime(2026, 1, 1, 15, 15).time()),
         "maghrib": Rule(base="sunset", minutes=5),
@@ -163,15 +163,15 @@ def test_a_date_inside_the_range_uses_the_announced_times(db, http, user, fake_g
     write(folder, "kma.json", kma_file())
     fetch(db, http, NOW)
     refresh(db, http, user, NOW)
-    # Monday, Nov 2. Fajr is MAWAQIT's 5:30 adhan + 15, Maghrib its 18:00 sunset + 5.
+    # Monday, Nov 2. Fajr is MAWAQIT's 5:30 adhan + 30, Maghrib its 18:00 sunset + 5.
     assert iqamah(fake_google, date(2026, 11, 2)) == {
-        "fajr": "05:45", "dhuhr": "12:30", "asr": "15:15", "maghrib": "18:05", "isha": "19:40",
+        "fajr": "06:00", "dhuhr": "12:30", "asr": "15:15", "maghrib": "18:05", "isha": "19:40",
     }
     events = google_events(fake_google)
     day = date(2026, 11, 2)
     assert source(db, titled(events, day, "Isha at KMA")) == "KMA iqamah (KMA announcement)"
     assert source(db, titled(events, day, "Fajr at KMA")) == (
-        "KMA iqamah (KMA announcement: 15 minutes after KMA's adhan time from MAWAQIT)"
+        "KMA iqamah (KMA announcement: 30 minutes after KMA's adhan time from MAWAQIT)"
     )
     assert source(db, titled(events, day, "Maghrib at KMA")) == (
         "KMA iqamah (KMA announcement: 5 minutes after KMA's sunset time from MAWAQIT)"
@@ -210,7 +210,7 @@ def test_offsets_across_the_clock_change_use_mawaqits_adhan(db, http, user, fake
     refresh(db, http, user, NOW)
     for day in (date(2026, 11, 1), date(2026, 11, 2)):
         fajr = titled(google_events(fake_google), day, "Fajr at KMA")
-        assert fajr["start"]["dateTime"] == f"{day}T05:45:00-05:00"
+        assert fajr["start"]["dateTime"] == f"{day}T06:00:00-05:00"
         maghrib = titled(google_events(fake_google), day, "Maghrib at KMA")
         assert maghrib["start"]["dateTime"] == f"{day}T18:05:00-05:00"
 
@@ -228,11 +228,11 @@ def test_offsets_use_the_calculated_adhan_when_mawaqit_isnt_usable(db, http, use
         calculated = calculate_prayer_times(setup.latitude, setup.longitude, day, setup.time_zone, setup.method, setup.asr_method)
         events = google_events(fake_google)
         fajr = titled(events, day, "Fajr at KMA")
-        expected = (calculated.fajr.time + timedelta(minutes=15)).astimezone(TORONTO)
+        expected = (calculated.fajr.time + timedelta(minutes=30)).astimezone(TORONTO)
         assert datetime.fromisoformat(fajr["start"]["dateTime"]) == expected
         assert fajr["start"]["dateTime"].endswith("-05:00")
         assert source(db, fajr) == (
-            "KMA iqamah (KMA announcement: 15 minutes after the calculated adhan time (ISNA, standard Asr))"
+            "KMA iqamah (KMA announcement: 30 minutes after the calculated adhan time (ISNA, standard Asr))"
         )
         maghrib = titled(events, day, "Maghrib at KMA")
         assert datetime.fromisoformat(maghrib["start"]["dateTime"]) == calculated.maghrib.time + timedelta(minutes=5)
