@@ -12,6 +12,8 @@ Which time each prayer uses:
    usable. Otherwise the calculated time.
 3. Friday with Jumuah masjids: Dhuhr becomes Jumuah at the slot the
    Jumuah picker chose. If no slot is picked, Dhuhr follows the weekly grid.
+4. Announced times (masjid_times/announced.py) win over MAWAQIT for the
+   iqamah and Jumuah on their dates. Home prayers keep the adhan time.
 
 Busy times come first. It works in 2 passes:
 1. Masjid prayers: at the masjid only if the drive, the "how early"
@@ -44,6 +46,8 @@ from zoneinfo import ZoneInfo
 from app.event_times import trip
 from app.fit_prayers import Fit, PrayerWindow, busy_in, fit_prayer, is_empty, masjid_is_free, prayer_windows
 from app.jumuah import DEFAULT_JUMUAH_MINUTES, JumuahChoice, JumuahSlot, choose_jumuah
+from app.masjid_times.announced import AnnouncedDay, Rule
+from app.masjid_times.source import JumuahTime
 from app.masjid_times.store import MasjidTimes
 from app.models import Masjid
 from app.prayer_sync import ASR_NAMES, METHOD_NAMES, PRAYER_LENGTHS, PRAYER_TITLES, PRAYERS, event_end, source_description
@@ -250,12 +254,24 @@ def _masjid_events(
     return events
 
 
+def _announced(context: MasjidContext | None, local_date: date) -> AnnouncedDay | None:
+    return context.times.announced_day(local_date) if context and context.times else None
+
+
+def _jumuah_times(context: MasjidContext, local_date: date) -> tuple[tuple[JumuahTime, ...], bool]:
+    """This Friday's Jumuah times at one masjid, and whether they're announced ones."""
+    announced = _announced(context, local_date)
+    if announced and announced.jumuah:
+        return announced.jumuah, True
+    day = context.times.usable_day(local_date) if context.times else None
+    return (day.jumuah if day else ()), False
+
+
 def jumuah_slots(jumuah: list[MasjidContext], local_date: date) -> list[JumuahSlot]:
     """Every Jumuah slot from the user's Jumuah masjids on this Friday."""
     slots = []
     for context in jumuah:
-        day = context.times.usable_day(local_date) if context.times else None
-        for slot in day.jumuah if day else ():
+        for slot in _jumuah_times(context, local_date)[0]:
             slots.append(JumuahSlot(context.masjid.id, slot.order, at_local(local_date, slot.time, context.time_zone)))
     return slots
 
@@ -286,15 +302,20 @@ def _jumuah(
     """Friday's Jumuah events, or None when there's no Jumuah to put in.
 
     MAWAQIT only holds this week's Jumuah times, so only the coming Friday
-    gets them. Other Fridays follow the weekly grid for Dhuhr.
+    gets them. A later Friday gets Jumuah only when a masjid announced its
+    times for it. Other Fridays follow the weekly grid for Dhuhr.
     """
-    if local_date != upcoming_friday:
+    announced = any(_jumuah_times(c, local_date)[1] for c in jumuah)
+    if local_date != upcoming_friday and not announced:
         return None
     choice = choose(setup, local_date, jumuah, busy)
     if choice.window is None:
         return None
     where = next(c for c in jumuah if c.masjid.id == choice.window.slot.masjid_id)
-    source = f"{where.label} Jumuah ({where.times.source_label}, updated {_updated(where.times, user_zone)})"
+    if _jumuah_times(where, local_date)[1]:
+        source = f"{where.label} Jumuah ({where.times.announcement.label})"
+    else:
+        source = f"{where.label} Jumuah ({where.times.source_label}, updated {_updated(where.times, user_zone)})"
     # Only when the user's pick couldn't be used: it clashes, it isn't on this
     # Friday, or every Jumuah clashes. A Jumuah at the pick has no description.
     pick = setup.jumuah_pick
@@ -318,10 +339,41 @@ def _home_time(
     return calculated.time, source_description(calculated)
 
 
+def announced_iqamah(
+    rule: Rule, name: str, local_date: date, day: DailyPrayerTimes, main: MasjidContext, main_day
+) -> tuple[datetime, str]:
+    """An announced iqamah, and where it came from.
+
+    An offset counts from the masjid's adhan on MAWAQIT when its times are
+    usable, otherwise from the calculated adhan. Sunset is the Maghrib adhan,
+    since Maghrib starts at sunset. The minutes are added in real time
+    (UTC), so a clock change can't stretch or shrink them.
+    """
+    label = main.times.announcement.label
+    if rule.clock is not None:
+        return at_local(local_date, rule.clock, main.time_zone), f"{main.label} iqamah ({label})"
+    base_prayer = name if rule.base == "adhan" else "maghrib"
+    base_name = "adhan" if rule.base == "adhan" else "sunset"
+    if main_day is not None:
+        base = at_local(local_date, main_day.adhan[base_prayer], main.time_zone)
+        where = f"{main.label}'s {base_name} time from {main.times.source_label}"
+    else:
+        calculated: PrayerTime = getattr(day, base_prayer)
+        base = calculated.time
+        where = f"the calculated {base_name} time ({method_text(calculated)})"
+    zone = base.tzinfo
+    target = (base.astimezone(UTC) + timedelta(minutes=rule.minutes)).astimezone(zone)
+    minutes = f"{rule.minutes} minute{'s' if rule.minutes != 1 else ''}"
+    return target, f"{main.label} iqamah ({label}: {minutes} after {where})"
+
+
 def _masjid_time(
     name: str, local_date: date, day: DailyPrayerTimes, main: MasjidContext, main_day, user_zone: str
 ) -> tuple[datetime, str]:
     """A masjid prayer's target (the iqamah, or the calculated start), and where it came from."""
+    announced = _announced(main, local_date)
+    if announced and name in announced.iqamah:
+        return announced_iqamah(announced.iqamah[name], name, local_date, day, main, main_day)
     calculated: PrayerTime = getattr(day, name)
     iqamah = main_day.iqamah.get(name) if main_day else None
     if iqamah is not None:

@@ -1,13 +1,14 @@
 """Saving fetched masjid times, and reading them back for the calendar."""
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.masjid_times.announced import AnnouncedDay, Announcement, announcement_for
 from app.masjid_times.freshness import Freshness, freshness
 from app.masjid_times.source import PRAYERS, DayTimes, JumuahTime, get_source
 from app.models import MasjidDayTimes, MasjidSource
@@ -86,12 +87,18 @@ class MasjidTimes:
     # When a fetch last changed a time. Descriptions show this date.
     last_changed_at: datetime | None
     days: dict[date, DayTimes]
+    # Times the masjid announced that win over MAWAQIT on their dates (announced.py).
+    announcement: Announcement | None = field(default=None)
 
     def usable_day(self, local_date: date) -> DayTimes | None:
         """That day's times, or None if there are none or they're over 7 days old."""
         if not self.freshness.usable:
             return None
         return self.days.get(local_date)
+
+    def announced_day(self, local_date: date) -> AnnouncedDay | None:
+        """That day's announced times. Used whatever MAWAQIT's freshness, since they come from the repo."""
+        return self.announcement.day(local_date) if self.announcement else None
 
 
 def load_masjid_times(
@@ -117,5 +124,6 @@ def load_masjid_times(
             last_success_at=source.last_success_at,
             last_changed_at=source.last_changed_at,
             days={row.local_date: _day(row) for row in rows},
+            announcement=announcement_for(source.external_id, source.list_external_id),
         )
     return found
