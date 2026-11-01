@@ -211,6 +211,54 @@ docker compose exec backend python -m app.admin scan-area
 
    `list-masjids` shows each masjid's length, or "Jumuah length not set (45 min estimated)". Changing it updates the calendars of everyone who uses that masjid.
 
+### Announced times
+
+Use this when a masjid announces new times (on a poster, its website, or its own page) that its MAWAQIT page doesn't show yet. How it works is in [TECHNICAL.md](TECHNICAL.md#announced-times).
+
+1. Make a file for the masjid in `backend/app/masjid_times/announced/`, like `kma.json`. One file per masjid. To add to a masjid that has a file, add entries to it.
+
+   ```json
+   {
+     "label": "KMA announcement",
+     "mawaqit_ids": ["id/9793", "kma-masjid-ottawa"],
+     "entries": [
+       {
+         "note": "Daily iqamah after the clocks fall back",
+         "start": "2026-11-01",
+         "end": "2026-11-30",
+         "iqamah": {
+           "fajr": "adhan + 15",
+           "dhuhr": "12:30",
+           "asr": "15:15",
+           "maghrib": "sunset + 5",
+           "isha": "19:40"
+         }
+       },
+       {"start": "2026-11-06", "end": "2026-11-06", "jumuah": ["11:30", "12:40", "13:40"]}
+     ]
+   }
+   ```
+
+   | Key | What it's for |
+   |---|---|
+   | `label` | The source shown on Settings and saved with each event, like "KMA announcement" |
+   | `mawaqit_ids` | The masjid's MAWAQIT IDs, as `list-masjids` shows them. `id/9793` for a share link, the page name for a page link |
+   | `start`, `end` | The first and last date, both included, like `"2026-11-01"` |
+   | `iqamah` | Any of the 5 prayers. A 24-hour clock time (`"19:40"`), `"adhan + 15"`, or `"sunset + 5"`. Prayers left out keep MAWAQIT's iqamah |
+   | `jumuah` | Up to 3 clock times, earliest first, used on every Friday from `start` to `end` |
+   | `note` | Optional. Ignored by the app, for whoever reviews the PR |
+
+2. Copy the times from the masjid's own announcement only. Never guess one.
+3. Run `pytest tests/test_announced.py`. If a file has a mistake (a bad time, an end before a start, or 2 entries giving the same prayer on the same date), the whole file is skipped and the backend logs `Announced times in kma.json weren't used: ...`.
+4. Open a PR, merge it, and run `deploy/update.sh`. The backend and the worker read the folder when they start.
+5. To update calendars straight away instead of at the nightly job:
+
+   ```bash
+   dc exec worker python -m app.worker run-now --force
+   ```
+
+6. Once the masjid's MAWAQIT page catches up, the entries can stay until their end date, or be removed in a PR.
+
 ## Drive times
 
 1. Sign up at https://account.heigit.org/signup and copy your API key.
@@ -448,11 +496,11 @@ export DATABASE_URL=postgresql://prayerfit:change-me@localhost:5432/prayerfit
 pytest
 ```
 
-Use the same user, password, and database name as in your `.env`. You should see `942 passed`.
+Use the same user, password, and database name as in your `.env`. You should see `976 passed`.
 
 The tests never call the real Google, Photon, MAWAQIT, or OpenRouteService. They use fakes (`tests/fake_google.py`, `tests/fake_photon.py`, `tests/fake_mawaqit.py`, and `tests/fake_ors.py`) and fake keys, so no real settings are needed.
 
-To run only the tests that don't need the database: `pytest -m "not database"` (`461 passed, 481 deselected`).
+To run only the tests that don't need the database: `pytest -m "not database"` (`478 passed, 498 deselected`).
 
 When you're done, stop Postgres with `docker compose down`.
 
