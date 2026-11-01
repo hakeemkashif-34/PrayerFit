@@ -1,5 +1,11 @@
 # PrayerFit
 
+## Demo
+
+A demo of setting up PrayerFit and connecting it to Google Calendar.
+
+https://github.com/user-attachments/assets/692cedce-c39d-45ee-bee5-ea631ed26695
+
 ## The problem
 
 Is it ever annoying to keep track of how your prayer times shift over time?
@@ -14,8 +20,10 @@ Look no further. PrayerFit does this.
 
 It syncs your daily prayers and masjid times to your Google Calendar, based on your location, and plans them around your day.
 
+It's live at prayerfit.me and has over 40 users in Ottawa.
+
 1. Prayer times calculated for your address, always with ISNA and standard Asr.
-2. Your masjid's iqamah and Jumuah times, read from its public MAWAQIT page, with calculated times when it can't be read.
+2. Your masjid's iqamah and Jumuah times, read from its public MAWAQIT page, or from the masjid's own announcement when MAWAQIT hasn't caught up yet. Calculated times are used when neither can be read.
 3. A separate "Prayers" calendar with the next 14 days, so your other events are never touched. Every event is private.
 4. A drive block before each masjid prayer, so you know when to leave.
 5. Prayers that move around your classes and meetings, re-checked every 5 minutes.
@@ -62,8 +70,6 @@ else:
 For example, a class from 3:00 to 4:21 covers the start of Asr, so Asr moves to 4:21, right after class.
 
 More detail, with real examples: [Moving prayers around your calendar](docs/TECHNICAL.md#moving-prayers-around-your-calendar).
-
-<!-- Demo video goes here -->
 
 ## How it's built
 
