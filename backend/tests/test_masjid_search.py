@@ -214,3 +214,26 @@ def test_the_jumuah_question_shows_masjid_ar_rahmahs_2_start_times(signed_in, db
         ("1st Jumuah", "12:00"), ("2nd Jumuah", "13:30"),
     ]
     assert data["no_times"] == []
+
+
+# ---- Masjid Bilal: the list's name, not MAWAQIT's ----
+
+
+def test_masjid_bilal_shows_its_list_name_in_search_and_titles(signed_in, db, fake_photon, fake_mawaqit):
+    from app.user_settings import masjid_label
+    from tests.mawaqit_pages import conf, page
+
+    bilal = next(r for r in read_file() if r.external_id == "id/48883")
+    put_on_list(db, Listed(bilal.external_id, bilal.name, bilal.latitude, bilal.longitude, bilal.short_name, bilal.address))
+    fake_mawaqit.pages["id/48883"] = page(conf())
+    # OpenStreetMap's name for the same building, a few metres away. It's the same masjid, so it's dropped.
+    fake_photon.add_masjid(
+        229623196, "Masjid Bilal, Islamic Society of Cumberland", bilal.latitude + 3 / 111_195, bilal.longitude, city="Ottawa"
+    )
+    assert [s["label"] for s in search(signed_in, "bilal")] == ["Masjid Bilal"]
+    picked = pick(signed_in, "bilal", "Masjid Bilal")
+    with Session(db) as session:
+        masjid = session.get(Masjid, picked["id"])
+        # Event titles use this, like "Isha at Masjid Bilal", unless the user set a short name.
+        assert masjid_label(masjid, None) == "Masjid Bilal"
+        assert masjid.address == "4509 Innes Road, Ottawa"
