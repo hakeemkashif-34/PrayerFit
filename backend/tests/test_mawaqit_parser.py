@@ -79,8 +79,9 @@ def test_months_and_dates_come_from_local_dates():
         (["05:30", "07:00", "12:30", "15:30", "18:00", None], None, "isn't a clock time"),
         (["05:30", "07:00", "12:30", "11:00", "18:00", "19:30"], None, "out of order"),
         (None, ["+20", "12:00", "+10", "+5", "20:15"], "before adhan"),
-        (None, ["+20", "13:00", "+10", "+5", "21:15"], "more than 90 minutes"),
-        (None, ["+91", "13:00", "+10", "+5", "20:15"], "more than 90 minutes"),
+        (None, ["+20", "13:00", "+10", "+5", "22:01"], "isha iqamah is more than 150 minutes"),
+        (None, ["+91", "13:00", "+10", "+5", "20:15"], "fajr iqamah is more than 90 minutes"),
+        (None, ["+20", "13:00", "+91", "+5", "20:15"], "asr iqamah is more than 90 minutes"),
         (None, ["+20", "13:00", "+10", "+5"], "isn't 5 values"),
         (None, ["soon", "13:00", "+10", "+5", "20:15"], "isn't a clock time"),
     ],
@@ -89,6 +90,14 @@ def test_impossible_times_reject_the_whole_page(times, iqamah, reason):
     data = set_day(conf(), 10, 27, times=times, iqamah=iqamah)
     with pytest.raises(SourceInvalid, match=reason):
         read(data)
+
+
+@pytest.mark.parametrize("isha_iqamah", ["21:00", "+150"])
+def test_isha_iqamah_can_be_up_to_150_minutes_after_adhan(isha_iqamah):
+    # Isha adhan is 19:30 on a made-up page, so 21:00 is 90 minutes after and +150 is 22:00.
+    data = set_day(conf(), 10, 27, iqamah=["+20", "13:00", "+10", "+5", isha_iqamah])
+    day = next(d for d in read(data) if d.local_date == date(2026, 10, 27))
+    assert day.iqamah["isha"] == (time(21, 0) if isha_iqamah == "21:00" else time(22, 0))
 
 
 def test_a_missing_day_rejects_the_page():
