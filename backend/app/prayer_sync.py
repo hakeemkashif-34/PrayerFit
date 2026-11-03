@@ -126,6 +126,11 @@ def google_event(row: PrayerEvent) -> dict:
     # and aren't sent again.
     if row.color_id:
         event["colorId"] = row.color_id
+    # Only masjid prayers have one. Only added when set, so other events hash the
+    # same as before and aren't sent again. Updates replace the whole event, so a
+    # prayer that moves home loses its location in Google too.
+    if row.location:
+        event["location"] = row.location
     # Always sent, and never the calendar's defaults: no setting means no reminder at all.
     event["reminders"] = {
         "useDefault": False,

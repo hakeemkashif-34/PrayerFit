@@ -38,6 +38,7 @@ Masjid prayer blocks (Jumuah too) never get one. None means no reminder at all.
 """
 
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
@@ -88,6 +89,8 @@ class PlannedEvent:
     reminder_minutes: int | None = None
     # "normal", "moved", or "clash". Saved, but not sent to Google.
     fit: str = "normal"
+    # Masjid prayer blocks only. None for everything else (see masjid_location).
+    location: str | None = None
 
     def values(self) -> dict:
         return {
@@ -102,6 +105,7 @@ class PlannedEvent:
             "color_id": self.color_id,
             "reminder_minutes": self.reminder_minutes,
             "fit": self.fit,
+            "location": self.location,
         }
 
 
@@ -249,9 +253,28 @@ def _masjid_events(
             description=description,
             color_id=setup.prayer_color_id,
             fit=fit,
+            location=masjid_location(where.masjid),
         )
     )
     return events
+
+
+# A Canadian postal code, like "K1V 2P1", with the comma or space before it.
+POSTAL_CODE = re.compile(r",?\s*\b[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d\b")
+
+
+def masjid_location(masjid: Masjid) -> str | None:
+    """A masjid prayer's Google Calendar location: its name and public address.
+
+    "Barrhaven Islamic Centre, 3971 Greenbank Road, Ottawa", or just the
+    name when no address is saved. A postal code is taken out. A masjid a
+    user picked by typing an address gets none: that address is only what
+    one user typed, so it isn't a public address and could be close to home.
+    """
+    if masjid.source == "user":
+        return None
+    address = POSTAL_CODE.sub("", masjid.address).strip(" ,") if masjid.address else None
+    return ", ".join(part for part in (masjid.name, address) if part) or None
 
 
 def _announced(context: MasjidContext | None, local_date: date) -> AnnouncedDay | None:
