@@ -1825,3 +1825,34 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
 6. **Strict checks**: a bad time, an end before a start, Jumuah times out of order, Jumuah with no Friday in the range, or 2 entries giving the same prayer on the same date refuses the whole file. A half-read file could give a wrong time, and a wrong time means a missed prayer. The error is logged, and that masjid falls back to MAWAQIT as normal.
 7. **Settings**: the masjid's line adds "Iqamah and Jumuah times from the KMA announcement are used from Nov 1 to Nov 30, 2026", so the user can see where the times came from.
 8. **Tests** (`test_announced.py`): a date inside the range, a date outside it, home prayers keeping the adhan, offsets across the Nov 1 clock change from MAWAQIT and from calculated times, the drive block, a busy announced iqamah moving home, the Jumuah pick on all 4 Fridays, a busy pick using the earliest announced Jumuah, a later Friday, broken and missing files, and every check on a bad entry. Like the real MAWAQIT list, the real announcement folder is off in every other test (`no_real_announcements` in `conftest.py`), and `@pytest.mark.real_announcements` turns it on.
+
+### 23. KMA's times stopped being read, and notices shown twice
+
+1. **The problem**: from October 31, Settings said "KMA's times couldn't be confirmed since Oct 31, 2026". Every read of KMA's MAWAQIT page failed with `2026-11-05 isha iqamah is more than 90 minutes after adhan`.
+   a) It wasn't MAWAQIT blocking the server, the clock change, or a new page format. The page still read fine.
+   b) KMA updated its MAWAQIT page to match its announcement (section 22): Isha at 7:40 pm all of November. On Nov 5 the Isha adhan is 6:09 pm, so the iqamah is 91 minutes later. My check in `validate.py` said 90 at most.
+   c) One bad day rejected the whole 30-day read, so nothing was saved after October 31.
+2. **Isha gets 150 minutes**: many masjids fix Isha at one clock time all winter while the adhan keeps getting earlier. KMA's widest gap this year is under 150 minutes. The other 4 prayers keep 90, since a bigger gap there is more likely a typo. `max_gap()` in `validate.py` picks the limit.
+3. **A bad day is skipped on its own** (`read_days()` in `mawaqit.py`):
+   a) Each day is checked by itself. A day that fails goes in `skipped` with a reason that names the date and the prayer. The days that pass are saved as normal.
+   b) A problem with the page as a whole still rejects all of it: no confData, a missing month, or a bad Jumuah time. So does every day failing.
+   c) A skipped day isn't saved, so it keeps its last good row. `load_masjid_times` in `store.py` ignores a row older than 7 days (by `fetched_at`). That's the same 7-day rule as a failed read, so after a week a skipped day gets calculated times.
+   d) The read still counts as a success, so the masjid stays fresh. `last_error` keeps "Skipped 1 day: ..." so I can still see it.
+4. **Logging**: every log line now names the masjid's MAWAQIT page, like `MAWAQIT page kma-masjid-ottawa failed: status 403 Forbidden after 0.4 s`. A failed HTTP read logs the status and its reason, plus "Cloudflare challenge" when Cloudflare's `cf-mitigated` header is there. The page name is public, so it's safe to log. Addresses and user details still never are.
+5. **/stats**: each masjid shows "Last read: ..." with its `last_error`, so I can see a failure without SSH. `python -m app.admin stats` prints the same.
+6. **Reading again after a fix**: after 3 failures in a row a masjid waits 24 hours. `fetch-mawaqit --ignore-wait` reads it now anyway. It's only for after I deploy a fix for my own bug, never after a 403 or 429, which is MAWAQIT asking the app to slow down.
+7. **Notices said once**: the stale-times notice showed at the top of Settings and again under Main masjid in different words.
+   a) The notice now sits under "every 5 minutes", since both are about when the calendar updates. On a phone it comes before the Open Google Calendar button.
+   b) Main masjid only says when MAWAQIT was last read, like "Times from MAWAQIT, last read Oct 31, 2026".
+   c) I checked every page for other messages shown twice, and fixed 4 more:
+      - Settings: the busy-access banner hides when a save already says "Sign in again", since one sign-in fixes both.
+      - Settings: the Jumuah editor's note is now "No Jumuah times to pick from for KMA right now." Main masjid and the notice already say why.
+      - Setup: pressing Next with no location doesn't add "Pick your location from the list." when the hint under the masjid search already says it. It moves to the address box instead.
+      - Masjid search: no results says "Check the spelling." The line under the box already says "Can't find it? Type its address."
+      - /stats: with nobody signed up, it only says "Nobody has signed up yet.", not "PrayerFit has 0 users" too.
+8. **Tests**:
+   a) `test_mawaqit_kma_winter.py` reads a saved copy of KMA's page from November 3 (`fixtures/mawaqit/kma_page_2026-11-03.html`). It checks the week the clocks fell back, Nov 5's 91-minute Isha, and every day of the year.
+   b) `test_mawaqit_parser.py` checks the 150 and 90 minute limits, that each kind of bad day is skipped on its own, and that every day failing rejects the page.
+   c) `test_mawaqit_scheduler.py` checks that a bad day keeps its old times while the next day gets its new one, the log lines, and that a skipped day falls back after 7 days.
+   d) `test_mawaqit_download.py` checks the logged status and reason for 403, 429, 503, and a Cloudflare challenge. `test_admin.py` checks `--ignore-wait`.
+   e) Playwright checks the notice shows exactly once on Settings, under "every 5 minutes", on desktop and phone, plus a test for each of the other duplicates.
