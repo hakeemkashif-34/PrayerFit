@@ -120,7 +120,7 @@ class SettingsOut(BaseModel):
     # Popup reminders, minutes before the event, 0 to 60. 0 means no notification.
     leave_reminder_minutes: int = DEFAULT_LEAVE_REMINDER_MINUTES
     home_reminder_minutes: int = DEFAULT_HOME_REMINDER_MINUTES
-    # "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
+    # "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown once, under "every 5 minutes" on Settings.
     masjid_notices: list[str] = []
 
 
@@ -155,10 +155,13 @@ def _mawaqit_status(source: MasjidSource, now: datetime, time_zone: str) -> str:
     age = freshness(source.last_success_at, now)
     if age is Freshness.NEVER:
         return "Linked to MAWAQIT. Its times haven't been read yet"
+    # The notice under "every 5 minutes" explains a stale read and what the
+    # calendar uses, so this only says when MAWAQIT was last read. Saying it
+    # in both places showed the same message twice.
     if age is Freshness.STALE:
-        return f"MAWAQIT times couldn't be confirmed since {date_text(source.last_success_at, time_zone)}, so the last times read are used"
+        return f"Times from MAWAQIT, last read {date_text(source.last_success_at, time_zone)}"
     if age is Freshness.TOO_OLD:
-        return f"MAWAQIT times couldn't be confirmed since {date_text(source.last_success_at, time_zone)}, so calculated times are used"
+        return f"Linked to MAWAQIT, last read {date_text(source.last_success_at, time_zone)}"
     changed = source.last_changed_at or source.last_success_at
     return f"Times from MAWAQIT, updated {date_text(changed, time_zone)}"
 

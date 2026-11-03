@@ -56,7 +56,7 @@ export type Settings = {
   // Google Calendar popup reminders, in minutes before the event, 0 to 60. 0 means no notification.
   leave_reminder_minutes: number;
   home_reminder_minutes: number;
-  // "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
+  // "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown once, under "every 5 minutes" on Settings.
   masjid_notices: string[];
 };
 

@@ -157,7 +157,7 @@ def test_the_masjid_shows_where_its_times_come_from(set_up, db, http, fake_mawaq
     assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == "Linked to MAWAQIT. Its times haven't been read yet"
     fetch(db, http, NOW - timedelta(days=2))
     assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == (
-        "MAWAQIT times couldn't be confirmed since Oct 22, 2026, so the last times read are used"
+        "Times from MAWAQIT, last read Oct 22, 2026"
     )
     # Read again 2 days later, the page now covers Friday Oct 30's Jumuah, which is a change.
     fetch(db, http, NOW)
@@ -166,7 +166,7 @@ def test_the_masjid_shows_where_its_times_come_from(set_up, db, http, fake_mawaq
         session.get(MasjidSource, kma).last_success_at = NOW - timedelta(days=8)
         session.commit()
     assert set_up.get("/settings").json()["main_masjid"]["iqamah_status"] == (
-        "MAWAQIT times couldn't be confirmed since Oct 16, 2026, so calculated times are used"
+        "Linked to MAWAQIT, last read Oct 16, 2026"
     )
 
 
