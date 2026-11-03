@@ -49,7 +49,16 @@ export function RequiredPage({ settings, onChange, onNext }: Props) {
   }
 
   async function next() {
-    if (!hasLocation) return setError("Pick your location from the list.");
+    if (!hasLocation) {
+      // The masjid section already says "Pick your location first", so take them
+      // to the address box instead of saying it twice. "I pray at home" hides that line.
+      if (choice !== "home") {
+        setError("");
+        document.querySelector<HTMLInputElement>('section[aria-labelledby="location-title"] input')?.focus();
+        return;
+      }
+      return setError("Pick your location from the list.");
+    }
     if (choice === null || (choice === "masjid" && !picked)) {
       return setError("Pick your masjid, or choose I pray at home.");
     }
