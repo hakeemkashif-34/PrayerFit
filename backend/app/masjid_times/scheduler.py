@@ -105,17 +105,20 @@ def _finish(db: Session, job_id: str, status: str, now: datetime, error: str | N
     db.commit()
 
 
-def run_fetch(db: Session, http: httpx2.Client, masjid_id: uuid.UUID, now: datetime, force: bool = False) -> FetchResult:
+def run_fetch(
+    db: Session, http: httpx2.Client, masjid_id: uuid.UUID, now: datetime, force: bool = False, ignore_wait: bool = False
+) -> FetchResult:
     """Fetch one masjid's times, if this block's job hasn't run yet.
 
     force runs it again in the same block, for the admin command. It still
-    respects a 24-hour wait after a block.
+    respects a 24-hour wait after a block, unless ignore_wait is set too:
+    that's for right after I deploy a fix, never for a masjid that sent a 403 or 429.
     """
     source_row = db.get(MasjidSource, masjid_id)
     if source_row is None:
         return FetchResult("", "skipped", message="This masjid isn't linked to a source.")
     job_id = fetch_job_id(source_row.source, masjid_id, now)
-    if source_row.retry_after is not None and source_row.retry_after > now:
+    if source_row.retry_after is not None and source_row.retry_after > now and not ignore_wait:
         return FetchResult(job_id, "skipped", message=f"Waiting until {source_row.retry_after:%Y-%m-%d %H:%M} UTC.")
     job = _save_job(db, job_id, masjid_id)
     if force and job.status in ("done", "failed", "blocked"):

@@ -201,6 +201,14 @@ docker compose exec backend python -m app.admin scan-area
 
    Then `docker compose exec worker python -m app.worker run-now --force` to update calendars straight away.
 
+   After 3 failed reads in a row, or a 403 or 429 from MAWAQIT, the masjid waits 24 hours before the next read, and this command says `skipped. Waiting until ...`. If I just deployed a fix for my own bug, `--ignore-wait` reads it now anyway:
+
+   ```bash
+   docker compose exec backend python -m app.admin fetch-mawaqit --masjid <masjid id> --ignore-wait
+   ```
+
+   Don't use it after a 403 or 429. That means MAWAQIT asked the app to slow down. `python -m app.admin stats` and the /stats page show each masjid's last read error.
+
 4. To stop using a page: `python -m app.admin unlink-mawaqit --masjid <masjid id>`. Calendars go back to calculated times, and the masjid won't be linked automatically again. Linking it by hand undoes that.
 
 5. To set how long a masjid's Jumuah is, from the khutbah to the end of the prayer (whole minutes from 15 to 90):

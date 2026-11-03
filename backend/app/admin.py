@@ -4,7 +4,7 @@ these, so a user can't link the wrong page for everyone.
     python -m app.admin list-masjids
     python -m app.admin link-mawaqit --masjid <masjid id> --url <MAWAQIT page link>
     python -m app.admin unlink-mawaqit --masjid <masjid id>
-    python -m app.admin fetch-mawaqit --masjid <masjid id>
+    python -m app.admin fetch-mawaqit --masjid <masjid id> [--ignore-wait]
     python -m app.admin add-mawaqit <MAWAQIT link> --name "<name>" --lat <latitude> --lon <longitude> [--short-name BIC --address "<address>"]
     python -m app.admin scan-area [--lat 45.4215 --lon -75.6972 --km 40]
     python -m app.admin set-jumuah-length --masjid <masjid id> --minutes 40
@@ -182,6 +182,8 @@ def main(argv: list[str] | None = None) -> None:
     unlink.add_argument("--masjid", required=True)
     fetch = commands.add_parser("fetch-mawaqit", help="read a linked masjid's page now")
     fetch.add_argument("--masjid", required=True)
+    # Only after deploying a fix for my own bug. A 403 or 429 means MAWAQIT asked the app to wait.
+    fetch.add_argument("--ignore-wait", action="store_true", help="read now, even during the 24-hour wait after failures")
     length = commands.add_parser("set-jumuah-length", help="how long a masjid's Jumuah takes, 15 to 90 minutes")
     length.add_argument("--masjid", required=True)
     # A string, so "40.5" gets this command's own message instead of argparse's.
@@ -222,7 +224,7 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "fetch-mawaqit":
             masjid = _masjid(db, args.masjid)
             with new_http_client() as http:
-                result = run_fetch(db, http, masjid.id, now, force=True)
+                result = run_fetch(db, http, masjid.id, now, force=True, ignore_wait=args.ignore_wait)
             print(f"{result.status}{'. ' + result.message if result.message else ''}")
             if result.status not in ("done", "skipped"):
                 sys.exit(1)
