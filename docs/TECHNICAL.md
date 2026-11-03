@@ -90,6 +90,8 @@ It has 25 masjids around Ottawa: 24 on MAWAQIT, and Masjid ar-Rahmah (AMA), read
 
 The backend and the worker load the file every time they start. Loading it again never adds a copy. If I fix a name or a location in the file, the saved one changes too.
 
+A masjid picked from OpenStreetMap that's linked to a list entry uses the list's name in titles and Settings, like "Masjid Bilal" instead of OpenStreetMap's "Masjid Bilal, Islamic Society of Cumberland". Its address stays OpenStreetMap's, and a user's own short name always wins.
+
 ### Masjid search in setup
 
 Setup searches my list first, then Photon (`backend/app/masjid_search.py`). I built it this way because a user typed "Barrhaven Islamic Centre" and it didn't show up. Photon only finds what OpenStreetMap has, under the name and tags it has there, and it doesn't forgive typos well.

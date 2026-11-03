@@ -217,3 +217,75 @@ def test_a_fixed_address_reaches_masjids_already_picked_from_the_list(db, fake_g
         assert session.get(Masjid, kma).address == "351 Sandhill Road, Ottawa"
         # The address is the masjid prayers' location, so the user's calendar is updated.
         assert [j.reason for j in session.query(UpdateJob)] == ["masjid list"]
+
+
+# ---- OpenStreetMap masjids linked to the list take the list's name ----
+
+
+def bilal_on_list(db):
+    with Session(db) as session:
+        row = ListRow("id/48883", "Masjid Bilal", 45.4315 + 3 / 111_195, -75.6972, None, "4509 Innes Road, Ottawa")
+        save_rows(session, [row], "file", NOW)
+        session.commit()
+
+
+def test_an_openstreetmap_masjid_linked_to_the_list_takes_the_list_name(db, fake_google):
+    from app.masjid_times.auto_link import rematch_picked, update_picked_list_masjids
+    from app.models import Masjid, UpdateJob, UserSettings
+
+    # Picked from OpenStreetMap before Masjid Bilal was on the list. The user typed a short name.
+    add_user(fake_google, db, "user-a", masjid_name="Masjid Bilal, Islamic Society of Cumberland", short_name="Bilal")
+    bilal = masjid_id(db, "Masjid Bilal, Islamic Society of Cumberland")
+    with Session(db) as session:
+        session.get(Masjid, bilal).address = "4509 Innes Road, Ottawa"
+        session.execute(UpdateJob.__table__.delete())
+        session.commit()
+    bilal_on_list(db)
+    with Session(db) as session:
+        rematch_picked(session, NOW)
+        assert update_picked_list_masjids(session, NOW) == 1
+    with Session(db) as session:
+        masjid = session.get(Masjid, bilal)
+        # Only the name changes. The address is still OpenStreetMap's, and the short name is the user's.
+        assert (masjid.name, masjid.address, masjid.source) == ("Masjid Bilal", "4509 Innes Road, Ottawa", "openstreetmap")
+        assert session.query(UserSettings).one().main_masjid_short_name == "Bilal"
+        # Titles change, so the calendar is updated.
+        assert [j.reason for j in session.query(UpdateJob)] == ["masjid list"]
+    with Session(db) as session:
+        assert update_picked_list_masjids(session, NOW) == 0
+
+
+def test_an_unlinked_or_typed_in_masjid_keeps_its_name(db, fake_google):
+    from app.masjid_times.auto_link import update_picked_list_masjids
+    from app.models import Masjid
+
+    bilal_on_list(db)
+    with Session(db) as session:
+        far = Masjid(source="openstreetmap", osm_type="node", osm_id=1, name="Far Masjid", latitude=45.0, longitude=-75.0)
+        typed = Masjid(source="user", name=None, address="20 Somewhere Crescent, Ottawa", latitude=45.4315, longitude=-75.6972)
+        session.add_all([far, typed])
+        session.commit()
+        assert update_picked_list_masjids(session, NOW) == 0
+        assert (far.name, typed.name) == ("Far Masjid", None)
+
+
+def test_picking_it_again_from_openstreetmap_keeps_the_list_name(db, fake_google, http):
+    from app.masjid_times.auto_link import link_and_fetch
+    from app.models import Masjid
+
+    bilal_on_list(db)
+    add_user(fake_google, db, "user-a", masjid_name="Masjid Bilal, Islamic Society of Cumberland")
+    bilal = masjid_id(db, "Masjid Bilal, Islamic Society of Cumberland")
+    with Session(db) as session:
+        masjid = session.get(Masjid, bilal)
+        # Picking it links it to the list and takes the list's name straight away.
+        link_and_fetch(session, http, masjid, NOW)
+    with Session(db) as session:
+        assert session.get(Masjid, bilal).name == "Masjid Bilal"
+        # Another pick saves OpenStreetMap's name again, then it's set back.
+        masjid = session.get(Masjid, bilal)
+        masjid.name = "Masjid Bilal, Islamic Society of Cumberland"
+        session.commit()
+        link_and_fetch(session, http, masjid, NOW)
+    with Session(db) as session:
+        assert session.get(Masjid, bilal).name == "Masjid Bilal"

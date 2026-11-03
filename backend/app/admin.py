@@ -113,17 +113,18 @@ def add_mawaqit(
         raise SystemExit(f"Not added: {error}.")
     changed = save_rows(db, [row], "admin", now)
     db.commit()
-    if changed:
-        update_picked_list_masjids(db, now)
     if not changed:
         lines = [f"{row.name} ({row.external_id}) is already on the list, with the same name and location."]
     else:
         lines = [f"Saved {row.name} ({row.external_id}) at {row.latitude}, {row.longitude}."]
     new_links = rematch_picked(db, now)
+    # Named as they were picked, before they take the list's name below.
     lines += [
         f"Linked {new.masjid.name or new.masjid.id} to {new.found.entry.external_id} ({new.found.distance_m} m)."
         for new in new_links
     ]
+    # After linking, so a masjid linked just now takes the list's name too.
+    update_picked_list_masjids(db, now)
     lines.append("Add the same line to app/data/mawaqit_masjids.csv, so it's kept if the database is ever rebuilt.")
     return lines
 
