@@ -309,6 +309,8 @@ def days_from(data: dict, today: date, days: int) -> list[DayTimes]:
 class MawaqitSource:
     name = "mawaqit"
     label = "MAWAQIT"
+    # A page has the whole year, so a read covers the coming weeks.
+    keeps_future_days = True
 
     def fetch(self, http: httpx2.Client, external_id: str, today: date, days: int) -> FetchedDays:
         data = conf_data(download(http, external_id))

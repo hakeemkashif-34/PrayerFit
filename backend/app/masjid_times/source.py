@@ -1,8 +1,8 @@
 """The small interface every masjid times source follows.
 
-The scheduler only talks to MasjidTimesSource. Adding another source later
-(a masjid's own website, say) means writing one more adapter and adding it
-to SOURCES, without touching the scheduler. If one source breaks, only the
+The scheduler only talks to MasjidTimesSource. Each source is one adapter
+in get_source(): MAWAQIT (mawaqit.py) and Masjid ar-Rahmah's own website
+(mymasjid.py). If one source breaks, only the
 masjids linked to it fall back to calculated times.
 """
 
@@ -55,6 +55,20 @@ class SkippedDay:
 
 
 @dataclass(frozen=True)
+class UpcomingJumuah:
+    """Jumuah times a source publishes for the coming Friday, saved apart from the day rows.
+
+    A source that only shows today (mymasjid.ca) has no row for Friday until
+    Friday comes, but it shows the Jumuah times every day. Saving them here
+    lets the Jumuah question and the calendar use them before then.
+    """
+
+    friday: date
+    # Empty when the source says the masjid has no Jumuah times.
+    slots: tuple[JumuahTime, ...]
+
+
+@dataclass(frozen=True)
 class FetchedDays:
     """What one read gives: the days that passed every check, and the ones that didn't.
 
@@ -64,6 +78,8 @@ class FetchedDays:
 
     days: list[DayTimes]
     skipped: list[SkippedDay] = field(default_factory=list)
+    # Only from a source that keeps Jumuah apart from its days. None means "not read this time".
+    jumuah: UpcomingJumuah | None = None
 
 
 class SourceError(Exception):
@@ -86,6 +102,9 @@ class MasjidTimesSource(Protocol):
     # Saved in masjid_sources.source and shown in event descriptions.
     name: str
     label: str
+    # True when one read covers the coming weeks (MAWAQIT). False when it's
+    # today only (mymasjid.ca), so days not read yet use calculated times.
+    keeps_future_days: bool
 
     def fetch(self, http: httpx2.Client, external_id: str, today: date, days: int) -> FetchedDays:
         """Times for today and the next days - 1 local dates.
@@ -98,6 +117,7 @@ class MasjidTimesSource(Protocol):
 def get_source(name: str) -> MasjidTimesSource:
     # Imported here so adapters can import this module without a loop.
     from app.masjid_times.mawaqit import MawaqitSource
+    from app.masjid_times.mymasjid import MyMasjidSource
 
-    sources: dict[str, MasjidTimesSource] = {"mawaqit": MawaqitSource()}
+    sources: dict[str, MasjidTimesSource] = {"mawaqit": MawaqitSource(), "mymasjid": MyMasjidSource()}
     return sources[name]
