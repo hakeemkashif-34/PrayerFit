@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app.db import get_engine
 from app.http_client import new_http_client
 from app.jumuah import DEFAULT_JUMUAH_MINUTES
-from app.masjid_times.auto_link import rematch_picked
+from app.masjid_times.auto_link import rematch_picked, update_picked_list_masjids
 from app.masjid_times.mawaqit import BadLink, external_id_from_link
 from app.masjid_times.mawaqit_list import check_row, listed, save_rows
 from app.masjid_times.scan import (
@@ -113,6 +113,8 @@ def add_mawaqit(
         raise SystemExit(f"Not added: {error}.")
     changed = save_rows(db, [row], "admin", now)
     db.commit()
+    if changed:
+        update_picked_list_masjids(db, now)
     if not changed:
         lines = [f"{row.name} ({row.external_id}) is already on the list, with the same name and location."]
     else:

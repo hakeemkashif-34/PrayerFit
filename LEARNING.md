@@ -1899,5 +1899,8 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
 4. **Saving it**: `prayer_events.location` (migration `0018`). `google_event()` only adds `location` when it's set, so home events hash the same as before and aren't sent again.
 5. **Changes**: when a prayer moves from the masjid to home, the planned event has no location, so the row changes and is sent again. Updates are a PUT that replaces the whole event, so Google drops the old location too. Back to the masjid adds it again.
 6. **Existing events**: adding the location changes each future masjid prayer's hash, so the next update sends those again. Rows that already started are never updated (`save_window()` only changes rows that start after now), so past events keep what they had.
-7. **Drive blocks**: unchanged for now. They have no location.
+7. **Drive blocks**: they have no location, on purpose.
+9. **List addresses**: most list masjids had no address, so their location was just the name. I added public addresses to `mawaqit_masjids.csv` from OpenStreetMap, only where OpenStreetMap has a Muslim place of worship with a matching name at the list's saved point (way or node checked with Nominatim). MAWAQIT pages don't include an address.
+   a) A masjid already picked from the list keeps the address it was saved with, so `update_picked_list_masjids()` in `auto_link.py` copies each entry's name and address onto those masjids when the list changes, and queues a calendar update for their users.
+   b) Masjids I couldn't confirm stay name only. I didn't guess any address.
 8. **Tests** (`test_event_location.py`): the location text for each kind of masjid, masjid and Jumuah events, home events with none, a masjid prayer that moves and loses its location, a clash, a prayer going from the masjid to home and back, and the first update after this change sending only future masjid prayers, never past ones.

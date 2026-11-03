@@ -22,7 +22,8 @@ from app.masjid_times.freshness import Freshness, freshness
 from app.masjid_times.match import Listed, Match, match
 from app.masjid_times.mawaqit_list import listed, read_file, save_rows
 from app.masjid_times.scheduler import run_fetch
-from app.models import Masjid, MasjidSource, UserSettings
+from app.models import Masjid, MasjidSource, MawaqitListEntry, UserSettings
+from app.update_jobs import queue_update, users_of_masjid
 
 logger = logging.getLogger("app.masjid_times")
 
@@ -91,12 +92,35 @@ def rematch_picked(db: Session, now: datetime) -> list[NewLink]:
     return new_links
 
 
+def update_picked_list_masjids(db: Session, now: datetime) -> int:
+    """Copy each list entry's name and address onto masjids picked from it. Commits.
+
+    A list masjid's row is saved when someone first picks it. Without this,
+    a name or address I fix in the file would only reach new picks. Users of
+    a masjid that changed get a calendar update, since the address is each
+    masjid prayer's location. Returns how many masjids changed.
+    """
+    changed = 0
+    for masjid, entry in db.execute(
+        select(Masjid, MawaqitListEntry).join(MawaqitListEntry, MawaqitListEntry.external_id == Masjid.list_external_id)
+    ):
+        if (masjid.name, masjid.address) == (entry.name, entry.address):
+            continue
+        masjid.name, masjid.address = entry.name, entry.address
+        changed += 1
+        for user_id in users_of_masjid(db, masjid.id):
+            queue_update(db, user_id, "masjid list", now)
+    db.commit()
+    return changed
+
+
 def load_list(engine: Engine, now: datetime) -> int:
     """Load the file when the app starts. Returns how many rows were added or changed."""
     with Session(engine, expire_on_commit=False) as db:
         changed = save_rows(db, read_file(), "file", now)
         db.commit()
         if changed:
+            update_picked_list_masjids(db, now)
             new_links = rematch_picked(db, now)
             logger.info("MAWAQIT list: %d rows added or changed, %d masjids linked", changed, len(new_links))
     return changed
