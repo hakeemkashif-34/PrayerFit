@@ -1887,3 +1887,17 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
    d) Until a read works, it's tried every hour. After 3 failures in a row it waits for the 12:00 pm read. If that fails too, it waits until the next day's 12:15 am read, not 24 hours, since a missed day can't be read later. A 403 or 429 still waits 24 hours, since that's the site asking to slow down.
    e) From 12:00 pm it's read once more, in case the masjid changed a time during the day. So a normal day is 2 reads: 12:15 am and 12:00 pm.
    f) `test_mymasjid_calendar.py` runs the worker every 5 minutes through whole days and checks the read times: a winter day, a summer day, both days the clocks change, a failed first read, the site down overnight but back by noon, the site down all day, and a 403.
+
+### 25. Masjid locations on prayer events
+
+1. **What**: a prayer at the masjid, like "Asr at KMA" or "Jumuah at KMA", now has the masjid as its Google Calendar location, like "Kanata Muslim Association, 351 Sandhill Road, Ottawa". Google Calendar shows it under the title, and a tap opens it in Maps.
+2. **Where the text comes from** (`masjid_location()` in `event_plan.py`): the masjid's saved name and address.
+   a) The address is what OpenStreetMap or my masjid list has. If no address is saved (KMA from my list has none), it's just the name.
+   b) A postal code is taken out, even if one was saved.
+   c) A masjid a user picked by typing an address gets no location. That address is only what one user typed, not a public address, and it could be close to their home.
+3. **What gets none**: prayers at home, prayers moved because of a busy time, and clash prayers. They're all home events, so they never have a masjid. The user's home address is never put in any event.
+4. **Saving it**: `prayer_events.location` (migration `0018`). `google_event()` only adds `location` when it's set, so home events hash the same as before and aren't sent again.
+5. **Changes**: when a prayer moves from the masjid to home, the planned event has no location, so the row changes and is sent again. Updates are a PUT that replaces the whole event, so Google drops the old location too. Back to the masjid adds it again.
+6. **Existing events**: adding the location changes each future masjid prayer's hash, so the next update sends those again. Rows that already started are never updated (`save_window()` only changes rows that start after now), so past events keep what they had.
+7. **Drive blocks**: unchanged for now. They have no location.
+8. **Tests** (`test_event_location.py`): the location text for each kind of masjid, masjid and Jumuah events, home events with none, a masjid prayer that moves and loses its location, a clash, a prayer going from the masjid to home and back, and the first update after this change sending only future masjid prayers, never past ones.
