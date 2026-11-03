@@ -45,6 +45,27 @@ class DayTimes:
     jumuah: tuple[JumuahTime, ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True)
+class SkippedDay:
+    """A date whose times failed a check. reason says which prayer, like
+    "2026-11-05 isha iqamah is more than 150 minutes after adhan"."""
+
+    local_date: date
+    reason: str
+
+
+@dataclass(frozen=True)
+class FetchedDays:
+    """What one read gives: the days that passed every check, and the ones that didn't.
+
+    A skipped day isn't saved, so it keeps its last good times and follows
+    the same 7-day rule as a failed read (see freshness.py).
+    """
+
+    days: list[DayTimes]
+    skipped: list[SkippedDay] = field(default_factory=list)
+
+
 class SourceError(Exception):
     """A fetch didn't give usable times. The message is safe to log: no addresses or user data."""
 
@@ -66,8 +87,11 @@ class MasjidTimesSource(Protocol):
     name: str
     label: str
 
-    def fetch(self, http: httpx2.Client, external_id: str, today: date, days: int) -> list[DayTimes]:
-        """Times for today and the next days - 1 local dates. Raises a SourceError."""
+    def fetch(self, http: httpx2.Client, external_id: str, today: date, days: int) -> FetchedDays:
+        """Times for today and the next days - 1 local dates.
+
+        Raises a SourceError when the page can't be read at all, or when every day fails a check.
+        """
         ...
 
 

@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.masjid_times.announced import AnnouncedDay, Announcement, announcement_for
-from app.masjid_times.freshness import Freshness, freshness
+from app.masjid_times.freshness import USABLE_FOR, Freshness, freshness
 from app.masjid_times.source import PRAYERS, DayTimes, JumuahTime, get_source
 from app.models import MasjidDayTimes, MasjidSource
 
@@ -108,6 +108,9 @@ def load_masjid_times(
     if not masjid_ids:
         return {}
     sources = db.scalars(select(MasjidSource).where(MasjidSource.masjid_id.in_(masjid_ids))).all()
+    # A day skipped by later reads keeps its last good row. Past 7 days
+    # it's too old, the same rule as a failed read, so it isn't used.
+    oldest_usable = now - USABLE_FOR
     found = {}
     for source in sources:
         rows = db.scalars(
@@ -115,6 +118,7 @@ def load_masjid_times(
                 MasjidDayTimes.masjid_id == source.masjid_id,
                 MasjidDayTimes.source == source.source,
                 MasjidDayTimes.local_date.in_(dates),
+                MasjidDayTimes.fetched_at >= oldest_usable,
             )
         ).all()
         found[source.masjid_id] = MasjidTimes(

@@ -6,7 +6,9 @@ or a retry finds the same job instead of fetching again.
 
 After a 403, a 429, or 3 failures in a row, the masjid waits 24 hours.
 A failed fetch never touches the saved times, so the last good ones
-stay in use (see freshness.py for how long).
+stay in use (see freshness.py for how long). The same goes for a single
+day that fails a check: the other days are saved, and that day keeps its
+last good times.
 """
 
 import logging
@@ -21,7 +23,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.geo.timezones import masjid_time_zone
-from app.masjid_times.source import SourceBlocked, SourceError, get_source
+from app.masjid_times.source import SkippedDay, SourceBlocked, SourceError, get_source
 from app.masjid_times.store import save_days
 from app.models import Masjid, MasjidFetchJob, MasjidSource, UserSettings
 from app.update_jobs import queue_update, users_of_masjid
@@ -52,6 +54,15 @@ class FetchResult:
     status: str  # done, failed, blocked, or skipped
     changed: bool = False
     message: str = ""
+
+
+def skipped_text(skipped: list[SkippedDay]) -> str | None:
+    """"Skipped 1 day: 2026-11-05 isha iqamah is ...", or None when every day passed."""
+    if not skipped:
+        return None
+    if len(skipped) == 1:
+        return f"Skipped 1 day: {skipped[0].reason}"
+    return f"Skipped {len(skipped)} days, like {skipped[0].reason}"
 
 
 def _has_users(masjid_id):
@@ -119,7 +130,7 @@ def run_fetch(db: Session, http: httpx2.Client, masjid_id: uuid.UUID, now: datet
     source_row = db.get(MasjidSource, masjid_id, populate_existing=True)
     source_row.last_attempt_at = now
     try:
-        days = source.fetch(http, source_row.external_id, today, FETCH_DAYS)
+        fetched = source.fetch(http, source_row.external_id, today, FETCH_DAYS)
     except SourceError as error:
         db.rollback()
         source_row = db.get(MasjidSource, masjid_id, populate_existing=True)
@@ -130,25 +141,35 @@ def run_fetch(db: Session, http: httpx2.Client, masjid_id: uuid.UUID, now: datet
         if blocked:
             source_row.retry_after = now + WAIT_AFTER_BLOCK
         db.commit()
-        # Only the masjid's ID and the reason. Never an address or anything about a user.
-        logger.warning("%s fetch for masjid %s failed: %s", source.label, masjid_id, error)
+        # The masjid's ID, its public page name, and the reason. Never an address or anything about a user.
+        logger.warning(
+            "%s fetch for masjid %s (page %s) failed: %s", source.label, masjid_id, source_row.external_id, error
+        )
         status = "blocked" if blocked else "failed"
         _finish(db, job_id, status, now, str(error))
         return FetchResult(job_id, status, message=str(error))
 
-    changed = save_days(db, masjid_id, source.name, days, now)
+    changed = save_days(db, masjid_id, source.name, fetched.days, now)
     source_row.last_success_at = now
     source_row.consecutive_failures = 0
     source_row.retry_after = None
-    source_row.last_error = None
+    # Kept after a good read too, so /stats shows a day that keeps getting skipped.
+    source_row.last_error = skipped_text(fetched.skipped)
     if changed:
         source_row.last_changed_at = now
         for user_id in users_of_masjid(db, masjid_id):
             queue_update(db, user_id, source.name, now)
     db.commit()
     _finish(db, job_id, "done", now)
-    logger.info("%s fetch for masjid %s done, %s", source.label, masjid_id, "times changed" if changed else "no change")
-    return FetchResult(job_id, "done", changed=changed)
+    logger.info(
+        "%s fetch for masjid %s (page %s) done, %s%s",
+        source.label,
+        masjid_id,
+        source_row.external_id,
+        "times changed" if changed else "no change",
+        f", {len(fetched.skipped)} day(s) skipped" if fetched.skipped else "",
+    )
+    return FetchResult(job_id, "done", changed=changed, message=source_row.last_error or "")
 
 
 def run_due_fetches(engine: Engine, http: httpx2.Client, now: datetime) -> list[FetchResult]:

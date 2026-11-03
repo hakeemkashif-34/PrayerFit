@@ -4,7 +4,8 @@ A MAWAQIT page has the masjid's whole year built into it as data, in a
 script that starts "confData = {". This adapter:
 1. Downloads the page, with a timeout and a 3 MB limit.
 2. Finds confData and reads it as JSON. Nothing on the page is ever run.
-3. Turns the yearly tables into one row per local date, and checks them.
+3. Turns the yearly tables into one row per local date, and checks each one.
+   A day that fails a check is skipped on its own, and the rest are kept.
 
 What confData holds (only these parts are used):
 - calendar: 12 months. Each maps a day ("1" to "31") to 6 times:
@@ -38,7 +39,9 @@ from app.http_client import log_failure, transport_reason
 from app.masjid_times.source import (
     PRAYERS,
     DayTimes,
+    FetchedDays,
     JumuahTime,
+    SkippedDay,
     SourceBlocked,
     SourceFailed,
     SourceInvalid,
@@ -229,56 +232,81 @@ def fajr_tied_to_sunrise(data: dict) -> bool:
     return not (value is None or value is False or value == "")
 
 
-def days_from(data: dict, today: date, days: int) -> list[DayTimes]:
+def _one_day(data: dict, local_date: date, iqamah_published: bool, skip_fajr_iqamah: bool, jumuah) -> DayTimes:
+    """One date's times. Raises SourceInvalid if any of them fails a check."""
+    times = _month_table(data, "calendar", local_date.month).get(str(local_date.day))
+    if not isinstance(times, list) or len(times) != 6:
+        raise SourceInvalid(f"MAWAQIT has no times for {local_date}")
+    # Index 1 is sunrise, which isn't a prayer.
+    adhan = {
+        prayer: clock_time(times[index], f"{local_date} {prayer} adhan")
+        for prayer, index in zip(PRAYERS, (0, 2, 3, 4, 5))
+    }
+    iqamah: dict[str, time | None] = dict.fromkeys(PRAYERS)
+    if iqamah_published:
+        values = _month_table(data, "iqamaCalendar", local_date.month).get(str(local_date.day))
+        if isinstance(values, list) and len(values) == 5:
+            iqamah = {
+                prayer: iqamah_time(value, adhan[prayer], f"{local_date} {prayer} iqamah")
+                for prayer, value in zip(PRAYERS, values)
+            }
+        elif values is not None:
+            raise SourceInvalid(f"MAWAQIT iqamah for {local_date} isn't 5 values")
+    if skip_fajr_iqamah:
+        iqamah["fajr"] = None
+    day = DayTimes(local_date=local_date, adhan=adhan, iqamah=iqamah, jumuah=jumuah)
+    check_day(day)
+    return day
+
+
+def read_days(data: dict, today: date, days: int) -> FetchedDays:
     """One DayTimes per local date, from today. Each date is today plus n
-    days, so a daylight saving change can't skip or repeat one."""
+    days, so a daylight saving change can't skip or repeat one.
+
+    A day that fails a check is skipped on its own, and the rest are kept.
+    A problem with the page as a whole (missing months, a bad Jumuah time)
+    still rejects all of it, and so does every day failing.
+    """
     iqamah_published = data.get("iqamaEnabled", True) is not False
+    # Checked up front, so a page missing a month fails as a whole instead of day by day.
+    for month in range(1, 13):
+        _month_table(data, "calendar", month)
+        if iqamah_published:
+            _month_table(data, "iqamaCalendar", month)
     skip_fajr_iqamah = fajr_tied_to_sunrise(data)
     slots = jumuah_slots(data)
-    found = []
+    found, skipped = [], []
     for n in range(days):
         local_date = today + timedelta(days=n)
-        times = _month_table(data, "calendar", local_date.month).get(str(local_date.day))
-        if not isinstance(times, list) or len(times) != 6:
-            raise SourceInvalid(f"MAWAQIT has no times for {local_date}")
-        # Index 1 is sunrise, which isn't a prayer.
-        adhan = {
-            prayer: clock_time(times[index], f"{local_date} {prayer} adhan")
-            for prayer, index in zip(PRAYERS, (0, 2, 3, 4, 5))
-        }
-        iqamah: dict[str, time | None] = dict.fromkeys(PRAYERS)
-        if iqamah_published:
-            values = _month_table(data, "iqamaCalendar", local_date.month).get(str(local_date.day))
-            if isinstance(values, list) and len(values) == 5:
-                iqamah = {
-                    prayer: iqamah_time(value, adhan[prayer], f"{local_date} {prayer} iqamah")
-                    for prayer, value in zip(PRAYERS, values)
-                }
-            elif values is not None:
-                raise SourceInvalid(f"MAWAQIT iqamah for {local_date} isn't 5 values")
-        if skip_fajr_iqamah:
-            iqamah["fajr"] = None
-        day = DayTimes(
-            local_date=local_date,
-            adhan=adhan,
-            iqamah=iqamah,
-            # MAWAQIT only holds this week's Jumuah times.
-            jumuah=slots if local_date == next_friday(today) else (),
-        )
-        check_day(day)
-        found.append(day)
-    return found
+        # MAWAQIT only holds this week's Jumuah times.
+        jumuah = slots if local_date == next_friday(today) else ()
+        try:
+            found.append(_one_day(data, local_date, iqamah_published, skip_fajr_iqamah, jumuah))
+        except SourceInvalid as error:
+            skipped.append(SkippedDay(local_date, str(error)))
+    if not found and skipped:
+        raise SourceInvalid(f"Every day failed a check, like {skipped[0].reason}")
+    return FetchedDays(found, skipped)
+
+
+def days_from(data: dict, today: date, days: int) -> list[DayTimes]:
+    """Only the days that passed every check."""
+    return read_days(data, today, days).days
 
 
 class MawaqitSource:
     name = "mawaqit"
     label = "MAWAQIT"
 
-    def fetch(self, http: httpx2.Client, external_id: str, today: date, days: int) -> list[DayTimes]:
+    def fetch(self, http: httpx2.Client, external_id: str, today: date, days: int) -> FetchedDays:
         data = conf_data(download(http, external_id))
         if fajr_tied_to_sunrise(data):
             # The page name is public, so it's safe to log. Nothing about any user is.
             logger.warning(
                 "MAWAQIT page %s sets fajrFixationComparedToShuruq, so its Fajr iqamah isn't used", external_id
             )
-        return days_from(data, today, days)
+        fetched = read_days(data, today, days)
+        for skipped in fetched.skipped:
+            # The reason names the date and the prayer, like "2026-11-05 isha iqamah is ...".
+            logger.warning("MAWAQIT page %s: skipped a day: %s", external_id, skipped.reason)
+        return fetched

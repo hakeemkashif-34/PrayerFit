@@ -124,15 +124,74 @@ def test_a_broken_page_keeps_the_last_good_data(db, http, kma, fake_mawaqit):
     good = source(db, kma).last_success_at
     assert isha_iqamah(db, kma, date(2026, 10, 26)) == time(20, 15)
 
-    # Isha iqamah 2 hours after adhan: impossible, so nothing from this page is used.
-    fake_mawaqit.pages["kma-kanata"] = page(
-        set_day(conf(), 10, 27, iqamah=["+20", "13:00", "+10", "+5", "21:45"])
-    )
+    # The page lost its data, so nothing from it is used.
+    fake_mawaqit.pages["kma-kanata"] = "<html>The page changed</html>"
     later = NOW + timedelta(hours=6)
     assert run_due_fetches(db, http, later)[0].status == "failed"
     assert isha_iqamah(db, kma, date(2026, 10, 26)) == time(20, 15)
     assert source(db, kma).last_success_at == good
-    assert "more than 90 minutes" in source(db, kma).last_error
+    assert "no confData" in source(db, kma).last_error
+
+
+def fetched_at(db, masjid, day: date) -> datetime | None:
+    with Session(db) as session:
+        row = session.scalars(
+            select(MasjidDayTimes).where(MasjidDayTimes.masjid_id == masjid, MasjidDayTimes.local_date == day)
+        ).first()
+        return row.fetched_at if row else None
+
+
+def test_a_bad_day_is_skipped_and_the_rest_are_saved(db, http, kma, fake_mawaqit, caplog):
+    run_due_fetches(db, http, NOW)
+    # Oct 27 now has Isha at 20:30 and an impossible Fajr (91 minutes after adhan).
+    # Oct 28 moves Isha to 20:30 too, and is fine.
+    data = set_day(conf(), 10, 27, iqamah=["+91", "13:00", "+10", "+5", "20:30"])
+    fake_mawaqit.pages["kma-kanata"] = page(set_day(data, 10, 28, iqamah=["+20", "13:00", "+10", "+5", "20:30"]))
+    later = NOW + timedelta(hours=6)
+    with caplog.at_level(logging.INFO):
+        result = run_due_fetches(db, http, later)[0]
+
+    # The read still counts as a success, so KMA's times stay fresh.
+    assert result.status == "done"
+    assert source(db, kma).last_success_at == later
+    assert source(db, kma).consecutive_failures == 0
+    # Oct 27 keeps its last good times. Oct 28 gets its new one.
+    assert isha_iqamah(db, kma, date(2026, 10, 27)) == time(20, 15)
+    assert fetched_at(db, kma, date(2026, 10, 27)) == NOW
+    assert isha_iqamah(db, kma, date(2026, 10, 28)) == time(20, 30)
+    assert fetched_at(db, kma, date(2026, 10, 28)) == later
+    # The log and /stats say which day, which prayer, and which page.
+    reason = "2026-10-27 fajr iqamah is more than 90 minutes after adhan"
+    assert source(db, kma).last_error == f"Skipped 1 day: {reason}"
+    assert f"MAWAQIT page kma-kanata: skipped a day: {reason}" in caplog.text
+    assert f"MAWAQIT fetch for masjid {kma} (page kma-kanata) done, times changed, 1 day(s) skipped" in caplog.text
+
+    # Once the page is fixed, the note on /stats goes away.
+    fake_mawaqit.pages["kma-kanata"] = page(conf())
+    run_due_fetches(db, http, NOW + timedelta(hours=12))
+    assert source(db, kma).last_error is None
+
+
+def test_a_skipped_day_falls_back_after_7_days(db, http, kma, fake_mawaqit):
+    from app.masjid_times.store import load_masjid_times
+
+    run_due_fetches(db, http, NOW)  # Oct 25: saves Oct 25 to Nov 23
+    # Nov 10 is skipped by every later read. Each read is a calendar day later, never "plus 24 hours".
+    fake_mawaqit.pages["kma-kanata"] = page(set_day(conf(), 11, 10, iqamah=["+91", "13:00", "+10", "+5", "20:15"]))
+    nov_10 = date(2026, 11, 10)
+    for days in (3, 8):
+        read_at = datetime.combine(NOW.date() + timedelta(days=days), NOW.time(), tzinfo=TORONTO)
+        assert run_due_fetches(db, http, read_at)[0].status == "done"
+        with Session(db) as session:
+            times = load_masjid_times(session, [kma], [nov_10, date(2026, 11, 11)], read_at)[kma]
+        assert times.freshness.usable
+        assert times.usable_day(date(2026, 11, 11)) is not None
+        if days == 3:
+            # Its last good times are 3 days old, so they're still used.
+            assert times.usable_day(nov_10).iqamah["isha"] == time(20, 15)
+        else:
+            # 8 days old: too old, so Nov 10 gets calculated times like any stale day.
+            assert times.usable_day(nov_10) is None
 
 
 def test_a_page_that_is_too_big_is_refused(db, http, kma, fake_mawaqit):
@@ -147,7 +206,7 @@ def test_failures_are_logged_without_addresses(db, http, kma, fake_mawaqit, capl
     with caplog.at_level(logging.INFO):
         run_due_fetches(db, http, NOW)
     text = caplog.text
-    assert f"MAWAQIT fetch for masjid {kma} failed: MAWAQIT page has no confData" in text
+    assert f"MAWAQIT fetch for masjid {kma} (page kma-kanata) failed: MAWAQIT page has no confData" in text
     assert "Test Street" not in text and "Masjid Road" not in text and "45.4" not in text
 
 
