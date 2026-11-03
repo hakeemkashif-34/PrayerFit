@@ -120,6 +120,12 @@ def run_fetch(
     job_id = fetch_job_id(source_row.source, masjid_id, now)
     if source_row.retry_after is not None and source_row.retry_after > now and not ignore_wait:
         return FetchResult(job_id, "skipped", message=f"Waiting until {source_row.retry_after:%Y-%m-%d %H:%M} UTC.")
+    # A page with no date (mymasjid.ca) is only read at hours when it's sure to
+    # show today. Checked before the job is saved, so the read still happens
+    # later in this 6-hour block. Never skipped, not even by the admin command.
+    zone = ZoneInfo(masjid_time_zone(db.get(Masjid, masjid_id)))
+    if not get_source(source_row.source).may_read(now.astimezone(zone)):
+        return FetchResult(job_id, "skipped", message="Outside the hours this source's page is read.")
     job = _save_job(db, job_id, masjid_id)
     if force and job.status in ("done", "failed", "blocked"):
         db.execute(update(MasjidFetchJob).where(MasjidFetchJob.id == job_id).values(status="pending"))

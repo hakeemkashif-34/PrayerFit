@@ -6,7 +6,7 @@ The site only shows today, so:
 3. The 2 Jumuah times are saved for the coming Friday, as start times.
 """
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -135,3 +135,30 @@ def test_a_bad_jumuah_time_keeps_the_last_good_jumuah(db, http, fake_google, fak
         row = session.get(MasjidSource, ama)
         assert row.upcoming_jumuah["slots"][1] == {"order": 2, "time": "13:30"}
         assert row.last_error == "Skipped 1 day: 2026-11-06 Jumuah 2 isn't a clock time"
+
+
+def test_the_page_is_only_read_inside_its_hours(db, http, fake_google, fake_mymasjid):
+    from app.masjid_times.mymasjid import READ_FROM, READ_UNTIL
+
+    _, ama = ama_user(db, fake_google)
+    # Just before the hours start and right at their end: nothing is read, and no job is saved.
+    before = datetime.combine(TUESDAY, READ_FROM, tzinfo=TORONTO) - timedelta(minutes=1)
+    for moment in (before, datetime.combine(TUESDAY, READ_UNTIL, tzinfo=TORONTO)):
+        assert fetch(db, http, moment) == []
+    assert fake_mymasjid.requests == []
+    assert saved_dates(db, ama) == []
+    # Inside the hours it's read, and saved as that local date.
+    [result] = fetch(db, http, datetime.combine(TUESDAY, READ_FROM, tzinfo=TORONTO))
+    assert result.status == "done"
+    assert saved_dates(db, ama) == [TUESDAY]
+
+
+def test_the_hours_are_local_on_the_day_the_clocks_change(db, http, fake_google, fake_mymasjid):
+    from app.masjid_times.mymasjid import READ_FROM
+
+    _, ama = ama_user(db, fake_google)
+    # November 1, 2026: the clocks went back at 2 am. The local hour still decides, and the date is Nov 1.
+    sunday = date(2026, 11, 1)
+    [result] = fetch(db, http, datetime.combine(sunday, READ_FROM, tzinfo=TORONTO))
+    assert result.status == "done"
+    assert saved_dates(db, ama) == [sunday]

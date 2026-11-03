@@ -31,7 +31,7 @@ import logging
 import re
 import time as clock
 import unicodedata
-from datetime import date, time
+from datetime import date, datetime, time
 from html.parser import HTMLParser
 
 import httpx2
@@ -64,6 +64,12 @@ PAGE_LINK = "https://www.mymasjid.ca/prayer/"
 # The real table is about 1.5 KB.
 MAX_PAGE_BYTES = 256 * 1024
 TIMEOUT_SECONDS = 10
+# The table has no date, so it's only read between these local times, when
+# it's sure to show today. PLACEHOLDER until the day-switch watch finishes:
+# 6:00 am to 6:30 pm stays clear of midnight in Toronto, midnight UTC
+# (7 or 8 pm in Toronto), and a switch at Fajr.
+READ_FROM = time(6, 0)
+READ_UNTIL = time(18, 30)
 # Names in the first column, with accents and spaces removed and lowercased.
 PRAYER_NAMES = {"fajr": "fajr", "zuhr": "dhuhr", "dhuhr": "dhuhr", "asr": "asr", "maghrib": "maghrib", "isha": "isha"}
 JUMUAH_NAMES = {"jumuah": 1, "jumuah1": 1, "jumuah2": 2, "jumuah3": 3}
@@ -209,6 +215,9 @@ class MyMasjidSource:
     label = "mymasjid.ca"
     # Only today is on the page, so days that weren't read use calculated times.
     keeps_future_days = False
+
+    def may_read(self, local_now: datetime) -> bool:
+        return READ_FROM <= local_now.time() < READ_UNTIL
 
     def fetch(self, http: httpx2.Client, external_id: str, today: date, days: int) -> FetchedDays:
         if external_id != EXTERNAL_ID:

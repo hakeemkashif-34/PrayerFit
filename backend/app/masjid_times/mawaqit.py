@@ -29,7 +29,7 @@ import json
 import logging
 import re
 import time as clock
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta
 from urllib.parse import urljoin, urlsplit
 
 import httpx2
@@ -311,6 +311,10 @@ class MawaqitSource:
     label = "MAWAQIT"
     # A page has the whole year, so a read covers the coming weeks.
     keeps_future_days = True
+
+    def may_read(self, local_now: datetime) -> bool:
+        # Every date is on the page, so any hour is fine.
+        return True
 
     def fetch(self, http: httpx2.Client, external_id: str, today: date, days: int) -> FetchedDays:
         data = conf_data(download(http, external_id))

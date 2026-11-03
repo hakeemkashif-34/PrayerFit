@@ -7,7 +7,7 @@ masjids linked to it fall back to calculated times.
 """
 
 from dataclasses import dataclass, field
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Protocol
 
 import httpx2
@@ -105,6 +105,11 @@ class MasjidTimesSource(Protocol):
     # True when one read covers the coming weeks (MAWAQIT). False when it's
     # today only (mymasjid.ca), so days not read yet use calculated times.
     keeps_future_days: bool
+
+    def may_read(self, local_now: datetime) -> bool:
+        """False at hours when the page might not show today's table yet.
+        local_now is in the masjid's time zone."""
+        ...
 
     def fetch(self, http: httpx2.Client, external_id: str, today: date, days: int) -> FetchedDays:
         """Times for today and the next days - 1 local dates.
