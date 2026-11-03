@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.geo.timezones import masjid_time_zone
 from app.masjid_times.source import SkippedDay, SourceBlocked, SourceError, get_source
-from app.masjid_times.store import save_days
+from app.masjid_times.store import save_days, save_upcoming_jumuah
 from app.models import Masjid, MasjidFetchJob, MasjidSource, UserSettings
 from app.update_jobs import queue_update, users_of_masjid
 
@@ -153,6 +153,7 @@ def run_fetch(
         return FetchResult(job_id, status, message=str(error))
 
     changed = save_days(db, masjid_id, source.name, fetched.days, now)
+    changed = save_upcoming_jumuah(source_row, fetched.jumuah) or changed
     source_row.last_success_at = now
     source_row.consecutive_failures = 0
     source_row.retry_after = None

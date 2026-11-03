@@ -263,8 +263,7 @@ def _jumuah_times(context: MasjidContext, local_date: date) -> tuple[tuple[Jumua
     announced = _announced(context, local_date)
     if announced and announced.jumuah:
         return announced.jumuah, True
-    day = context.times.usable_day(local_date) if context.times else None
-    return (day.jumuah if day else ()), False
+    return (context.times.jumuah_on(local_date) if context.times else ()), False
 
 
 def jumuah_slots(jumuah: list[MasjidContext], local_date: date) -> list[JumuahSlot]:

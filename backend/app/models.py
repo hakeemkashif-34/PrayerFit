@@ -306,7 +306,7 @@ class MasjidSource(Base):
     masjid_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("masjids.id", ondelete="CASCADE"), primary_key=True
     )
-    # "mawaqit" for now. Each source has its own adapter.
+    # "mawaqit" or "mymasjid". Each source has its own adapter (see masjid_times/source.py).
     source: Mapped[str] = mapped_column(String(16))
     external_id: Mapped[str] = mapped_column(String(200))
     # "admin" or "auto". Links made before automatic matching are all "admin".
@@ -326,6 +326,10 @@ class MasjidSource(Base):
     # After a 403, a 429, or 3 failures in a row, no fetch before this.
     retry_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
+    # Only for a today-only source (mymasjid.ca): the coming Friday's Jumuah,
+    # like {"friday": "2026-11-06", "slots": [{"order": 1, "time": "12:00"}]}.
+    # MAWAQIT keeps its Jumuah on the Friday's row in masjid_day_times instead.
+    upcoming_jumuah: Mapped[dict | None] = mapped_column(JSON)
 
 
 class MasjidDayTimes(Base):
