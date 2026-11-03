@@ -1,7 +1,8 @@
 """Checks on a source's times before any of them are saved.
 
-A wrong time means a missed prayer, so one bad value rejects the whole
-fetch. The last good times stay in use, and the failure is logged.
+A wrong time means a missed prayer, so one bad value rejects that whole
+day. The day keeps its last good times, and the failure is logged with the
+date and the prayer (see read_days in mawaqit.py).
 """
 
 import re
