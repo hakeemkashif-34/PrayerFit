@@ -31,7 +31,7 @@ import logging
 import re
 import time as clock
 import unicodedata
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from html.parser import HTMLParser
 
 import httpx2
@@ -64,12 +64,17 @@ PAGE_LINK = "https://www.mymasjid.ca/prayer/"
 # The real table is about 1.5 KB.
 MAX_PAGE_BYTES = 256 * 1024
 TIMEOUT_SECONDS = 10
-# The table has no date, so it's only read between these local times, when
-# it's sure to show today. PLACEHOLDER until the day-switch watch finishes:
-# 6:00 am to 6:30 pm stays clear of midnight in Toronto, midnight UTC
-# (7 or 8 pm in Toronto), and a switch at Fajr.
-READ_FROM = time(6, 0)
-READ_UNTIL = time(18, 30)
+# The table has no date, so it's only read when it's sure to show today:
+# FIRST_READ to LAST_READ, local time.
+# 1. The first read is at FIRST_READ, soon after the page switches days and
+#    hours before Fajr, so that day's Fajr iqamah is in the calendar in time.
+# 2. Until a read works, it's tried again every hour. After 3 failures in a
+#    row it waits for the 12:00 pm read, then for the next day's first read.
+# 3. From MIDDAY_READ on, it's read once more, in case the masjid changed a
+#    time during the day, or to get today's times if the morning's reads failed.
+FIRST_READ = time(0, 15)
+MIDDAY_READ = time(12, 0)
+LAST_READ = time(18, 45)
 # Names in the first column, with accents and spaces removed and lowercased.
 PRAYER_NAMES = {"fajr": "fajr", "zuhr": "dhuhr", "dhuhr": "dhuhr", "asr": "asr", "maghrib": "maghrib", "isha": "isha"}
 JUMUAH_NAMES = {"jumuah": 1, "jumuah1": 1, "jumuah2": 2, "jumuah3": 3}
@@ -216,8 +221,26 @@ class MyMasjidSource:
     # Only today is on the page, so days that weren't read use calculated times.
     keeps_future_days = False
 
-    def may_read(self, local_now: datetime) -> bool:
-        return READ_FROM <= local_now.time() < READ_UNTIL
+    def read_slot(self, local_now: datetime, read_today: bool) -> str | None:
+        clock_time = local_now.time()
+        if not FIRST_READ <= clock_time < LAST_READ:
+            return None
+        if clock_time >= MIDDAY_READ:
+            # One read from noon on, whether or not the morning's worked.
+            return f"{local_now.date()}-midday"
+        if not read_today:
+            # One try per local hour, so a failed first read is tried again within the hour.
+            return f"{local_now.date()}T{clock_time.hour:02d}"
+        return None
+
+    def wait_after_failures(self, local_now: datetime) -> datetime:
+        """3 failed tries overnight still leave the 12:00 pm read. If that fails
+        too, wait for the next day's first read. A missed day can't be read later,
+        so waiting 24 hours would only lose the next morning too."""
+        zone = local_now.tzinfo
+        if local_now.time() < MIDDAY_READ:
+            return datetime.combine(local_now.date(), MIDDAY_READ, tzinfo=zone)
+        return datetime.combine(local_now.date() + timedelta(days=1), time(0), tzinfo=zone)
 
     def fetch(self, http: httpx2.Client, external_id: str, today: date, days: int) -> FetchedDays:
         if external_id != EXTERNAL_ID:

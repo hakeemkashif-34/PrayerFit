@@ -9,6 +9,7 @@ The site only shows today, so:
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -24,6 +25,8 @@ TORONTO = ZoneInfo("America/Toronto")
 TUESDAY = date(2026, 11, 3)
 WEDNESDAY = date(2026, 11, 4)
 FRIDAY = date(2026, 11, 6)
+# A whole day in 5-minute steps takes a few seconds, so these get more than the usual 10.
+WHOLE_DAY = pytest.mark.timeout(30)
 
 
 def at(day: date, hour: int) -> datetime:
@@ -137,28 +140,113 @@ def test_a_bad_jumuah_time_keeps_the_last_good_jumuah(db, http, fake_google, fak
         assert row.last_error == "Skipped 1 day: 2026-11-06 Jumuah 2 isn't a clock time"
 
 
-def test_the_page_is_only_read_inside_its_hours(db, http, fake_google, fake_mymasjid):
-    from app.masjid_times.mymasjid import READ_FROM, READ_UNTIL
+def read_times(db, http, fake_mymasjid, day: date) -> list[str]:
+    """Run the worker every 5 minutes through one local day, like the real worker
+    (it runs every minute). Returns the local clock time of each read."""
+    times = []
+    for minute in range(0, 24 * 60, 5):
+        # Local clock times on that date, never "plus 24 hours".
+        moment = datetime.combine(day, time(minute // 60, minute % 60), tzinfo=TORONTO)
+        before = len(fake_mymasjid.requests)
+        fetch(db, http, moment)
+        if len(fake_mymasjid.requests) > before:
+            times.append(f"{moment:%H:%M}")
+    return times
 
+
+@WHOLE_DAY
+def test_read_times_across_a_winter_day(db, http, fake_google, fake_mymasjid):
+    ama_user(db, fake_google)
+    # Tuesday November 10, 2026: Eastern Standard Time. Fajr's iqamah is around 6 am.
+    assert read_times(db, http, fake_mymasjid, date(2026, 11, 10)) == ["00:15", "12:00"]
+    # The next day starts the same way, since the reads follow the local clock, not UTC blocks.
+    assert read_times(db, http, fake_mymasjid, date(2026, 11, 11)) == ["00:15", "12:00"]
+
+
+@WHOLE_DAY
+def test_read_times_across_a_summer_day(db, http, fake_google, fake_mymasjid):
+    ama_user(db, fake_google)
+    # Tuesday July 14, 2026: Eastern Daylight Time. Fajr's adhan is around 3:30 am,
+    # so the 12:15 am read is still more than 3 hours before it.
+    assert read_times(db, http, fake_mymasjid, date(2026, 7, 14)) == ["00:15", "12:00"]
+
+
+@WHOLE_DAY
+def test_read_times_on_the_days_the_clocks_change(db, http, fake_google, fake_mymasjid):
     _, ama = ama_user(db, fake_google)
-    # Just before the hours start and right at their end: nothing is read, and no job is saved.
-    before = datetime.combine(TUESDAY, READ_FROM, tzinfo=TORONTO) - timedelta(minutes=1)
-    for moment in (before, datetime.combine(TUESDAY, READ_UNTIL, tzinfo=TORONTO)):
-        assert fetch(db, http, moment) == []
+    # March 8, 2026 skips 2 am to 3 am, and November 1, 2026 has 1 am to 2 am twice.
+    # Neither is near 12:15 am or noon, so the reads are the same.
+    for day in (date(2026, 3, 8), date(2026, 11, 1)):
+        assert read_times(db, http, fake_mymasjid, day) == ["00:15", "12:00"]
+    assert saved_dates(db, ama) == [date(2026, 3, 8), date(2026, 11, 1)]
+
+
+@WHOLE_DAY
+def test_a_failed_first_read_is_tried_again_within_the_hour(db, http, fake_google, fake_mymasjid):
+    _, ama = ama_user(db, fake_google)
+    day = date(2026, 11, 10)
+    fake_mymasjid.failure = 500
+    assert fetch(db, http, datetime.combine(day, time(0, 15), tzinfo=TORONTO))[0].status == "failed"
+    fake_mymasjid.failure = None
+    # The rest of the day: the retry at 1 am works, then the midday read.
+    times = read_times(db, http, fake_mymasjid, day)
+    assert times == ["01:00", "12:00"]
+    assert saved_dates(db, ama) == [day]
+
+
+@WHOLE_DAY
+def test_a_site_down_all_day_is_tried_at_noon_then_the_next_night(db, http, fake_google, fake_mymasjid):
+    _, ama = ama_user(db, fake_google)
+    fake_mymasjid.failure = 500
+    # 3 tries an hour apart, then the 12:00 pm read. When that fails too, it waits
+    # until midnight instead of 24 hours, so the next day's 12:15 am read still happens before Fajr.
+    assert read_times(db, http, fake_mymasjid, date(2026, 11, 10)) == ["00:15", "01:00", "02:00", "12:00"]
+    fake_mymasjid.failure = None
+    assert read_times(db, http, fake_mymasjid, date(2026, 11, 11)) == ["00:15", "12:00"]
+    assert saved_dates(db, ama) == [date(2026, 11, 11)]
+
+
+@WHOLE_DAY
+def test_a_site_down_overnight_but_back_by_noon_is_read_at_noon(db, http, fake_google, fake_mymasjid):
+    _, ama = ama_user(db, fake_google)
+    day = date(2026, 11, 10)
+    # Down from 12:15 am to 3 am: the 3 overnight tries fail.
+    fake_mymasjid.failure = 500
+    for clock_time in (time(0, 15), time(1, 0), time(2, 0)):
+        [result] = fetch(db, http, datetime.combine(day, clock_time, tzinfo=TORONTO))
+        assert result.status in ("failed", "blocked")
+    assert result.status == "blocked"
+    # Back up by noon. Nothing is tried in the morning, then the 12:00 pm read saves the day.
+    fake_mymasjid.failure = None
+    before = len(fake_mymasjid.requests)
+    times = []
+    for minute in range(3 * 60, 24 * 60, 5):
+        moment = datetime.combine(day, time(minute // 60, minute % 60), tzinfo=TORONTO)
+        count = len(fake_mymasjid.requests)
+        fetch(db, http, moment)
+        if len(fake_mymasjid.requests) > count:
+            times.append(f"{moment:%H:%M}")
+    assert times == ["12:00"]
+    assert len(fake_mymasjid.requests) == before + 1
+    assert saved_dates(db, ama) == [day]
+    with Session(db) as session:
+        row = session.get(MasjidSource, ama)
+        assert (row.consecutive_failures, row.retry_after) == (0, None)
+
+
+@WHOLE_DAY
+def test_a_403_still_waits_24_hours(db, http, fake_google, fake_mymasjid):
+    _, ama = ama_user(db, fake_google)
+    fake_mymasjid.failure = 403
+    assert read_times(db, http, fake_mymasjid, date(2026, 11, 10)) == ["00:15"]
+    with Session(db) as session:
+        assert session.get(MasjidSource, ama).retry_after == datetime(2026, 11, 11, 0, 15, tzinfo=TORONTO)
+
+
+def test_the_evening_is_never_read(db, http, fake_google, fake_mymasjid):
+    ama_user(db, fake_google)
+    # Nothing saved today yet, so it would try every hour, but not from 6:45 pm to 12:15 am.
+    fake_mymasjid.failure = 500
+    for clock_time in (time(18, 45), time(21, 0), time(23, 59), time(0, 14)):
+        assert fetch(db, http, datetime.combine(date(2026, 11, 10), clock_time, tzinfo=TORONTO)) == []
     assert fake_mymasjid.requests == []
-    assert saved_dates(db, ama) == []
-    # Inside the hours it's read, and saved as that local date.
-    [result] = fetch(db, http, datetime.combine(TUESDAY, READ_FROM, tzinfo=TORONTO))
-    assert result.status == "done"
-    assert saved_dates(db, ama) == [TUESDAY]
-
-
-def test_the_hours_are_local_on_the_day_the_clocks_change(db, http, fake_google, fake_mymasjid):
-    from app.masjid_times.mymasjid import READ_FROM
-
-    _, ama = ama_user(db, fake_google)
-    # November 1, 2026: the clocks went back at 2 am. The local hour still decides, and the date is Nov 1.
-    sunday = date(2026, 11, 1)
-    [result] = fetch(db, http, datetime.combine(sunday, READ_FROM, tzinfo=TORONTO))
-    assert result.status == "done"
-    assert saved_dates(db, ama) == [sunday]

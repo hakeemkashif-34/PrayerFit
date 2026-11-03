@@ -371,8 +371,9 @@ class MasjidDayTimes(Base):
 class MasjidFetchJob(Base):
     """One read of one masjid's source.
 
-    The ID is "{source}:{masjid_id}:{6-hour block}", so each masjid is read
-    at most once per block, however many users picked it.
+    The ID is "{source}:{masjid_id}:{slot}": a 6-hour UTC block for MAWAQIT,
+    or a local hour or "midday" for mymasjid.ca. So each masjid is read at
+    most once per slot, however many users picked it.
     """
 
     __tablename__ = "masjid_fetch_jobs"

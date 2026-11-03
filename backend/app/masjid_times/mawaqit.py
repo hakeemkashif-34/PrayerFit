@@ -46,6 +46,7 @@ from app.masjid_times.source import (
     SourceFailed,
     SourceInvalid,
     next_friday,
+    utc_block,
 )
 from app.masjid_times.validate import check_day, clock_time, iqamah_time
 
@@ -312,9 +313,13 @@ class MawaqitSource:
     # A page has the whole year, so a read covers the coming weeks.
     keeps_future_days = True
 
-    def may_read(self, local_now: datetime) -> bool:
-        # Every date is on the page, so any hour is fine.
-        return True
+    def read_slot(self, local_now: datetime, read_today: bool) -> str:
+        # Every date is on the page, so it's read once per 6-hour block, at any hour.
+        return utc_block(local_now)
+
+    def wait_after_failures(self, local_now: datetime) -> None:
+        # The last good read covers the coming weeks, so 24 hours is fine.
+        return None
 
     def fetch(self, http: httpx2.Client, external_id: str, today: date, days: int) -> FetchedDays:
         data = conf_data(download(http, external_id))

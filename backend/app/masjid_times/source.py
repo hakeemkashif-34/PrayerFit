@@ -7,7 +7,7 @@ masjids linked to it fall back to calculated times.
 """
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Protocol
 
 import httpx2
@@ -82,6 +82,12 @@ class FetchedDays:
     jumuah: UpcomingJumuah | None = None
 
 
+def utc_block(now: datetime, hours: int = 6) -> str:
+    """The 6-hour block (00, 06, 12, 18 UTC) now is in, like "2026-10-25T12"."""
+    utc = now.astimezone(UTC)
+    return f"{utc.replace(hour=utc.hour - utc.hour % hours):%Y-%m-%dT%H}"
+
+
 class SourceError(Exception):
     """A fetch didn't give usable times. The message is safe to log: no addresses or user data."""
 
@@ -106,9 +112,16 @@ class MasjidTimesSource(Protocol):
     # today only (mymasjid.ca), so days not read yet use calculated times.
     keeps_future_days: bool
 
-    def may_read(self, local_now: datetime) -> bool:
-        """False at hours when the page might not show today's table yet.
-        local_now is in the masjid's time zone."""
+    def read_slot(self, local_now: datetime, read_today: bool) -> str | None:
+        """Which read this moment belongs to. Each slot is read at most once.
+
+        local_now is in the masjid's time zone. read_today is True once a
+        good read has saved today's date. None means don't read now.
+        """
+        ...
+
+    def wait_after_failures(self, local_now: datetime) -> datetime | None:
+        """When to try again after 3 failures in a row. None means the usual 24 hours."""
         ...
 
     def fetch(self, http: httpx2.Client, external_id: str, today: date, days: int) -> FetchedDays:
