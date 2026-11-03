@@ -32,17 +32,18 @@ def write(tmp_path, text: str):
 # ---- The real file ----
 
 
-def test_the_real_file_has_24_masjids_with_valid_links():
+def test_the_real_file_has_25_masjids_with_valid_links():
     rows = read_file()
-    assert len(rows) == 24
+    assert len(rows) == 25
     by_id = {r.external_id: r for r in rows}
     assert by_id["id/9793"] == ListRow(
         "id/9793", "Kanata Muslim Association", 45.356128, -75.9283718, "KMA", "351 Sandhill Road, Ottawa"
     )
     # Addresses are public ones from OpenStreetMap or the masjid's own site, with no postal code.
-    assert sum(r.address is not None for r in rows) == 13
+    assert sum(r.address is not None for r in rows) == 20
+    assert by_id["id/48883"] == ListRow("id/48883", "Masjid Bilal", 45.4621339, -75.484759, None, "4509 Innes Road, Ottawa")
     assert not any(re.search(r"[A-Z]\d[A-Z] ?\d[A-Z]\d", r.address or "") for r in rows)
-    # 23 on MAWAQIT, and Masjid ar-Rahmah from its own website.
+    # 24 on MAWAQIT, and Masjid ar-Rahmah from its own website.
     assert [r.external_id for r in rows if r.source != "mawaqit"] == ["mymasjid.ca"]
     # Its name, address, and building's location come from its own website and OpenStreetMap (way 483089921).
     assert by_id["mymasjid.ca"] == ListRow(
@@ -58,11 +59,11 @@ def test_the_real_file_has_24_masjids_with_valid_links():
 
 
 def test_each_listed_masjid_loads_once(db):
-    assert load_list(db, NOW) == 24
+    assert load_list(db, NOW) == 25
     # Loading again, like the next restart, adds and changes nothing.
     assert load_list(db, NOW) == 0
     with Session(db) as session:
-        assert session.scalar(select(func.count()).select_from(MawaqitListEntry)) == 24
+        assert session.scalar(select(func.count()).select_from(MawaqitListEntry)) == 25
     assert {e.added_by for e in saved(db).values()} == {"file"}
 
 
@@ -70,7 +71,7 @@ def test_each_listed_masjid_loads_once(db):
 def test_the_app_loads_the_list_when_it_starts(db):
     with new_client() as client:  # "with" runs the app's start-up
         assert client.get("/health").status_code == 200
-    assert len(saved(db)) == 24
+    assert len(saved(db)) == 25
     assert app.router.lifespan_context is not None
 
 

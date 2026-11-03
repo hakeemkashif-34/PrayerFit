@@ -158,7 +158,7 @@ Masjid ar-Rahmah,AMA,"1216 Hunt Club Rd., Ottawa",https://www.mymasjid.ca/prayer
 
 The first line must be exactly `name,short_name,address,times_link,latitude,longitude`. If it isn't, or any line is bad, the backend logs "Couldn't load the MAWAQIT list" and keeps the rows it already saved. A test reads the file on every push, so a typo shows up there first.
 
-It has 24 masjids around Ottawa: 23 on MAWAQIT, and Masjid ar-Rahmah (AMA), which isn't on MAWAQIT, so its times are read from its own website (see "Masjid ar-Rahmah from mymasjid.ca" in [TECHNICAL.md](TECHNICAL.md)). A MAWAQIT link is either a share link (`https://mawaqit.net/en/id/9793`, from MAWAQIT's Share button) or a page link (`https://mawaqit.net/en/cio-gatineau`). The app saves `id/9793` or `cio-gatineau` and reads the times from that link. A share link answers with the masjid's page straight away.
+It has 25 masjids around Ottawa: 24 on MAWAQIT, and Masjid ar-Rahmah (AMA), which isn't on MAWAQIT, so its times are read from its own website (see "Masjid ar-Rahmah from mymasjid.ca" in [TECHNICAL.md](TECHNICAL.md)). A MAWAQIT link is either a share link (`https://mawaqit.net/en/id/9793`, from MAWAQIT's Share button) or a page link (`https://mawaqit.net/en/cio-gatineau`). The app saves `id/9793` or `cio-gatineau` and reads the times from that link. A share link answers with the masjid's page straight away.
 
 The backend and the worker load the file every time they start. Loading it again never adds a copy. If I fix a name or a location in the file, the saved one changes too.
 
