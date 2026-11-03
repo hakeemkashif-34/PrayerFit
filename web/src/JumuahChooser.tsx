@@ -61,8 +61,11 @@ function place(slots: JumuahSlot[], zone: string, y: (minutes: number) => number
 }
 
 export function noTimesText(name: string, where: "setup" | "settings"): string {
-  const base = `Jumuah times for ${name} aren't available yet.`;
-  return where === "setup" ? `${base} We'll use the 1st Jumuah, and you can change it in Settings later.` : base;
+  if (where === "settings") {
+    // Short on purpose: Main masjid and the notice at the top already say why there are no times.
+    return `No Jumuah times to pick from for ${name} right now.`;
+  }
+  return `Jumuah times for ${name} aren't available yet. We'll use the 1st Jumuah, and you can change it in Settings later.`;
 }
 
 export function JumuahChooser({ masjidId, selected, onSelect, onLoaded, where = "setup", heading = "h2" }: Props) {
