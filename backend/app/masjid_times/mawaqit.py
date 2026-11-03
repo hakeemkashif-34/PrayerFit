@@ -147,10 +147,22 @@ def _redirect_target(url: str, location: str | None) -> str:
     return target.geturl()
 
 
+def status_text(response: httpx2.Response) -> str:
+    """"status 403 Forbidden, Cloudflare challenge". The status line and one
+    header, never the body, which could be a whole challenge page."""
+    text = f"status {response.status_code} {response.reason_phrase}".rstrip()
+    if response.headers.get("cf-mitigated"):
+        # Cloudflare sets this when it shows a bot check instead of the page.
+        text += ", Cloudflare challenge"
+    return text
+
+
 def download(http: httpx2.Client, external_id: str) -> str:
     """The page's HTML. Raises SourceBlocked or SourceFailed."""
     started = clock.monotonic()
     url = page_url(external_id)
+    # The page name is public, so the log can say which masjid failed.
+    service = f"MAWAQIT page {external_id}"
     try:
         for _ in range(MAX_REDIRECTS + 1):
             with http.stream(
@@ -165,23 +177,23 @@ def download(http: httpx2.Client, external_id: str) -> str:
                     url = _redirect_target(url, response.headers.get("location"))
                     continue
                 if response.status_code in (403, 429):
-                    log_failure("MAWAQIT", f"status {response.status_code}", started)
-                    raise SourceBlocked(f"MAWAQIT answered {response.status_code}")
+                    log_failure(service, status_text(response), started)
+                    raise SourceBlocked(f"MAWAQIT answered {status_text(response)}")
                 if response.status_code != 200:
-                    log_failure("MAWAQIT", f"status {response.status_code}", started)
-                    raise SourceFailed(f"MAWAQIT answered {response.status_code}")
+                    log_failure(service, status_text(response), started)
+                    raise SourceFailed(f"MAWAQIT answered {status_text(response)}")
                 body = bytearray()
                 for chunk in response.iter_bytes():
                     body.extend(chunk)
                     if len(body) > MAX_PAGE_BYTES:
-                        log_failure("MAWAQIT", "page too big", started)
+                        log_failure(service, "page too big", started)
                         raise SourceFailed("MAWAQIT page is bigger than 3 MB")
                 return body.decode("utf-8", errors="replace")
     except httpx2.TransportError as error:
         reason = transport_reason(error)
-        log_failure("MAWAQIT", reason, started)
+        log_failure(service, reason, started)
         raise SourceFailed(f"Couldn't reach MAWAQIT: {reason}") from error
-    log_failure("MAWAQIT", "too many redirects", started)
+    log_failure(service, "too many redirects", started)
     raise SourceFailed(f"MAWAQIT redirected more than {MAX_REDIRECTS} times")
 
 

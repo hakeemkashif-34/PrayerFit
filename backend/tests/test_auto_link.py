@@ -117,7 +117,7 @@ def test_mawaqit_being_down_never_stops_picking_a_masjid(signed_in, db, kma_page
     picked = pick_masjid(signed_in, "Kanata", KMA_LABEL)
     assert picked["name"] == KMA_LABEL
     # Still linked, so the worker tries again in the next 6-hour block.
-    assert source_of(db, picked["id"]).last_error == "MAWAQIT answered 500"
+    assert source_of(db, picked["id"]).last_error == "MAWAQIT answered status 500 Internal Server Error"
     assert slots(signed_in, picked["id"])["no_times"] != []
 
 

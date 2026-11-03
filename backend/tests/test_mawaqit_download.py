@@ -5,6 +5,8 @@ with no redirect. Redirects are still followed by hand, a few hops, and
 only within mawaqit.net.
 """
 
+import logging
+
 import pytest
 
 from app.masjid_times.mawaqit import (
@@ -14,7 +16,7 @@ from app.masjid_times.mawaqit import (
     external_id_from_link,
     page_url,
 )
-from app.masjid_times.source import SourceFailed
+from app.masjid_times.source import SourceBlocked, SourceFailed
 
 
 @pytest.mark.parametrize(
@@ -87,3 +89,23 @@ def test_too_many_redirects_are_refused(http, fake_mawaqit):
     with pytest.raises(SourceFailed, match="more than 3 times"):
         download(http, "id/9793")
     assert len(fake_mawaqit.requests) == MAX_REDIRECTS + 1
+
+
+@pytest.mark.parametrize(
+    "status, headers, logged",
+    [
+        (403, {}, "status 403 Forbidden"),
+        (403, {"cf-mitigated": "challenge"}, "status 403 Forbidden, Cloudflare challenge"),
+        (429, {}, "status 429 Too Many Requests"),
+        (503, {}, "status 503 Service Unavailable"),
+    ],
+)
+def test_a_failed_read_logs_the_page_status_and_reason(http, fake_mawaqit, caplog, status, headers, logged):
+    fake_mawaqit.failure = status
+    fake_mawaqit.failure_headers = headers
+    error = SourceBlocked if status in (403, 429) else SourceFailed
+    with caplog.at_level(logging.WARNING), pytest.raises(error, match=logged):
+        download(http, "kma-masjid-ottawa")
+    assert f"MAWAQIT page kma-masjid-ottawa failed: {logged} after" in caplog.text
+    # Only the status line and one header. Never the page itself.
+    assert "Fake failure" not in caplog.text

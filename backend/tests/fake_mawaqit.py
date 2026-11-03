@@ -17,6 +17,8 @@ class FakeMawaqit:
         self.requests: list[httpx2.Request] = []
         # A status code (403, 429, 500), "timeout", or "huge" makes every call fail.
         self.failure: int | str | None = None
+        # Extra headers on a failure, like Cloudflare's "cf-mitigated: challenge".
+        self.failure_headers: dict[str, str] = {}
 
     def handles(self, host: str) -> bool:
         return host == MAWAQIT_HOST
@@ -36,7 +38,7 @@ class FakeMawaqit:
         if self.failure == "huge":
             return httpx2.Response(200, content=b"x" * (4 * 1024 * 1024))
         if self.failure is not None:
-            return httpx2.Response(int(self.failure), text="Fake failure")
+            return httpx2.Response(int(self.failure), text="Fake failure", headers=self.failure_headers)
         saved_id = "/".join(parts[1:])
         if saved_id not in self.pages:
             return httpx2.Response(404, text="Not found")
