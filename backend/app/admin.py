@@ -35,6 +35,7 @@ from app.masjid_times.scan import (
     scan_lines,
 )
 from app.masjid_times.scheduler import run_fetch
+from app.masjid_times.source import get_source
 from app.models import Masjid, MasjidDayTimes, MasjidSource
 from app.stats import masjid_counts, stats_lines, total_users
 from app.update_jobs import queue_update, users_of_masjid
@@ -58,7 +59,7 @@ def list_masjids(db: Session) -> list[str]:
         # A typed-in masjid's address is where one user said it is, so it isn't printed.
         name = masjid.name or "(no name, picked by address)"
         linked = (
-            f"MAWAQIT {source.external_id}{' (automatic)' if source.origin == 'auto' else ''}" if source
+            f"{get_source(source.source).label} {source.external_id}{' (automatic)' if source.origin == 'auto' else ''}" if source
             else "not linked, and won't be linked automatically" if masjid.no_auto_link else "not linked"
         )
         fetched = f", last fetched {source.last_success_at:%Y-%m-%d %H:%M} UTC" if source and source.last_success_at else ""

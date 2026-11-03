@@ -1,4 +1,4 @@
-name,short_name,address,mawaqit_link,latitude,longitude
+name,short_name,address,times_link,latitude,longitude
 Kanata Muslim Association,KMA,,https://mawaqit.net/en/id/9793,45.356128,-75.9283718
 Ottawa Main Mosque (OMA),,,https://mawaqit.net/en/id/30768,45.4014817,-75.7413215
 Ottawa South Mosque,,,https://mawaqit.net/en/id/42976,45.394948,-75.681212
@@ -22,3 +22,4 @@ Ottawa Uyghur Centre (Orleans),,,https://mawaqit.net/en/id/26737,45.4878375,-75.
 Aylmer Mosque (Gatineau),,,https://mawaqit.net/en/id/21136,45.3956226,-75.8448102
 Mosquee de Gatineau - CIO,,,https://mawaqit.net/en/cio-gatineau,45.4290189,-75.732133
 Mosquee Meriam - CIO (Gatineau),,,https://mawaqit.net/en/id/11810,45.4815806,-75.6419534
+Masjid ar-Rahmah,AMA,"1216 Hunt Club Rd., Ottawa",https://www.mymasjid.ca/prayer/,45.3517835,-75.6473151

@@ -207,6 +207,22 @@ def test_a_masjid_never_read_for_a_day_gets_a_notice_from_when_it_was_linked(set
     ]
 
 
+def test_a_today_only_source_says_unread_days_are_calculated(set_up, db, set_today):
+    # The user's masjid linked to mymasjid.ca, like Masjid ar-Rahmah. Only today is
+    # ever on that page, so a missed read means that day is calculated, with no "switches on" date.
+    kma = masjid_id(db, "Kanata Muslim Association")
+    link(db, kma, "mymasjid.ca", source="mymasjid", at=NOW - timedelta(days=3))
+    with Session(db) as session:
+        session.get(MasjidSource, kma).last_success_at = NOW - timedelta(days=2)
+        session.commit()
+    settings = set_up.get("/settings").json()
+    assert settings["masjid_notices"] == [
+        "KMA's times couldn't be confirmed since Oct 22, 2026. "
+        "Your calendar is using calculated times for the days mymasjid.ca couldn't be read."
+    ]
+    assert settings["main_masjid"]["iqamah_status"] == "Times from mymasjid.ca, last read Oct 22, 2026"
+
+
 def test_nothing_reaches_google_until_setup_finishes(signed_in, fake_photon, fake_google):
     # Every question, including the optional step, but not finished yet.
     setup_through_api(signed_in, fake_photon, finish=False)

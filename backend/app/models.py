@@ -249,7 +249,9 @@ class Masjid(Base):
 
 
 class MawaqitListEntry(Base):
-    """One masjid on my list of MAWAQIT masjids (app/data/mawaqit_masjids.csv).
+    """One masjid on my list of masjids with published times (app/data/mawaqit_masjids.csv).
+
+    Almost all are on MAWAQIT. Masjid ar-Rahmah is read from its own website.
 
     MAWAQIT's search needs a login, so the app can't find a masjid's page by
     itself. I collect them by hand, and the app matches users' masjids to
@@ -258,8 +260,11 @@ class MawaqitListEntry(Base):
 
     __tablename__ = "mawaqit_list"
 
-    # "id/9793" for a share link (mawaqit.net/en/id/9793), or a page name like "cio-gatineau".
+    # "id/9793" for a share link (mawaqit.net/en/id/9793), a page name like
+    # "cio-gatineau", or "mymasjid.ca" for Masjid ar-Rahmah's own website.
     external_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    # Which adapter reads it: "mawaqit" or "mymasjid". Linked masjids get the same source.
+    source: Mapped[str] = mapped_column(String(16), default="mawaqit", server_default="mawaqit")
     name: Mapped[str] = mapped_column(Text)
     # Like "BIC". Setup's search finds a masjid by it. Optional.
     short_name: Mapped[str | None] = mapped_column(Text)

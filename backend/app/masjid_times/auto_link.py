@@ -43,14 +43,16 @@ def auto_link(db: Session, masjid: Masjid, now: datetime, entries: list[Listed] 
         db.execute(
             insert(MasjidSource)
             .values(
-                masjid_id=masjid.id, source="mawaqit", external_id=found.entry.external_id, origin="auto",
+                masjid_id=masjid.id, source=found.entry.source, external_id=found.entry.external_id, origin="auto",
                 list_external_id=found.entry.external_id, match_distance_m=found.distance_m, linked_at=now,
             )
             .on_conflict_do_nothing()
         )
         db.flush()
         # Only IDs, never anything about a user.
-        logger.info("Linked masjid %s to MAWAQIT %s (%d m)", masjid.id, found.entry.external_id, found.distance_m)
+        logger.info(
+            "Linked masjid %s to %s %s (%d m)", masjid.id, found.entry.source, found.entry.external_id, found.distance_m
+        )
     return found
 
 

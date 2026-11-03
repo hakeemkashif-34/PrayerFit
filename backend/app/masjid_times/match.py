@@ -41,6 +41,8 @@ class Listed:
     longitude: float
     short_name: str | None = None
     address: str | None = None
+    # Which adapter reads its times: "mawaqit" or "mymasjid".
+    source: str = "mawaqit"
 
 
 @dataclass(frozen=True)

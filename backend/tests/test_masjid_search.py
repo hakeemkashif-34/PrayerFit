@@ -27,7 +27,11 @@ KMA = Listed("id/9793", "Kanata Muslim Association", 45.356128, -75.9283718, "KM
 OMA = Listed("id/30768", "Ottawa Main Mosque (OMA)", 45.4014817, -75.7413215)
 ALSHAREEF = Listed("id/26072", "Alshareef Islamic Centre", 45.3535198, -75.7590002)
 DEEP_RIVER = Listed("id/43997", "Ottawa Valley Islamic Centre (Deep River)", 46.0963698, -77.4877557)
-ENTRIES = [BIC, KMA, OMA, ALSHAREEF, DEEP_RIVER]
+# Not on MAWAQIT: read from its own website.
+AMA = Listed(
+    "mymasjid.ca", "Masjid ar-Rahmah", 45.3517835, -75.6473151, "AMA", "1216 Hunt Club Rd., Ottawa", "mymasjid"
+)
+ENTRIES = [BIC, KMA, OMA, ALSHAREEF, DEEP_RIVER, AMA]
 
 
 def labels(found) -> list[str]:
@@ -78,7 +82,9 @@ def test_bic_is_in_the_real_list_with_its_short_name_and_address():
 
 def put_on_list(db, *entries: Listed) -> None:
     with Session(db) as session:
-        rows = [ListRow(e.external_id, e.name, e.latitude, e.longitude, e.short_name, e.address) for e in entries]
+        rows = [
+            ListRow(e.external_id, e.name, e.latitude, e.longitude, e.short_name, e.address, e.source) for e in entries
+        ]
         save_rows(session, rows, "file", NOW)
         session.commit()
 
@@ -167,3 +173,44 @@ def test_the_list_never_shows_another_users_masjid(signed_in, db):
         session.add(Masjid(source="user", address="3971 Greenbank Road, Ottawa", latitude=BIC.latitude, longitude=BIC.longitude))
         session.commit()
     assert search(signed_in, "Greenbank") == []
+
+
+# ---- Masjid ar-Rahmah, read from mymasjid.ca ----
+
+
+@pytest.mark.parametrize("typed", ["AMA", "ar-rahmah", "rahmah", "Masjid ar-Rahmah", "ar rahmah"])
+def test_masjid_ar_rahmah_is_found_by_name_and_short_name(typed):
+    assert labels(search_list(typed, ENTRIES, HOME))[:1] == ["Masjid ar-Rahmah"]
+
+
+def test_masjid_ar_rahmah_is_in_the_real_list():
+    rows = {r.external_id: r for r in read_file()}
+    assert rows["mymasjid.ca"].source == "mymasjid"
+    assert rows["mymasjid.ca"].address == "1216 Hunt Club Rd., Ottawa"
+
+
+def test_picking_masjid_ar_rahmah_links_it_to_mymasjid_and_reads_it(signed_in, db, fake_mymasjid, fake_mawaqit):
+    put_on_list(db, *ENTRIES)
+    picked = pick(signed_in, "AMA", "Masjid ar-Rahmah")
+    assert (picked["source"], picked["address"]) == ("list", "1216 Hunt Club Rd., Ottawa")
+    with Session(db) as session:
+        source = session.get(MasjidSource, picked["id"])
+        assert (source.source, source.external_id, source.origin, source.list_external_id) == (
+            "mymasjid", "mymasjid.ca", "auto", "mymasjid.ca",
+        )
+    # Read straight away from its own website, never from MAWAQIT.
+    assert len(fake_mymasjid.requests) == 1
+    assert fake_mawaqit.requests == []
+    assert picked["iqamah_status"].startswith("Times from mymasjid.ca, updated ")
+
+
+def test_the_jumuah_question_shows_masjid_ar_rahmahs_2_start_times(signed_in, db, fake_mymasjid):
+    from tests.test_jumuah_pick_and_chooser import choices, local
+
+    put_on_list(db, *ENTRIES)
+    picked = pick(signed_in, "AMA", "Masjid ar-Rahmah")
+    data = choices(signed_in, picked["id"])
+    assert [(s["order_label"], local(s["starts_at"])) for s in data["slots"]] == [
+        ("1st Jumuah", "12:00"), ("2nd Jumuah", "13:30"),
+    ]
+    assert data["no_times"] == []
