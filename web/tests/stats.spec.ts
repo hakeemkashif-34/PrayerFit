@@ -328,6 +328,8 @@ test("with nobody yet, the graph and the table say so", async ({ page }) => {
   await page.goto("/stats");
   await expect(page.getByText("Nobody has signed up yet.")).toBeVisible();
   await expect(page.getByText("Nobody has picked one yet.")).toBeVisible();
+  // Said once: no "PrayerFit has 0 users" above it.
+  await expect(page.locator(".users-total")).toHaveCount(0);
 });
 
 test("nothing is wider than the screen", async ({ page }) => {
