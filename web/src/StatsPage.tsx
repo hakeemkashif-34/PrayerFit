@@ -331,6 +331,7 @@ export function StatsPage() {
                   <td>
                     {m.name}
                     {!m.mawaqit_linked && <span className="tag">No MAWAQIT times</span>}
+                    {m.last_error && <p className="last-read">Last read: {m.last_error}</p>}
                   </td>
                   <td>{m.users}</td>
                 </tr>

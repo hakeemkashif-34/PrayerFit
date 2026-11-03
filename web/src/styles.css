@@ -1641,6 +1641,14 @@ main.adding h1 {
   font-variant-numeric: tabular-nums;
 }
 
+/* Why a masjid's last read failed. Long errors wrap instead of widening the table. */
+.last-read {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
 /* "No MAWAQIT times": small, so the name stays the main thing. */
 .tag {
   display: inline-block;

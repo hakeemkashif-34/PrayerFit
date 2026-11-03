@@ -147,7 +147,8 @@ export type Preview = {
 // The private /stats page. Counts only.
 export type Stats = {
   // Masjids with at least 1 user, most users first. Not linked means no MAWAQIT times.
-  masjids: { name: string; users: number; mawaqit_linked: boolean }[];
+  // last_error: why the last MAWAQIT read failed or skipped a day. null when it was fine.
+  masjids: { name: string; users: number; mawaqit_linked: boolean; last_error: string | null }[];
 };
 
 // The /stats graph's dropdown. 1 to 3 days: a point per hour. Longer: a point per day.

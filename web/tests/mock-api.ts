@@ -135,9 +135,9 @@ export class MockApi {
   adminEmail: string | null = null;
   stats: Stats = {
     masjids: [
-      { name: "Kanata Muslim Association", users: 30, mawaqit_linked: true },
-      { name: "Jamia Omar", users: 8, mawaqit_linked: false },
-      { name: "(picked by address)", users: 1, mawaqit_linked: false },
+      { name: "Kanata Muslim Association", users: 30, mawaqit_linked: true, last_error: null },
+      { name: "Jamia Omar", users: 8, mawaqit_linked: false, last_error: null },
+      { name: "(picked by address)", users: 1, mawaqit_linked: false, last_error: null },
     ],
   };
   // The graph for each dropdown choice. Set one to change what the page gets.

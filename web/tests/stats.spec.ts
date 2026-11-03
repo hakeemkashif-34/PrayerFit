@@ -75,6 +75,32 @@ test("the masajid, most users first, with a tag on those with no MAWAQIT times",
   await expect(page.locator(".masjid-table .tag")).toHaveCount(2);
 });
 
+test("a masjid whose last read failed says why, under its name", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings());
+  api.adminEmail = "hakeem@example.com";
+  api.stats = {
+    masjids: [
+      {
+        name: "Kanata Muslim Association",
+        users: 30,
+        mawaqit_linked: true,
+        last_error: "Skipped 1 day: 2026-11-05 isha iqamah is more than 150 minutes after adhan",
+      },
+      { name: "Jamia Omar", users: 8, mawaqit_linked: false, last_error: null },
+    ],
+  };
+  await api.install(page);
+  await page.goto("/stats");
+  const rows = page.locator(".masjid-table tbody tr");
+  await expect(rows.first().locator(".last-read")).toHaveText(
+    "Last read: Skipped 1 day: 2026-11-05 isha iqamah is more than 150 minutes after adhan",
+  );
+  await expect(page.locator(".masjid-table .last-read")).toHaveCount(1);
+  // A long error wraps, so the page never scrolls sideways on a phone.
+  const wide = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(wide).toBe(false);
+});
+
 test("the dropdown has every range and starts on 7 days", async ({ page }) => {
   const api = await openStats(page);
   await expect(range(page).locator("option")).toHaveText(["1 day", "2 days", "3 days", "5 days", "7 days", "30 days", "All time"]);
