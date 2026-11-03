@@ -121,6 +121,20 @@ Barrhaven Islamic Centre (BIC) is the 2nd masjid with a saved MAWAQIT page in th
 1. It publishes 2 Jumuah times, 1:00 pm and 2:30 pm. Its 3rd Jumuah is empty, so the parser gives 2 slots, numbered 1 and 2.
 2. `test_mawaqit_bic.py` checks Nov 1's adhan and iqamah, the clock change, both Jumuah times, and that every day of the year passes the checks.
 
+### Masjid ar-Rahmah from mymasjid.ca
+
+Masjid ar-Rahmah (AMA, 1216 Hunt Club Rd., Ottawa) isn't on MAWAQIT. Its prayer page, https://www.mymasjid.ca/prayer/, shows an "Iqaama Timetable" in an iframe. The iframe is a small HTML table from `https://app.mymasjid.ca/protected/public/timetable`, with an Adhān and an Iqāmah column for each prayer and 2 Jumuah rows. Its own adapter, `backend/app/masjid_times/mymasjid.py`, reads it, separate from the MAWAQIT adapter, so one breaking never breaks the other.
+
+1. **Today only**: the table has no date, and no way to ask for another day. Each read is saved as the masjid's local date at that moment. Days that haven't been read use calculated times, never a copy of another day.
+2. **Names**: "Zuhr" on the page is Dhuhr.
+3. **Missing iqamah**: an empty Iqāmah cell stays empty, the calculated start time is used, and the worker logs it. An iqamah is never made up.
+4. **Jumuah**: the 2 Jumuah rows only have a time in the Adhān column. They're the Jumuah start times (12:00 pm and 1:30 pm when it was saved), with no iqamah claimed. They're saved on the masjid's source for the coming Friday (`masjid_sources.upcoming_jumuah`), since Friday has no row until Friday comes. The Jumuah question and the calendar use them like MAWAQIT's.
+5. **Checks**: the same per-day checks as MAWAQIT (`validate.py`). It's the only day on the page, so a failed check rejects that read and says which prayer. A bad Jumuah time only skips Jumuah, and the last good Jumuah times stay.
+6. **Freshness**: the same rules as MAWAQIT, measured from the last good read. After 24 hours Settings shows `AMA's times couldn't be confirmed since Nov 3, 2026. Your calendar is using calculated times for the days mymasjid.ca couldn't be read.` A day that was read keeps its times for up to 7 days.
+7. **When it's read**: the page has no date, so reading it just before it switches to the new day would save yesterday's table as today's. Reads only happen inside a window set in `mymasjid.py` (see LEARNING.md, Milestone 7, section 24).
+8. **Where it's from**: name and address from the masjid's contact page. The location is the centre of the building on OpenStreetMap (way 483089921, 45.3517835, -75.6473151), which is within about 10 m of the pin on the masjid's own map.
+9. **Tests**: `test_mymasjid.py` reads a saved copy of the table from November 3, 2026 (`backend/tests/fixtures/mymasjid/`). `test_mymasjid_calendar.py` follows it to the calendar. Tests never call the real site.
+
 ### What it changes in the calendar
 
 1. **Masjid prayers** use the masjid's iqamah. Settings shows where it came from, like `Times from MAWAQIT, updated Oct 25, 2026`. A day with no iqamah uses the calculated start time. An iqamah is never made up. `+0` on a MAWAQIT page means the iqamah is at the adhan time: KMA uses it for Asr and Isha on days when its set time would come before the adhan. If a page sets `fajrFixationComparedToShuruq`, Fajr's iqamah isn't used and the worker logs it, since that setting's format isn't known.

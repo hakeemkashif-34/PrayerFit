@@ -1856,3 +1856,27 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
    c) `test_mawaqit_scheduler.py` checks that a bad day keeps its old times while the next day gets its new one, the log lines, and that a skipped day falls back after 7 days.
    d) `test_mawaqit_download.py` checks the logged status and reason for 403, 429, 503, and a Cloudflare challenge. `test_admin.py` checks `--ignore-wait`.
    e) Playwright checks the notice shows exactly once on Settings, under "every 5 minutes", on desktop and phone, plus a test for each of the other duplicates.
+
+### 24. Masjid ar-Rahmah from its own website
+
+1. **Why**: Masjid ar-Rahmah (AMA, 1216 Hunt Club Rd.) isn't on MAWAQIT. Its prayer page, https://www.mymasjid.ca/prayer/, has an "Iqaama Timetable" with no times in the HTML. The times come from an iframe: `https://app.mymasjid.ca/protected/public/timetable`, a small HTML table with Adhān and Iqāmah columns and 2 Jumuah rows. It isn't an image, so reading it doesn't need AI. robots.txt on www.mymasjid.ca allows everything, app.mymasjid.ca has none, and the site's policies say nothing about reading it.
+2. **Its own adapter** (`backend/app/masjid_times/mymasjid.py`): a second `MasjidTimesSource` next to MAWAQIT, registered in `get_source()`. If one breaks, only masjids linked to it fall back.
+   a) The URL is fixed in the code. A redirect isn't followed, and pages over 256 KB are refused.
+   b) The HTML is read with Python's `html.parser` as text. Script text is skipped, so nothing on the page is ever run.
+   c) "Zuhr" is Dhuhr. Times are 12-hour, like "05:22 AM". `twelve_hour()` turns "12:15 AM" into 0:15 and "12:30 PM" into 12:30.
+   d) The same per-day checks and logging as the KMA fix (section 23): the reason names the date and the prayer. It's the only day on the page, so a bad day rejects that read.
+3. **Today only**: the table has no date, and asking for another day gives the same page. Each read is saved as the masjid's local date. Days that weren't read use calculated times, never a copy of another day.
+   a) `keeps_future_days = False` on the adapter tells Settings that, so its notice says "Your calendar is using calculated times for the days mymasjid.ca couldn't be read." instead of "switches to calculated times on ...".
+   b) `save_days()` now counts a new date inside the calendar's 14 days as a change. Before, a new date was never a change, since MAWAQIT adds one at day 30 each day. Today's new row would have been saved, but no calendar would have updated.
+4. **Jumuah start times**: the 2 Jumuah rows only have a time in the Adhān column (12:00 pm and 1:30 pm). They're Jumuah start times, and no iqamah is claimed.
+   a) Friday has no row until Friday, so they're saved on the masjid's source for the coming Friday: `masjid_sources.upcoming_jumuah` (migration `0016`).
+   b) `MasjidTimes.jumuah_on(friday)` gives a Friday's Jumuah from there, or from the Friday's own row for MAWAQIT. The Jumuah question and the calendar both use it.
+   c) A bad Jumuah time only skips Jumuah. The 5 prayers are still saved, and the last good Jumuah stays.
+5. **My masjid list** (`app/data/mawaqit_masjids.csv`): the `mawaqit_link` column is now `times_link`, and each row has a source (migration `0017`). `source_from_link()` turns a MAWAQIT link into ("mawaqit", its ID), and only `https://www.mymasjid.ca/prayer/` into ("mymasjid", "mymasjid.ca"). Picking AMA in setup, or an OpenStreetMap masjid within the auto-link distance of it, links it to mymasjid.ca and reads it straight away.
+   a) Name, short name, and address are from the masjid's own contact page.
+   b) The location is the centre of the building on OpenStreetMap (way 483089921, tagged with mymasjid.ca as its website). The pin on the masjid's own map is within about 10 m of it. The masjid's "get directions" link is about 170 m off, since it's where that map was centred, so I didn't use it.
+6. **Tests**:
+   a) `test_mymasjid.py` reads a saved copy of the table from November 3, 2026 (`tests/fixtures/mymasjid/`) and changes one cell at a time: a missing iqamah, a missing or repeated prayer, bad times, each check, a bad Jumuah, a 3rd Jumuah, and script text. Downloads use a fake site (`tests/fake_mymasjid.py`), never the real one.
+   b) `test_mymasjid_calendar.py` follows a read to Google: today's iqamah, Wednesday on calculated times, the next day's read updating calendars, a failed read, and Jumuah at 12:00.
+   c) `test_masjid_search.py` checks "AMA", "ar-rahmah", and "rahmah" find it, picking it links to mymasjid.ca, and the Jumuah question shows its 2 times.
+   d) There's no daylight saving test against the page itself: it only ever has today, so there's no saved week to test.
