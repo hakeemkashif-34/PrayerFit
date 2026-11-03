@@ -108,7 +108,8 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
           </div>
         </header>
 
-        {!busyAccess && <BusyBanner />}
+        {/* One "Sign in again" at a time. Signing in from the calendar notice gives busy access too. */}
+        {!busyAccess && calendar?.status !== "sign_in_needed" && <BusyBanner />}
 
         {calendar && (
           <p className={calendar.status === "updated" || calendar.status === "adding" ? "notice" : "notice warning"} role="status">

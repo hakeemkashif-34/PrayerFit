@@ -378,6 +378,28 @@ test("users without free/busy access get a banner to sign in again", async ({ pa
   expect(bannerBox!.y).toBeLessThan(card!.y);
 });
 
+test("a save that needs sign-in hides the banner, so Sign in again shows once", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings(), { busy_access: false });
+  await api.install(page);
+  await page.route("**/api/settings/weekly", (route) =>
+    route.fulfill({
+      json: {
+        settings: finishedSettings(),
+        calendar: { status: "sign_in_needed", sent: 0, waiting: 69, message: "Saved. Sign in again so your calendar can update." },
+      },
+    }),
+  );
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: /Sign in again so your prayers/ })).toBeVisible();
+
+  await openEditor(page, "Edit prayers at the masjid");
+  await page.getByRole("button", { name: "Save" }).click();
+
+  await expect(page.getByRole("status")).toContainText("Saved. Sign in again so your calendar can update.");
+  await expect(page.getByRole("region", { name: /Sign in again so your prayers/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Sign in again" })).toHaveCount(1);
+});
+
 test("Not now hides the banner, and it stays hidden in this browser", async ({ page }) => {
   const api = new MockApi().signedIn(finishedSettings(), { busy_access: false });
   await api.install(page);
