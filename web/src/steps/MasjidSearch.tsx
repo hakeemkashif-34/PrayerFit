@@ -48,7 +48,8 @@ export function MasjidSearch({ onPicked, placeholder = "Start typing the masjid'
         )}
         optionName={(s) => `${s.label}, ${s.distance_km} km away`}
         onPick={pick}
-        emptyText="No masjid found near you. Check the spelling, or type the masjid's address instead."
+        // "Type its address" is already the line under the box, so it isn't said again here.
+        emptyText="No masjid found near you. Check the spelling."
         disabled={saving || disabled}
       />
       <p className="hint small-line">Can't find it? Type its address.</p>

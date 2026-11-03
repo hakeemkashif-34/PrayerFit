@@ -378,9 +378,10 @@ test("a typo with no masjid nearby says so", async ({ page }) => {
   await page.goto("/");
   await pickHome(page);
   await masjidBox(page).pressSequentially("Kanta M", { delay: 30 });
-  await expect(page.getByRole("listbox")).toHaveText(
-    "No masjid found near you. Check the spelling, or type the masjid's address instead.",
-  );
+  await expect(page.getByRole("listbox")).toHaveText("No masjid found near you. Check the spelling.");
+  // The tip to type its address is said once, under the box.
+  await expect(page.getByText(/its address|address instead/)).toHaveCount(1);
+  await expect(page.getByText("Can't find it? Type its address.")).toBeVisible();
 });
 
 test("only masjids within 100 km are suggested", async ({ page }) => {
