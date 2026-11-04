@@ -1881,12 +1881,13 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
    c) `test_masjid_search.py` checks "AMA", "ar-rahmah", and "rahmah" find it, picking it links to mymasjid.ca, and the Jumuah question shows its 2 times.
    d) There's no daylight saving test against the page itself: it only ever has today, so there's no saved week to test.
 7. **When it's read**: the page has no date, so a read at the wrong hour could save yesterday's (or tomorrow's) table as today's.
-   a) I'm watching the live page every 5 minutes overnight to see when it switches days. Reads only happen from 12:15 am to 6:45 pm Toronto time. That's safe whether it switches at midnight in Toronto or at midnight UTC (7 pm, or 8 pm in summer, when the server's clock might be on UTC).
-   b) MAWAQIT reads once per 6-hour UTC block. That didn't work here: the block from 7 pm to 1 am read at 7 pm the day before, so the new day's first read was 1 am in winter and 2 am in summer. Now each source picks its own read slots (`read_slot()`). MAWAQIT still uses the UTC block. mymasjid.ca uses the local clock.
-   c) The first read is at 12:15 am, at least 3 hours before Fajr all year (about 3:30 am in summer), so that day's Fajr iqamah is in the calendar in time. A read that adds today's times updates calendars within a minute.
-   d) Until a read works, it's tried every hour. After 3 failures in a row it waits for the 12:00 pm read. If that fails too, it waits until the next day's 12:15 am read, not 24 hours, since a missed day can't be read later. A 403 or 429 still waits 24 hours, since that's the site asking to slow down.
-   e) From 12:00 pm it's read once more, in case the masjid changed a time during the day. So a normal day is 2 reads: 12:15 am and 12:00 pm.
-   f) `test_mymasjid_calendar.py` runs the worker every 5 minutes through whole days and checks the read times: a winter day, a summer day, both days the clocks change, a failed first read, the site down overnight but back by noon, the site down all day, and a 403.
+   a) I watched the live page overnight from November 3 to 4, every 5 minutes, plus my own reads at set times. It still showed November 3 at 7:00 to 7:20 pm, so it doesn't switch at midnight UTC. It showed November 3 at 11:41 pm and November 4 at 12:03 am, so it switches around midnight Toronto time. The new table's adhan times matched the calculated November 4 times within a minute, which confirmed the new day.
+   b) Reads only happen from 12:15 am to 6:45 pm Toronto time. The first read is at least 12 minutes after the switch, and nothing is read in the evening, so a read never saves the wrong day's table.
+   c) MAWAQIT reads once per 6-hour UTC block. That didn't work here: the block from 7 pm to 1 am read at 7 pm the day before, so the new day's first read was 1 am in winter and 2 am in summer. Now each source picks its own read slots (`read_slot()`). MAWAQIT still uses the UTC block. mymasjid.ca uses the local clock.
+   d) The first read is at 12:15 am, at least 3 hours before Fajr all year (about 3:30 am in summer), so that day's Fajr iqamah is in the calendar in time. A read that adds today's times updates calendars within a minute.
+   e) Until a read works, it's tried every hour. After 3 failures in a row it waits for the 12:00 pm read. If that fails too, it waits until the next day's 12:15 am read, not 24 hours, since a missed day can't be read later. A 403 or 429 still waits 24 hours, since that's the site asking to slow down.
+   f) From 12:00 pm it's read once more, in case the masjid changed a time during the day. So a normal day is 2 reads: 12:15 am and 12:00 pm.
+   g) `test_mymasjid_calendar.py` runs the worker every 5 minutes through whole days and checks the read times: a winter day, a summer day, both days the clocks change, a failed first read, the site down overnight but back by noon, the site down all day, and a 403.
 
 ### 25. Masjid locations on prayer events
 
