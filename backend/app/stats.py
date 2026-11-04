@@ -50,6 +50,8 @@ class MasjidCount:
     users: int
     # False when it isn't linked to MAWAQIT, so its users get calculated times.
     mawaqit_linked: bool
+    # Why the last read failed, or which day it skipped. None when it was fine.
+    last_error: str | None = None
 
 
 def total_users(db: Session) -> int:
@@ -129,14 +131,16 @@ def masjid_counts(db: Session) -> list[MasjidCount]:
     """Every masjid at least 1 user picked as their main masjid, most users first."""
     users = func.count(UserSettings.user_id)
     rows = db.execute(
-        select(Masjid, users, MasjidSource.masjid_id.isnot(None))
+        select(Masjid, users, MasjidSource.masjid_id.isnot(None), MasjidSource.last_error)
         .join(UserSettings, UserSettings.main_masjid_id == Masjid.id)
         .outerjoin(MasjidSource, MasjidSource.masjid_id == Masjid.id)
         .where(UserSettings.main_masjid_choice == "masjid")
         .group_by(Masjid.id, MasjidSource.masjid_id)
         .order_by(users.desc(), Masjid.name.nulls_last())
     )
-    return [MasjidCount(masjid.name or PICKED_BY_ADDRESS, count, linked) for masjid, count, linked in rows]
+    return [
+        MasjidCount(masjid.name or PICKED_BY_ADDRESS, count, linked, error) for masjid, count, linked, error in rows
+    ]
 
 
 def stats_lines(total: int, masjids: list[MasjidCount]) -> list[str]:
@@ -144,6 +148,8 @@ def stats_lines(total: int, masjids: list[MasjidCount]) -> list[str]:
     lines = [f"Total users: {total}", "", "Masjids:"]
     if not masjids:
         return [*lines, "  None picked yet."]
-    return lines + [
-        f"  {m.name}: {m.users}{'' if m.mawaqit_linked else '  (no MAWAQIT times)'}" for m in masjids
-    ]
+    for m in masjids:
+        lines.append(f"  {m.name}: {m.users}{'' if m.mawaqit_linked else '  (no MAWAQIT times)'}")
+        if m.last_error:
+            lines.append(f"    Last read: {m.last_error}")
+    return lines

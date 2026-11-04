@@ -12,7 +12,7 @@ from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 
 from app import admin
-from app.models import Masjid, UserCountChange, UserSettings
+from app.models import Masjid, MasjidSource, UserCountChange, UserSettings
 from app.stats import (
     RANGES,
     MasjidCount,
@@ -268,6 +268,25 @@ def test_the_command_prints_the_same_as_the_page():
     assert stats_lines(0, []) == ["Total users: 0", "", "Masjids:", "  None picked yet."]
 
 
+def test_a_masjid_whose_last_read_failed_says_why(db, fake_google):
+    a, b, _ = make_users(db, fake_google)
+    kma = add_masjid(db, "Kanata Muslim Association")
+    link(db, kma, "kma-masjid-ottawa")
+    with Session(db) as session:
+        session.get(MasjidSource, kma).last_error = "MAWAQIT answered status 403 Forbidden"
+        session.commit()
+    pick(db, {a: kma})
+    with Session(db) as session:
+        found = masjid_counts(session)
+    assert found == [
+        MasjidCount("Kanata Muslim Association", 1, mawaqit_linked=True, last_error="MAWAQIT answered status 403 Forbidden")
+    ]
+    assert stats_lines(1, found)[-2:] == [
+        "  Kanata Muslim Association: 1",
+        "    Last read: MAWAQIT answered status 403 Forbidden",
+    ]
+
+
 def test_the_admin_command_prints_only_counts(db, fake_google, capsys):
     a, *_ = make_users(db, fake_google)
     pick(db, {a: add_masjid(db, "Kanata Muslim Association")})
@@ -305,7 +324,9 @@ def test_the_admin_sees_the_masjids_and_the_graph(db, fake_google, admin_email, 
         week = browser.get("/admin/stats/users")
         day = browser.get("/admin/stats/users?range=1d")
     assert stats.status_code == 200
-    assert stats.json() == {"masjids": [{"name": "Kanata Muslim Association", "users": 2, "mawaqit_linked": False}]}
+    assert stats.json() == {
+        "masjids": [{"name": "Kanata Muslim Association", "users": 2, "mawaqit_linked": False, "last_error": None}]
+    }
     # 7 days unless the page asks for something else.
     assert week.json()["step"] == "day"
     assert week.json()["points"][-2:] == [

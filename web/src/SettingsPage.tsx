@@ -83,12 +83,21 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
   return (
     <div className="page-with-footer">
       <main className="page settings-page">
-        <header className="top">
-          <div>
+        <header className="top settings-top">
+          <div className="top-intro">
             <h1>Settings</h1>
             <p className="hint">Signed in as {email}</p>
             <p className="hint">Updates and changes are reflected on your calendar <mark className="highlight">every 5 minutes</mark>.</p>
           </div>
+          {/* Shown only here, next to "every 5 minutes", since both are about when the calendar updates.
+              The Main masjid row only says when MAWAQIT was last read, so the message isn't repeated. */}
+          {settings.masjid_notices.length > 0 && (
+            <div className="top-notices">
+              {settings.masjid_notices.map((text) => (
+                <p key={text} className="notice warning" role="status">{text}</p>
+              ))}
+            </div>
+          )}
           <div className="top-action">
             <a className="button open-calendar" href={googleCalendarUrl(email)}>
               Open Google Calendar
@@ -99,11 +108,8 @@ export function SettingsPage({ email, busyAccess, initial, initialCalendar, tabB
           </div>
         </header>
 
-        {settings.masjid_notices.map((text) => (
-          <p key={text} className="notice warning" role="status">{text}</p>
-        ))}
-
-        {!busyAccess && <BusyBanner />}
+        {/* One "Sign in again" at a time. Signing in from the calendar notice gives busy access too. */}
+        {!busyAccess && calendar?.status !== "sign_in_needed" && <BusyBanner />}
 
         {calendar && (
           <p className={calendar.status === "updated" || calendar.status === "adding" ? "notice" : "notice warning"} role="status">

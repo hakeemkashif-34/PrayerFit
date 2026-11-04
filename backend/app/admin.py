@@ -4,7 +4,7 @@ these, so a user can't link the wrong page for everyone.
     python -m app.admin list-masjids
     python -m app.admin link-mawaqit --masjid <masjid id> --url <MAWAQIT page link>
     python -m app.admin unlink-mawaqit --masjid <masjid id>
-    python -m app.admin fetch-mawaqit --masjid <masjid id>
+    python -m app.admin fetch-mawaqit --masjid <masjid id> [--ignore-wait]
     python -m app.admin add-mawaqit <MAWAQIT link> --name "<name>" --lat <latitude> --lon <longitude> [--short-name BIC --address "<address>"]
     python -m app.admin scan-area [--lat 45.4215 --lon -75.6972 --km 40]
     python -m app.admin set-jumuah-length --masjid <masjid id> --minutes 40
@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app.db import get_engine
 from app.http_client import new_http_client
 from app.jumuah import DEFAULT_JUMUAH_MINUTES
-from app.masjid_times.auto_link import rematch_picked
+from app.masjid_times.auto_link import rematch_picked, update_picked_list_masjids
 from app.masjid_times.mawaqit import BadLink, external_id_from_link
 from app.masjid_times.mawaqit_list import check_row, listed, save_rows
 from app.masjid_times.scan import (
@@ -35,6 +35,7 @@ from app.masjid_times.scan import (
     scan_lines,
 )
 from app.masjid_times.scheduler import run_fetch
+from app.masjid_times.source import get_source
 from app.models import Masjid, MasjidDayTimes, MasjidSource
 from app.stats import masjid_counts, stats_lines, total_users
 from app.update_jobs import queue_update, users_of_masjid
@@ -58,7 +59,7 @@ def list_masjids(db: Session) -> list[str]:
         # A typed-in masjid's address is where one user said it is, so it isn't printed.
         name = masjid.name or "(no name, picked by address)"
         linked = (
-            f"MAWAQIT {source.external_id}{' (automatic)' if source.origin == 'auto' else ''}" if source
+            f"{get_source(source.source).label} {source.external_id}{' (automatic)' if source.origin == 'auto' else ''}" if source
             else "not linked, and won't be linked automatically" if masjid.no_auto_link else "not linked"
         )
         fetched = f", last fetched {source.last_success_at:%Y-%m-%d %H:%M} UTC" if source and source.last_success_at else ""
@@ -117,10 +118,13 @@ def add_mawaqit(
     else:
         lines = [f"Saved {row.name} ({row.external_id}) at {row.latitude}, {row.longitude}."]
     new_links = rematch_picked(db, now)
+    # Named as they were picked, before they take the list's name below.
     lines += [
         f"Linked {new.masjid.name or new.masjid.id} to {new.found.entry.external_id} ({new.found.distance_m} m)."
         for new in new_links
     ]
+    # After linking, so a masjid linked just now takes the list's name too.
+    update_picked_list_masjids(db, now)
     lines.append("Add the same line to app/data/mawaqit_masjids.csv, so it's kept if the database is ever rebuilt.")
     return lines
 
@@ -182,6 +186,8 @@ def main(argv: list[str] | None = None) -> None:
     unlink.add_argument("--masjid", required=True)
     fetch = commands.add_parser("fetch-mawaqit", help="read a linked masjid's page now")
     fetch.add_argument("--masjid", required=True)
+    # Only after deploying a fix for my own bug. A 403 or 429 means MAWAQIT asked the app to wait.
+    fetch.add_argument("--ignore-wait", action="store_true", help="read now, even during the 24-hour wait after failures")
     length = commands.add_parser("set-jumuah-length", help="how long a masjid's Jumuah takes, 15 to 90 minutes")
     length.add_argument("--masjid", required=True)
     # A string, so "40.5" gets this command's own message instead of argparse's.
@@ -222,7 +228,7 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "fetch-mawaqit":
             masjid = _masjid(db, args.masjid)
             with new_http_client() as http:
-                result = run_fetch(db, http, masjid.id, now, force=True)
+                result = run_fetch(db, http, masjid.id, now, force=True, ignore_wait=args.ignore_wait)
             print(f"{result.status}{'. ' + result.message if result.message else ''}")
             if result.status not in ("done", "skipped"):
                 sys.exit(1)

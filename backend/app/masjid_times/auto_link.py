@@ -22,7 +22,8 @@ from app.masjid_times.freshness import Freshness, freshness
 from app.masjid_times.match import Listed, Match, match
 from app.masjid_times.mawaqit_list import listed, read_file, save_rows
 from app.masjid_times.scheduler import run_fetch
-from app.models import Masjid, MasjidSource, UserSettings
+from app.models import Masjid, MasjidSource, MawaqitListEntry, UserSettings
+from app.update_jobs import queue_update, users_of_masjid
 
 logger = logging.getLogger("app.masjid_times")
 
@@ -43,14 +44,16 @@ def auto_link(db: Session, masjid: Masjid, now: datetime, entries: list[Listed] 
         db.execute(
             insert(MasjidSource)
             .values(
-                masjid_id=masjid.id, source="mawaqit", external_id=found.entry.external_id, origin="auto",
+                masjid_id=masjid.id, source=found.entry.source, external_id=found.entry.external_id, origin="auto",
                 list_external_id=found.entry.external_id, match_distance_m=found.distance_m, linked_at=now,
             )
             .on_conflict_do_nothing()
         )
         db.flush()
         # Only IDs, never anything about a user.
-        logger.info("Linked masjid %s to MAWAQIT %s (%d m)", masjid.id, found.entry.external_id, found.distance_m)
+        logger.info(
+            "Linked masjid %s to %s %s (%d m)", masjid.id, found.entry.source, found.entry.external_id, found.distance_m
+        )
     return found
 
 
@@ -62,6 +65,10 @@ def link_and_fetch(db: Session, http: httpx2.Client, masjid: Masjid, now: dateti
     """
     try:
         auto_link(db, masjid, now)
+        # Picking an OpenStreetMap masjid saves OpenStreetMap's name again, so
+        # it's set back to the list's name here. Other users of it already had
+        # the list's name, so their calendars don't need an update.
+        use_list_name(db, masjid)
         db.commit()
         source = db.get(MasjidSource, masjid.id)
         if source is not None and freshness(source.last_success_at, now) is not Freshness.FRESH:
@@ -89,6 +96,64 @@ def rematch_picked(db: Session, now: datetime) -> list[NewLink]:
     return new_links
 
 
+def list_entry_for(db: Session, masjid: Masjid) -> MawaqitListEntry | None:
+    """The list entry this masjid is linked to, if any: by an automatic match, or a link I made to a listed page."""
+    source = db.get(MasjidSource, masjid.id)
+    if source is None:
+        return None
+    entry = db.get(MawaqitListEntry, source.list_external_id or source.external_id)
+    return entry if entry is not None and entry.source == source.source else None
+
+
+def use_list_name(db: Session, masjid: Masjid) -> bool:
+    """An OpenStreetMap masjid linked to a list entry takes the list's name. Doesn't commit.
+
+    OpenStreetMap's name can be long or different ("Masjid Bilal, Islamic
+    Society of Cumberland"), while setup's search shows the list's name
+    ("Masjid Bilal"). Using the list's name keeps event titles and Settings
+    the same as what the user picked. Only the name changes: the address
+    stays OpenStreetMap's, and a short name the user typed is saved apart
+    (user_settings) and never touched. True when the name changed.
+    """
+    if masjid.source != "openstreetmap":
+        return False
+    entry = list_entry_for(db, masjid)
+    if entry is None or masjid.name == entry.name:
+        return False
+    masjid.name = entry.name
+    return True
+
+
+def update_picked_list_masjids(db: Session, now: datetime) -> int:
+    """Bring masjids users already picked in line with the list. Commits.
+
+    1. Picked from the list: copy the entry's name and address. A list
+       masjid's row is saved when someone first picks it, so a fix in the
+       file would otherwise only reach new picks.
+    2. Picked from OpenStreetMap and linked to a list entry: use the list's name.
+    Users of a masjid that changed get a calendar update, since the name is in
+    event titles and the address is each masjid prayer's location. Returns how
+    many masjids changed.
+    """
+    changed: list[Masjid] = []
+    for masjid, entry in db.execute(
+        select(Masjid, MawaqitListEntry).join(MawaqitListEntry, MawaqitListEntry.external_id == Masjid.list_external_id)
+    ):
+        if (masjid.name, masjid.address) == (entry.name, entry.address):
+            continue
+        masjid.name, masjid.address = entry.name, entry.address
+        changed.append(masjid)
+    linked = select(Masjid).join(MasjidSource, MasjidSource.masjid_id == Masjid.id).where(Masjid.source == "openstreetmap")
+    for masjid in db.scalars(linked):
+        if use_list_name(db, masjid):
+            changed.append(masjid)
+    for masjid in changed:
+        for user_id in users_of_masjid(db, masjid.id):
+            queue_update(db, user_id, "masjid list", now)
+    db.commit()
+    return len(changed)
+
+
 def load_list(engine: Engine, now: datetime) -> int:
     """Load the file when the app starts. Returns how many rows were added or changed."""
     with Session(engine, expire_on_commit=False) as db:
@@ -97,6 +162,12 @@ def load_list(engine: Engine, now: datetime) -> int:
         if changed:
             new_links = rematch_picked(db, now)
             logger.info("MAWAQIT list: %d rows added or changed, %d masjids linked", changed, len(new_links))
+        # Every start, not only when the list changed, so masjids picked before
+        # a list name was used get it on the next deploy. Nothing changes if they match.
+        # After rematching, so a masjid linked just now gets the list's name too.
+        renamed = update_picked_list_masjids(db, now)
+        if renamed:
+            logger.info("Masjid list: %d picked masjids took the list's name or address", renamed)
     return changed
 
 

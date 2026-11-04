@@ -44,6 +44,7 @@ from app.models import Base  # noqa: E402
 from app.geo import throttle  # noqa: E402
 from tests.fake_google import FakeGoogle  # noqa: E402
 from tests.fake_mawaqit import FakeMawaqit  # noqa: E402
+from tests.fake_mymasjid import FakeMyMasjid  # noqa: E402
 from tests.fake_ors import FakeOrs  # noqa: E402
 from tests.fake_photon import FakePhoton  # noqa: E402
 
@@ -81,13 +82,22 @@ def fake_ors():
     return FakeOrs()
 
 
+@pytest.fixture
+def fake_mymasjid():
+    return FakeMyMasjid()
+
+
 def fake_http_client(
-    google: FakeGoogle, photon: FakePhoton, mawaqit: FakeMawaqit | None = None, ors: FakeOrs | None = None
+    google: FakeGoogle,
+    photon: FakePhoton,
+    mawaqit: FakeMawaqit | None = None,
+    ors: FakeOrs | None = None,
+    mymasjid: FakeMyMasjid | None = None,
 ) -> httpx2.Client:
     """An HTTP client that reaches only the fakes. Any other URL fails the test."""
 
     def route(request: httpx2.Request) -> httpx2.Response:
-        for fake in (photon, mawaqit, ors):
+        for fake in (photon, mawaqit, ors, mymasjid):
             if fake is not None and fake.handles(request.url.host):
                 return fake.handle(request)
         return google.handle(request)
@@ -96,12 +106,12 @@ def fake_http_client(
 
 
 @pytest.fixture
-def fake_google(fake_photon, fake_mawaqit, fake_ors):
+def fake_google(fake_photon, fake_mawaqit, fake_ors, fake_mymasjid):
     """Point every outside call the app makes at fresh fakes."""
     fake = FakeGoogle()
 
     def fake_http():
-        with fake_http_client(fake, fake_photon, fake_mawaqit, fake_ors) as client:
+        with fake_http_client(fake, fake_photon, fake_mawaqit, fake_ors, fake_mymasjid) as client:
             yield client
 
     app.dependency_overrides[get_http] = fake_http
@@ -110,9 +120,9 @@ def fake_google(fake_photon, fake_mawaqit, fake_ors):
 
 
 @pytest.fixture
-def http(fake_google, fake_photon, fake_mawaqit, fake_ors):
+def http(fake_google, fake_photon, fake_mawaqit, fake_ors, fake_mymasjid):
     """The same fake client the app gets, for tests that call the app's functions directly."""
-    with fake_http_client(fake_google, fake_photon, fake_mawaqit, fake_ors) as client:
+    with fake_http_client(fake_google, fake_photon, fake_mawaqit, fake_ors, fake_mymasjid) as client:
         yield client
 
 

@@ -3,11 +3,12 @@
 test_mawaqit_kma.py checks the same code against KMA's real saved page.
 """
 
+import re
 from datetime import date, time
 
 import pytest
 
-from app.masjid_times.mawaqit import conf_data, days_from
+from app.masjid_times.mawaqit import conf_data, days_from, read_days
 from app.masjid_times.source import JumuahTime, SourceInvalid, next_friday
 from tests.mawaqit_pages import conf, page, set_day
 
@@ -79,23 +80,48 @@ def test_months_and_dates_come_from_local_dates():
         (["05:30", "07:00", "12:30", "15:30", "18:00", None], None, "isn't a clock time"),
         (["05:30", "07:00", "12:30", "11:00", "18:00", "19:30"], None, "out of order"),
         (None, ["+20", "12:00", "+10", "+5", "20:15"], "before adhan"),
-        (None, ["+20", "13:00", "+10", "+5", "21:15"], "more than 90 minutes"),
-        (None, ["+91", "13:00", "+10", "+5", "20:15"], "more than 90 minutes"),
+        (None, ["+20", "13:00", "+10", "+5", "22:01"], "isha iqamah is more than 150 minutes"),
+        (None, ["+91", "13:00", "+10", "+5", "20:15"], "fajr iqamah is more than 90 minutes"),
+        (None, ["+20", "13:00", "+91", "+5", "20:15"], "asr iqamah is more than 90 minutes"),
         (None, ["+20", "13:00", "+10", "+5"], "isn't 5 values"),
         (None, ["soon", "13:00", "+10", "+5", "20:15"], "isn't a clock time"),
     ],
 )
-def test_impossible_times_reject_the_whole_page(times, iqamah, reason):
+def test_an_impossible_day_is_skipped_on_its_own(times, iqamah, reason):
     data = set_day(conf(), 10, 27, times=times, iqamah=iqamah)
-    with pytest.raises(SourceInvalid, match=reason):
-        read(data)
+    fetched = read_days(conf_data(page(data)), date(2026, 10, 25), 14)
+    assert [s.local_date for s in fetched.skipped] == [date(2026, 10, 27)]
+    # The reason names the day and, where there is one, the prayer.
+    assert "2026-10-27" in fetched.skipped[0].reason
+    assert re.search(reason, fetched.skipped[0].reason)
+    # The other 13 days are all kept.
+    assert [d.local_date for d in fetched.days] == [date(2026, 10, 25), date(2026, 10, 26)] + [
+        date(2026, 10, 28 + n) for n in range(4)
+    ] + [date(2026, 11, n) for n in range(1, 8)]
 
 
-def test_a_missing_day_rejects_the_page():
+@pytest.mark.parametrize("isha_iqamah", ["21:00", "+150"])
+def test_isha_iqamah_can_be_up_to_150_minutes_after_adhan(isha_iqamah):
+    # Isha adhan is 19:30 on a made-up page, so 21:00 is 90 minutes after and +150 is 22:00.
+    data = set_day(conf(), 10, 27, iqamah=["+20", "13:00", "+10", "+5", isha_iqamah])
+    day = next(d for d in read(data) if d.local_date == date(2026, 10, 27))
+    assert day.iqamah["isha"] == (time(21, 0) if isha_iqamah == "21:00" else time(22, 0))
+
+
+def test_a_missing_day_is_skipped_on_its_own():
     data = conf()
     del data["calendar"][9]["28"]
-    with pytest.raises(SourceInvalid, match="no times"):
-        read(data)
+    fetched = read_days(conf_data(page(data)), date(2026, 10, 25), 14)
+    assert [s.reason for s in fetched.skipped] == ["MAWAQIT has no times for 2026-10-28"]
+    assert len(fetched.days) == 13
+
+
+def test_every_day_failing_rejects_the_page():
+    data = conf()
+    for day in range(25, 32):
+        data = set_day(data, 10, day, iqamah=["+91", "13:00", "+10", "+5", "20:15"])
+    with pytest.raises(SourceInvalid, match="Every day failed a check, like 2026-10-25 fajr iqamah"):
+        read(data, days=7)
 
 
 def test_missing_months_reject_the_page():
@@ -113,8 +139,8 @@ def test_bad_jumuah_rejects_the_page():
 def test_isha_iqamah_past_midnight_is_refused():
     data = set_day(conf(), 10, 25, times=["05:30", "07:00", "12:30", "15:30", "18:00", "23:50"],
                    iqamah=["+20", "13:00", "+10", "+5", "+15"])
-    with pytest.raises(SourceInvalid, match="after midnight"):
-        read(data)
+    fetched = read_days(conf_data(page(data)), date(2026, 10, 25), 14)
+    assert [s.reason for s in fetched.skipped] == ["2026-10-25 isha iqamah is after midnight"]
 
 
 @pytest.mark.parametrize(
@@ -166,8 +192,8 @@ def test_fajr_tied_to_sunrise_is_logged(http, fake_mawaqit, caplog):
 
     fake_mawaqit.pages["test-masjid"] = page(conf(fajrFixationComparedToShuruq=20))
     with caplog.at_level(logging.WARNING):
-        days = MawaqitSource().fetch(http, "test-masjid", date(2026, 10, 25), 3)
-    assert days[0].iqamah["fajr"] is None
+        fetched = MawaqitSource().fetch(http, "test-masjid", date(2026, 10, 25), 3)
+    assert fetched.days[0].iqamah["fajr"] is None
     assert "MAWAQIT page test-masjid sets fajrFixationComparedToShuruq, so its Fajr iqamah isn't used" in caplog.text
 
 

@@ -196,8 +196,26 @@ test("Settings says when there are no Jumuah times to pick from", async ({ page 
   await page.goto("/");
 
   await openEditor(page, "Edit preferred jumuah");
-  // On Settings it doesn't say "change it in Settings later".
-  await expect(page.locator(".chooser .notice")).toHaveText("Jumuah times for KMA aren't available yet.");
+  // On Settings it doesn't say "change it in Settings later", or repeat why the times are missing.
+  await expect(page.locator(".chooser .notice")).toHaveText("No Jumuah times to pick from for KMA right now.");
+});
+
+test("with stale times, the Jumuah editor doesn't repeat the notice", async ({ page }) => {
+  const notice =
+    "KMA's times couldn't be confirmed since Oct 16, 2026. Your calendar is using calculated times until they're back.";
+  const settings = finishedSettings();
+  const api = new MockApi().signedIn({
+    ...settings,
+    masjid_notices: [notice],
+    main_masjid: { ...settings.main_masjid!, iqamah_status: "Linked to MAWAQIT, last read Oct 16, 2026" },
+  });
+  api.jumuahTimes = {};
+  await api.install(page);
+  await page.goto("/");
+
+  await openEditor(page, "Edit preferred jumuah");
+  await expect(page.locator(".chooser .notice")).toHaveText("No Jumuah times to pick from for KMA right now.");
+  await expect(page.getByText(/couldn't be confirmed|calculated times/)).toHaveCount(1);
 });
 
 test("it looks like a Friday in a calendar: 11 AM to 4 PM, the rest greyed out", async ({ page }) => {

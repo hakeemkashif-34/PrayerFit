@@ -740,8 +740,8 @@ So the job is: (1) know where the sun is at any moment, and (2) find the moment 
 3. **Limits**: a 10 second timeout, and the page is read in chunks and dropped once it passes 3 MB.
 4. **Iqamah in 2 forms**: `"20:15"` is a clock time. `"+10"` means 10 minutes after that day's adhan. An empty value means the masjid didn't publish one, so it stays empty. `iqamaEnabled: false` means no iqamah at all.
 5. **Local dates**: I build each date as today plus n days, then look up its month and day. Never "plus 24 hours".
-6. **Checks** (`validate.py`): every prayer present, real clock times (`25:00` fails), adhan times in order, iqamah not before adhan, and iqamah at most 90 minutes after. An iqamah that would land after midnight is refused instead of guessed.
-7. **One bad value rejects the whole page.** A wrong time means a missed prayer, so I'd rather keep yesterday's good times than save half a broken page. The failure is logged as `MAWAQIT fetch for masjid <id> failed: <reason>`, with the masjid's ID and nothing about any user.
+6. **Checks** (`validate.py`): every prayer present, real clock times (`25:00` fails), adhan times in order, iqamah not before adhan, and iqamah at most 90 minutes after (150 for Isha since Milestone 7, section 23). An iqamah that would land after midnight is refused instead of guessed.
+7. **One bad value rejects the whole page.** A wrong time means a missed prayer, so I'd rather keep yesterday's good times than save half a broken page. (Since Milestone 7, section 23, a bad value rejects only its own day. The other days are still saved.) The failure is logged as `MAWAQIT fetch for masjid <id> failed: <reason>`, with the masjid's ID and nothing about any user.
 8. **Time zones**: times on the page are clock times in the masjid's time zone, so the database stores them as plain clock times (`time`, not a timestamp). The offset is only added when an event is built, for that exact date. On November 1, 05:30 is 10:30 UTC. On October 31 it's 09:30 UTC.
 9. **KMA's real page**: mawaqit.net was blocked in the cloud environment I built this in, so I saved KMA's page (`https://mawaqit.net/en/kma-masjid-ottawa`) from my laptop. Only a trimmed copy is in the repo, `backend/tests/fixtures/mawaqit/kma_page.html`: the `confData` script with just the adhan and iqamah tables, the Jumuah times, and a few labels. The full page stayed out of git, since git keeps deleted files in its history and the repo is public. `test_mawaqit_kma.py` checks times I read off the page by hand, and that all 365 days of 2026 pass the checks.
 10. **`+0` means iqamah at the adhan**: KMA's page has `+0` for Asr from Feb 27 to Sep 26 and for Isha from Feb 5 to Oct 14. At first I read it as "not set yet". Then I noticed the dates line up exactly: Isha is `+0` on October 14, when the adhan is after 7:40 pm, and switches to 7:40 pm on October 15, when the adhan is 7:39 pm. Asr does the same at 4:15 pm on September 27. So on those days KMA prays at the adhan. I checked this against KMA's MAWAQIT screen before changing it. Those days are labelled "KMA iqamah (MAWAQIT, ...)" like any other.
@@ -1825,3 +1825,86 @@ There are no default passwords anywhere: SSH has no password, Postgres gets a ra
 6. **Strict checks**: a bad time, an end before a start, Jumuah times out of order, Jumuah with no Friday in the range, or 2 entries giving the same prayer on the same date refuses the whole file. A half-read file could give a wrong time, and a wrong time means a missed prayer. The error is logged, and that masjid falls back to MAWAQIT as normal.
 7. **Settings**: the masjid's line adds "Iqamah and Jumuah times from the KMA announcement are used from Nov 1 to Nov 30, 2026", so the user can see where the times came from.
 8. **Tests** (`test_announced.py`): a date inside the range, a date outside it, home prayers keeping the adhan, offsets across the Nov 1 clock change from MAWAQIT and from calculated times, the drive block, a busy announced iqamah moving home, the Jumuah pick on all 4 Fridays, a busy pick using the earliest announced Jumuah, a later Friday, broken and missing files, and every check on a bad entry. Like the real MAWAQIT list, the real announcement folder is off in every other test (`no_real_announcements` in `conftest.py`), and `@pytest.mark.real_announcements` turns it on.
+
+### 23. KMA's times stopped being read, and notices shown twice
+
+1. **The problem**: from October 31, Settings said "KMA's times couldn't be confirmed since Oct 31, 2026". Every read of KMA's MAWAQIT page failed with `2026-11-05 isha iqamah is more than 90 minutes after adhan`.
+   a) It wasn't MAWAQIT blocking the server, the clock change, or a new page format. The page still read fine.
+   b) KMA updated its MAWAQIT page to match its announcement (section 22): Isha at 7:40 pm all of November. On Nov 5 the Isha adhan is 6:09 pm, so the iqamah is 91 minutes later. My check in `validate.py` said 90 at most.
+   c) One bad day rejected the whole 30-day read, so nothing was saved after October 31.
+2. **Isha gets 150 minutes**: many masjids fix Isha at one clock time all winter while the adhan keeps getting earlier. KMA's widest gap this year is under 150 minutes. The other 4 prayers keep 90, since a bigger gap there is more likely a typo. `max_gap()` in `validate.py` picks the limit.
+3. **A bad day is skipped on its own** (`read_days()` in `mawaqit.py`):
+   a) Each day is checked by itself. A day that fails goes in `skipped` with a reason that names the date and the prayer. The days that pass are saved as normal.
+   b) A problem with the page as a whole still rejects all of it: no confData, a missing month, or a bad Jumuah time. So does every day failing.
+   c) A skipped day isn't saved, so it keeps its last good row. `load_masjid_times` in `store.py` ignores a row older than 7 days (by `fetched_at`). That's the same 7-day rule as a failed read, so after a week a skipped day gets calculated times.
+   d) The read still counts as a success, so the masjid stays fresh. `last_error` keeps "Skipped 1 day: ..." so I can still see it.
+4. **Logging**: every log line now names the masjid's MAWAQIT page, like `MAWAQIT page kma-masjid-ottawa failed: status 403 Forbidden after 0.4 s`. A failed HTTP read logs the status and its reason, plus "Cloudflare challenge" when Cloudflare's `cf-mitigated` header is there. The page name is public, so it's safe to log. Addresses and user details still never are.
+5. **/stats**: each masjid shows "Last read: ..." with its `last_error`, so I can see a failure without SSH. `python -m app.admin stats` prints the same.
+6. **Reading again after a fix**: after 3 failures in a row a masjid waits 24 hours. `fetch-mawaqit --ignore-wait` reads it now anyway. It's only for after I deploy a fix for my own bug, never after a 403 or 429, which is MAWAQIT asking the app to slow down.
+7. **Notices said once**: the stale-times notice showed at the top of Settings and again under Main masjid in different words.
+   a) The notice now sits under "every 5 minutes", since both are about when the calendar updates. On a phone it comes before the Open Google Calendar button.
+   b) Main masjid only says when MAWAQIT was last read, like "Times from MAWAQIT, last read Oct 31, 2026".
+   c) I checked every page for other messages shown twice, and fixed 4 more:
+      - Settings: the busy-access banner hides when a save already says "Sign in again", since one sign-in fixes both.
+      - Settings: the Jumuah editor's note is now "No Jumuah times to pick from for KMA right now." Main masjid and the notice already say why.
+      - Setup: pressing Next with no location doesn't add "Pick your location from the list." when the hint under the masjid search already says it. It moves to the address box instead.
+      - Masjid search: no results says "Check the spelling." The line under the box already says "Can't find it? Type its address."
+      - /stats: with nobody signed up, it only says "Nobody has signed up yet.", not "PrayerFit has 0 users" too.
+8. **Tests**:
+   a) `test_mawaqit_kma_winter.py` reads a saved copy of KMA's page from November 3 (`fixtures/mawaqit/kma_page_2026-11-03.html`). It checks the week the clocks fell back, Nov 5's 91-minute Isha, and every day of the year.
+   b) `test_mawaqit_parser.py` checks the 150 and 90 minute limits, that each kind of bad day is skipped on its own, and that every day failing rejects the page.
+   c) `test_mawaqit_scheduler.py` checks that a bad day keeps its old times while the next day gets its new one, the log lines, and that a skipped day falls back after 7 days.
+   d) `test_mawaqit_download.py` checks the logged status and reason for 403, 429, 503, and a Cloudflare challenge. `test_admin.py` checks `--ignore-wait`.
+   e) Playwright checks the notice shows exactly once on Settings, under "every 5 minutes", on desktop and phone, plus a test for each of the other duplicates.
+
+### 24. Masjid ar-Rahmah from its own website
+
+1. **Why**: Masjid ar-Rahmah (AMA, 1216 Hunt Club Rd.) isn't on MAWAQIT. Its prayer page, https://www.mymasjid.ca/prayer/, has an "Iqaama Timetable" with no times in the HTML. The times come from an iframe: `https://app.mymasjid.ca/protected/public/timetable`, a small HTML table with Adhān and Iqāmah columns and 2 Jumuah rows. It isn't an image, so reading it doesn't need AI. robots.txt on www.mymasjid.ca allows everything, app.mymasjid.ca has none, and the site's policies say nothing about reading it.
+2. **Its own adapter** (`backend/app/masjid_times/mymasjid.py`): a second `MasjidTimesSource` next to MAWAQIT, registered in `get_source()`. If one breaks, only masjids linked to it fall back.
+   a) The URL is fixed in the code. A redirect isn't followed, and pages over 256 KB are refused.
+   b) The HTML is read with Python's `html.parser` as text. Script text is skipped, so nothing on the page is ever run.
+   c) "Zuhr" is Dhuhr. Times are 12-hour, like "05:22 AM". `twelve_hour()` turns "12:15 AM" into 0:15 and "12:30 PM" into 12:30.
+   d) The same per-day checks and logging as the KMA fix (section 23): the reason names the date and the prayer. It's the only day on the page, so a bad day rejects that read.
+3. **Today only**: the table has no date, and asking for another day gives the same page. Each read is saved as the masjid's local date. Days that weren't read use calculated times, never a copy of another day.
+   a) `keeps_future_days = False` on the adapter tells Settings that, so its notice says "Your calendar is using calculated times for the days mymasjid.ca couldn't be read." instead of "switches to calculated times on ...".
+   b) `save_days()` now counts a new date inside the calendar's 14 days as a change. Before, a new date was never a change, since MAWAQIT adds one at day 30 each day. Today's new row would have been saved, but no calendar would have updated.
+4. **Jumuah start times**: the 2 Jumuah rows only have a time in the Adhān column (12:00 pm and 1:30 pm). They're Jumuah start times, and no iqamah is claimed.
+   a) Friday has no row until Friday, so they're saved on the masjid's source for the coming Friday: `masjid_sources.upcoming_jumuah` (migration `0016`).
+   b) `MasjidTimes.jumuah_on(friday)` gives a Friday's Jumuah from there, or from the Friday's own row for MAWAQIT. The Jumuah question and the calendar both use it.
+   c) A bad Jumuah time only skips Jumuah. The 5 prayers are still saved, and the last good Jumuah stays.
+5. **My masjid list** (`app/data/mawaqit_masjids.csv`): the `mawaqit_link` column is now `times_link`, and each row has a source (migration `0017`). `source_from_link()` turns a MAWAQIT link into ("mawaqit", its ID), and only `https://www.mymasjid.ca/prayer/` into ("mymasjid", "mymasjid.ca"). Picking AMA in setup, or an OpenStreetMap masjid within the auto-link distance of it, links it to mymasjid.ca and reads it straight away.
+   a) Name, short name, and address are from the masjid's own contact page.
+   b) The location is the centre of the building on OpenStreetMap (way 483089921, tagged with mymasjid.ca as its website). The pin on the masjid's own map is within about 10 m of it. The masjid's "get directions" link is about 170 m off, since it's where that map was centred, so I didn't use it.
+6. **Tests**:
+   a) `test_mymasjid.py` reads a saved copy of the table from November 3, 2026 (`tests/fixtures/mymasjid/`) and changes one cell at a time: a missing iqamah, a missing or repeated prayer, bad times, each check, a bad Jumuah, a 3rd Jumuah, and script text. Downloads use a fake site (`tests/fake_mymasjid.py`), never the real one.
+   b) `test_mymasjid_calendar.py` follows a read to Google: today's iqamah, Wednesday on calculated times, the next day's read updating calendars, a failed read, and Jumuah at 12:00.
+   c) `test_masjid_search.py` checks "AMA", "ar-rahmah", and "rahmah" find it, picking it links to mymasjid.ca, and the Jumuah question shows its 2 times.
+   d) There's no daylight saving test against the page itself: it only ever has today, so there's no saved week to test.
+7. **When it's read**: the page has no date, so a read at the wrong hour could save yesterday's (or tomorrow's) table as today's.
+   a) I watched the live page overnight from November 3 to 4, every 5 minutes, plus my own reads at set times. It still showed November 3 at 7:00 to 7:20 pm, so it doesn't switch at midnight UTC. It showed November 3 at 11:41 pm and November 4 at 12:03 am, so it switches around midnight Toronto time. The new table's adhan times matched the calculated November 4 times within a minute, which confirmed the new day.
+   b) Reads only happen from 12:15 am to 6:45 pm Toronto time. The first read is at least 12 minutes after the switch, and nothing is read in the evening, so a read never saves the wrong day's table.
+   c) MAWAQIT reads once per 6-hour UTC block. That didn't work here: the block from 7 pm to 1 am read at 7 pm the day before, so the new day's first read was 1 am in winter and 2 am in summer. Now each source picks its own read slots (`read_slot()`). MAWAQIT still uses the UTC block. mymasjid.ca uses the local clock.
+   d) The first read is at 12:15 am, at least 3 hours before Fajr all year (about 3:30 am in summer), so that day's Fajr iqamah is in the calendar in time. A read that adds today's times updates calendars within a minute.
+   e) Until a read works, it's tried every hour. After 3 failures in a row it waits for the 12:00 pm read. If that fails too, it waits until the next day's 12:15 am read, not 24 hours, since a missed day can't be read later. A 403 or 429 still waits 24 hours, since that's the site asking to slow down.
+   f) From 12:00 pm it's read once more, in case the masjid changed a time during the day. So a normal day is 2 reads: 12:15 am and 12:00 pm.
+   g) `test_mymasjid_calendar.py` runs the worker every 5 minutes through whole days and checks the read times: a winter day, a summer day, both days the clocks change, a failed first read, the site down overnight but back by noon, the site down all day, and a 403.
+
+### 25. Masjid locations on prayer events
+
+1. **What**: a prayer at the masjid, like "Asr at KMA" or "Jumuah at KMA", now has the masjid as its Google Calendar location, like "Kanata Muslim Association, 351 Sandhill Road, Ottawa". Google Calendar shows it under the title, and a tap opens it in Maps.
+2. **Where the text comes from** (`masjid_location()` in `event_plan.py`): the masjid's saved name and address.
+   a) The address is what OpenStreetMap or my masjid list has. If no address is saved (KMA from my list has none), it's just the name.
+   b) A postal code is taken out, even if one was saved.
+   c) A masjid a user picked by typing an address gets no location. That address is only what one user typed, not a public address, and it could be close to their home.
+3. **What gets none**: prayers at home, prayers moved because of a busy time, and clash prayers. They're all home events, so they never have a masjid. The user's home address is never put in any event.
+4. **Saving it**: `prayer_events.location` (migration `0018`). `google_event()` only adds `location` when it's set, so home events hash the same as before and aren't sent again.
+5. **Changes**: when a prayer moves from the masjid to home, the planned event has no location, so the row changes and is sent again. Updates are a PUT that replaces the whole event, so Google drops the old location too. Back to the masjid adds it again.
+6. **Existing events**: adding the location changes each future masjid prayer's hash, so the next update sends those again. Rows that already started are never updated (`save_window()` only changes rows that start after now), so past events keep what they had.
+7. **Drive blocks**: they have no location, on purpose.
+8. **List addresses**: most list masjids had no address, so their location was just the name. I added public addresses to `mawaqit_masjids.csv` from OpenStreetMap, only where OpenStreetMap has a Muslim place of worship with a matching name at the list's saved point (way or node checked with Nominatim). MAWAQIT pages don't include an address.
+   a) A masjid already picked from the list keeps the address it was saved with, so `update_picked_list_masjids()` in `auto_link.py` copies each entry's name and address onto those masjids when the list changes, and queues a calendar update for their users.
+   b) For the rest I used each masjid's own website: Stittsville, Abrar Masjid (MAC's centre page), Markaz At-Tawheed, Ottawa Valley Islamic Centre, the Islamic Society of Gloucester, and Darul Arqum. One trap: ISG's homepage mentions "1880 Innes Road", but that's the Rona where people park for Eid. Its contact page has the masjid's own address.
+   c) Masjid Bilal (MAWAQIT id 48883) wasn't on the list. I added it with the name and location from its MAWAQIT page and the address from OpenStreetMap (way 229623196), which matches the page's location within a few metres.
+   d) 20 of the 25 list masjids have an address now. The other 5 stay name only, and I didn't guess any: Abdullah Issa Masjid, Imam Ash-Shafii Centre (its site only has an email), Centretown Mosque (its site's security certificate has expired), Alshareef Islamic Centre (its site wouldn't connect), and Mosquée Meriam (CIO's site doesn't give its address).
+   e) A masjid picked from OpenStreetMap that's linked to a list entry now takes the list's name (`use_list_name()` in `auto_link.py`). OpenStreetMap calls Masjid Bilal "Masjid Bilal, Islamic Society of Cumberland", but setup's search shows "Masjid Bilal", so event titles now match what the user picked. Only the name changes: the address stays OpenStreetMap's, and a short name the user typed is saved apart and never touched. It runs every time the app starts, and again when someone picks the masjid, since a pick saves OpenStreetMap's name again.
+9. **Tests** (`test_event_location.py`): the location text for each kind of masjid, masjid and Jumuah events, home events with none, a masjid prayer that moves and loses its location, a clash, a prayer going from the masjid to home and back, and the first update after this change sending only future masjid prayers, never past ones.

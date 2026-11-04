@@ -80,14 +80,17 @@ Masjid times come from each masjid's public page on [MAWAQIT](https://mawaqit.ne
 MAWAQIT's search needs a login and it has no sitemap, so the app can't find a masjid's page by itself. I keep my own list in `backend/app/data/mawaqit_masjids.csv`, one masjid per line:
 
 ```
-name,short_name,address,mawaqit_link,latitude,longitude
+name,short_name,address,times_link,latitude,longitude
 Kanata Muslim Association,KMA,,https://mawaqit.net/en/id/9793,45.356128,-75.9283718
 Barrhaven Islamic Centre,BIC,"3971 Greenbank Road, Ottawa",https://mawaqit.net/en/id/17559,45.2364361,-75.7255711
+Masjid ar-Rahmah,AMA,"1216 Hunt Club Rd., Ottawa",https://www.mymasjid.ca/prayer/,45.3517835,-75.6473151
 ```
 
-It has 23 masjids around Ottawa. `short_name` and `address` are optional. Setup's search finds a masjid by its short name too, and shows the address under its name. The link is either a share link (`https://mawaqit.net/en/id/9793`, from MAWAQIT's Share button) or a page link (`https://mawaqit.net/en/cio-gatineau`). The app saves `id/9793` or `cio-gatineau` and reads the times from that link. A share link answers with the masjid's page straight away.
+It has 25 masjids around Ottawa: 24 on MAWAQIT, and Masjid ar-Rahmah (AMA), read from its own website (see "Masjid ar-Rahmah from mymasjid.ca" below). `short_name` and `address` are optional. Setup's search finds a masjid by its short name too, and shows the address under its name. A MAWAQIT link is either a share link (`https://mawaqit.net/en/id/9793`, from MAWAQIT's Share button) or a page link (`https://mawaqit.net/en/cio-gatineau`). The app saves `id/9793` or `cio-gatineau` and reads the times from that link. A share link answers with the masjid's page straight away.
 
 The backend and the worker load the file every time they start. Loading it again never adds a copy. If I fix a name or a location in the file, the saved one changes too.
+
+A masjid picked from OpenStreetMap that's linked to a list entry uses the list's name in titles and Settings, like "Masjid Bilal" instead of OpenStreetMap's "Masjid Bilal, Islamic Society of Cumberland". Its address stays OpenStreetMap's, and a user's own short name always wins.
 
 ### Masjid search in setup
 
@@ -120,14 +123,29 @@ Barrhaven Islamic Centre (BIC) is the 2nd masjid with a saved MAWAQIT page in th
 1. It publishes 2 Jumuah times, 1:00 pm and 2:30 pm. Its 3rd Jumuah is empty, so the parser gives 2 slots, numbered 1 and 2.
 2. `test_mawaqit_bic.py` checks Nov 1's adhan and iqamah, the clock change, both Jumuah times, and that every day of the year passes the checks.
 
+### Masjid ar-Rahmah from mymasjid.ca
+
+Masjid ar-Rahmah (AMA, 1216 Hunt Club Rd., Ottawa) isn't on MAWAQIT. Its prayer page, https://www.mymasjid.ca/prayer/, shows an "Iqaama Timetable" in an iframe. The iframe is a small HTML table from `https://app.mymasjid.ca/protected/public/timetable`, with an Adhān and an Iqāmah column for each prayer and 2 Jumuah rows. Its own adapter, `backend/app/masjid_times/mymasjid.py`, reads it, separate from the MAWAQIT adapter, so one breaking never breaks the other.
+
+1. **Today only**: the table has no date, and no way to ask for another day. Each read is saved as the masjid's local date at that moment. Days that haven't been read use calculated times, never a copy of another day.
+2. **Names**: "Zuhr" on the page is Dhuhr.
+3. **Missing iqamah**: an empty Iqāmah cell stays empty, the calculated start time is used, and the worker logs it. An iqamah is never made up.
+4. **Jumuah**: the 2 Jumuah rows only have a time in the Adhān column. They're the Jumuah start times (12:00 pm and 1:30 pm when it was saved), with no iqamah claimed. They're saved on the masjid's source for the coming Friday (`masjid_sources.upcoming_jumuah`), since Friday has no row until Friday comes. The Jumuah question and the calendar use them like MAWAQIT's.
+5. **Checks**: the same per-day checks as MAWAQIT (`validate.py`). It's the only day on the page, so a failed check rejects that read and says which prayer. A bad Jumuah time only skips Jumuah, and the last good Jumuah times stay.
+6. **Freshness**: the same rules as MAWAQIT, measured from the last good read. After 24 hours Settings shows `AMA's times couldn't be confirmed since Nov 3, 2026. Your calendar is using calculated times for the days mymasjid.ca couldn't be read.` A day that was read keeps its times for up to 7 days.
+7. **When it's read**: the page has no date, so it's only read from 12:15 am to 6:45 pm Toronto time. That's safe whether the page switches days at midnight in Toronto or at midnight UTC (7 pm, or 8 pm in summer). The first read is at 12:15 am, hours before Fajr, so that day's Fajr iqamah is in the calendar in time. Until a read works it's tried every hour. After 3 failures it waits for the 12:00 pm read, then for the next day's 12:15 am read. A 403 or 429 waits 24 hours. From 12:00 pm it's read once more. A normal day is 2 reads: 12:15 am and 12:00 pm.
+8. **Where it's from**: name and address from the masjid's contact page. The location is the centre of the building on OpenStreetMap (way 483089921, 45.3517835, -75.6473151), which is within about 10 m of the pin on the masjid's own map.
+9. **Tests**: `test_mymasjid.py` reads a saved copy of the table from November 3, 2026 (`backend/tests/fixtures/mymasjid/`). `test_mymasjid_calendar.py` follows it to the calendar. Tests never call the real site.
+
 ### What it changes in the calendar
 
 1. **Masjid prayers** use the masjid's iqamah. Settings shows where it came from, like `Times from MAWAQIT, updated Oct 25, 2026`. A day with no iqamah uses the calculated start time. An iqamah is never made up. `+0` on a MAWAQIT page means the iqamah is at the adhan time: KMA uses it for Asr and Isha on days when its set time would come before the adhan. If a page sets `fajrFixationComparedToShuruq`, Fajr's iqamah isn't used and the worker logs it, since that setting's format isn't known.
-2. **Home prayers** use the main masjid's adhan time.
-3. **Jumuah**: Jumuah is always at your main masjid. On the coming Friday (today, if it's Friday), Dhuhr becomes `Jumuah at <masjid>`. This is where your busy times come in, not in the setup question. It uses your pick (its 1st, 2nd, or 3rd Jumuah) if that slot fits your calendar, with no description. If it clashes, or that slot isn't on this Friday, it uses the earliest Jumuah that fits, and the description says `Your pick (1st Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits.` (or `isn't on this Friday`). If every one clashes, it uses the 1st Jumuah, and the description says `Every Jumuah clashes with your calendar, so this is the 1st Jumuah.` If you pray at home, or your masjid has no Jumuah times, there's no Jumuah and Friday follows your weekly prayers.
-4. **Only the coming Friday** uses MAWAQIT's Jumuah times, since a MAWAQIT page only shows this week's. Later Fridays follow your weekly grid for Dhuhr, and say `This Friday's Jumuah times aren't published yet, so this follows your weekly prayers.` They change to Jumuah once a later read covers that Friday.
-5. **Jumuah length**: each masjid can have its own, set on the server ([SETUP.md](SETUP.md#linking-a-masjid-by-hand)). Without one, the block is 45 minutes. The other prayer blocks are Fajr 10 minutes, Dhuhr 15, Asr 10, Maghrib 10, and Isha 15.
-6. **Freshness**: each read saves a full 30-day calendar from MAWAQIT, so if MAWAQIT can't be read, the last times read are kept for up to 7 days.
+2. **Location**: masjid prayer blocks (Jumuah too) have the masjid as their Google Calendar location, like `Kanata Muslim Association, 351 Sandhill Road, Ottawa`: its saved name and public address, with no postal code. Home, moved, and clash prayers have none, and the user's home address is never in an event. A masjid picked by typing an address gets none either. Drive blocks have none.
+3. **Home prayers** use the main masjid's adhan time.
+4. **Jumuah**: Jumuah is always at your main masjid. On the coming Friday (today, if it's Friday), Dhuhr becomes `Jumuah at <masjid>`. This is where your busy times come in, not in the setup question. It uses your pick (its 1st, 2nd, or 3rd Jumuah) if that slot fits your calendar, with no description. If it clashes, or that slot isn't on this Friday, it uses the earliest Jumuah that fits, and the description says `Your pick (1st Jumuah) clashes with your calendar, so this is the earliest Jumuah that fits.` (or `isn't on this Friday`). If every one clashes, it uses the 1st Jumuah, and the description says `Every Jumuah clashes with your calendar, so this is the 1st Jumuah.` If you pray at home, or your masjid has no Jumuah times, there's no Jumuah and Friday follows your weekly prayers.
+5. **Only the coming Friday** uses MAWAQIT's Jumuah times, since a MAWAQIT page only shows this week's. Later Fridays follow your weekly grid for Dhuhr, and say `This Friday's Jumuah times aren't published yet, so this follows your weekly prayers.` They change to Jumuah once a later read covers that Friday.
+6. **Jumuah length**: each masjid can have its own, set on the server ([SETUP.md](SETUP.md#linking-a-masjid-by-hand)). Without one, the block is 45 minutes. The other prayer blocks are Fajr 10 minutes, Dhuhr 15, Asr 10, Maghrib 10, and Isha 15.
+7. **Freshness**: each read saves a full 30-day calendar from MAWAQIT, so if MAWAQIT can't be read, the last times read are kept for up to 7 days.
    a) Under 24 hours since the last good read: the times are used.
    b) 24 hours to 7 days: the times are still used, and Settings shows a notice at the top: `KMA's times couldn't be confirmed since Oct 24, 2026. Your calendar is still using the last times read from MAWAQIT, and switches to calculated times on Oct 31, 2026 if they still can't be read.`
    c) Over 7 days: your calendar uses calculated times until a read works again, and the notice says `Your calendar is using calculated times until they're back.` A calculated start is never later than the iqamah, so you're early, never late.

@@ -250,11 +250,25 @@ test("Next asks for a location and a masjid first", async ({ page }) => {
   await page.goto("/");
 
   await page.getByRole("button", { name: "Next" }).click();
-  await expect(page.getByRole("alert")).toHaveText("Pick your location from the list.");
+  // The hint under the masjid search already says it, so there's no second message. The address box gets focus.
+  await expect(page.getByText(/Pick your location/)).toHaveCount(1);
+  await expect(page.getByText("Pick your location first, so masjids near you come up first.")).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "Address" })).toBeFocused();
   await pickHome(page);
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByRole("alert")).toHaveText("Pick your masjid, or choose I pray at home.");
   expect(api.calls("PUT", "/api/settings/main-masjid")).toHaveLength(0);
+});
+
+test("with I pray at home and no location, Next says to pick a location, once", async ({ page }) => {
+  await new MockApi().signedIn().install(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "I pray at home" }).click();
+  // "I pray at home" hides the hint under the masjid search, so the error says it instead.
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByRole("alert")).toHaveText("Pick your location from the list.");
+  await expect(page.getByText(/Pick your location/)).toHaveCount(1);
 });
 
 test("the arrow keys and Enter pick a suggestion", async ({ page }) => {
@@ -364,9 +378,10 @@ test("a typo with no masjid nearby says so", async ({ page }) => {
   await page.goto("/");
   await pickHome(page);
   await masjidBox(page).pressSequentially("Kanta M", { delay: 30 });
-  await expect(page.getByRole("listbox")).toHaveText(
-    "No masjid found near you. Check the spelling, or type the masjid's address instead.",
-  );
+  await expect(page.getByRole("listbox")).toHaveText("No masjid found near you. Check the spelling.");
+  // The tip to type its address is said once, under the box.
+  await expect(page.getByText(/its address|address instead/)).toHaveCount(1);
+  await expect(page.getByText("Can't find it? Type its address.")).toBeVisible();
 });
 
 test("only masjids within 100 km are suggested", async ({ page }) => {

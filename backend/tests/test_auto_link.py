@@ -117,7 +117,7 @@ def test_mawaqit_being_down_never_stops_picking_a_masjid(signed_in, db, kma_page
     picked = pick_masjid(signed_in, "Kanata", KMA_LABEL)
     assert picked["name"] == KMA_LABEL
     # Still linked, so the worker tries again in the next 6-hour block.
-    assert source_of(db, picked["id"]).last_error == "MAWAQIT answered 500"
+    assert source_of(db, picked["id"]).last_error == "MAWAQIT answered status 500 Internal Server Error"
     assert slots(signed_in, picked["id"])["no_times"] != []
 
 
@@ -203,7 +203,9 @@ def test_add_mawaqit_adds_to_the_list_and_links_users_masjids(db, fake_google):
     with Session(db) as session:
         entry = session.get(MawaqitListEntry, "id/99999")
         assert (entry.name, entry.added_by) == ("Kanata Muslim Association", "admin")
-    assert source_of(db, masjid_id(db, "KMA")).origin == "auto"
+    # It was picked from OpenStreetMap as "KMA", and now takes the list's name.
+    kma = masjid_id(db, "Kanata Muslim Association")
+    assert source_of(db, kma).origin == "auto"
 
     # The same again changes nothing.
     with Session(db) as session:

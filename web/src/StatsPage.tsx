@@ -258,8 +258,9 @@ function UsersCard() {
     };
   }, [range]);
 
-  // Every range ends now, so its last point is today's total.
-  const total = graph ? (graph.points.at(-1)?.total ?? 0) : null;
+  // Every range ends now, so its last point is today's total. With no points
+  // the graph says "Nobody has signed up yet.", so the total isn't shown too.
+  const total = graph?.points.at(-1)?.total ?? null;
   return (
     <section className="card stats-section" aria-labelledby="graph-title">
       <div className="graph-head">
@@ -331,6 +332,7 @@ export function StatsPage() {
                   <td>
                     {m.name}
                     {!m.mawaqit_linked && <span className="tag">No MAWAQIT times</span>}
+                    {m.last_error && <p className="last-read">Last read: {m.last_error}</p>}
                   </td>
                   <td>{m.users}</td>
                 </tr>

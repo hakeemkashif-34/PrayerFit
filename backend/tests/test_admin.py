@@ -110,3 +110,29 @@ def test_the_command_sets_it(db, kma, monkeypatch, capsys):
     monkeypatch.setattr(admin, "get_engine", lambda: db)
     admin.main(["set-jumuah-length", "--masjid", str(kma), "--minutes", "30"])
     assert "Jumuah to 30 minutes" in capsys.readouterr().out
+
+
+def test_fetch_can_skip_the_24_hour_wait_after_a_fix(db, kma, fake_mawaqit, http, monkeypatch, capsys):
+    from contextlib import nullcontext
+    from datetime import timedelta
+
+    link(db, kma, "kma-masjid-ottawa", fake_mawaqit)
+    with Session(db) as session:
+        source = session.get(MasjidSource, kma)
+        source.consecutive_failures = 3
+        source.retry_after = datetime.now(UTC) + timedelta(hours=20)
+        session.commit()
+    monkeypatch.setattr(admin, "get_engine", lambda: db)
+    # The command opens the client with "with" each time, so hand it the fake without closing it.
+    monkeypatch.setattr(admin, "new_http_client", lambda: nullcontext(http))
+
+    # Without the flag the wait still applies.
+    admin.main(["fetch-mawaqit", "--masjid", str(kma)])
+    assert capsys.readouterr().out.startswith("skipped. Waiting until")
+    assert fake_mawaqit.requests == []
+
+    admin.main(["fetch-mawaqit", "--masjid", str(kma), "--ignore-wait"])
+    assert capsys.readouterr().out.strip() == "done"
+    with Session(db) as session:
+        source = session.get(MasjidSource, kma)
+        assert (source.retry_after, source.consecutive_failures, source.last_error) == (None, 0, None)

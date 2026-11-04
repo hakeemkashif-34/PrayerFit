@@ -134,6 +134,9 @@ class PrayerEvent(Base):
     # "normal", "moved" (busy times moved it), or "clash" (no free time at all).
     # When free/busy fails, moved and clash rows are kept as they are.
     fit: Mapped[str] = mapped_column(String(8), default="normal", server_default="normal")
+    # Only on masjid prayer blocks: the masjid's name and public address, like
+    # "Barrhaven Islamic Centre, 3971 Greenbank Road, Ottawa". Never the user's home.
+    location: Mapped[str | None] = mapped_column(Text)
 
 
 class UserCountChange(Base):
@@ -249,7 +252,9 @@ class Masjid(Base):
 
 
 class MawaqitListEntry(Base):
-    """One masjid on my list of MAWAQIT masjids (app/data/mawaqit_masjids.csv).
+    """One masjid on my list of masjids with published times (app/data/mawaqit_masjids.csv).
+
+    Almost all are on MAWAQIT. Masjid ar-Rahmah is read from its own website.
 
     MAWAQIT's search needs a login, so the app can't find a masjid's page by
     itself. I collect them by hand, and the app matches users' masjids to
@@ -258,8 +263,11 @@ class MawaqitListEntry(Base):
 
     __tablename__ = "mawaqit_list"
 
-    # "id/9793" for a share link (mawaqit.net/en/id/9793), or a page name like "cio-gatineau".
+    # "id/9793" for a share link (mawaqit.net/en/id/9793), a page name like
+    # "cio-gatineau", or "mymasjid.ca" for Masjid ar-Rahmah's own website.
     external_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    # Which adapter reads it: "mawaqit" or "mymasjid". Linked masjids get the same source.
+    source: Mapped[str] = mapped_column(String(16), default="mawaqit", server_default="mawaqit")
     name: Mapped[str] = mapped_column(Text)
     # Like "BIC". Setup's search finds a masjid by it. Optional.
     short_name: Mapped[str | None] = mapped_column(Text)
@@ -306,7 +314,7 @@ class MasjidSource(Base):
     masjid_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("masjids.id", ondelete="CASCADE"), primary_key=True
     )
-    # "mawaqit" for now. Each source has its own adapter.
+    # "mawaqit" or "mymasjid". Each source has its own adapter (see masjid_times/source.py).
     source: Mapped[str] = mapped_column(String(16))
     external_id: Mapped[str] = mapped_column(String(200))
     # "admin" or "auto". Links made before automatic matching are all "admin".
@@ -326,6 +334,10 @@ class MasjidSource(Base):
     # After a 403, a 429, or 3 failures in a row, no fetch before this.
     retry_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
+    # Only for a today-only source (mymasjid.ca): the coming Friday's Jumuah,
+    # like {"friday": "2026-11-06", "slots": [{"order": 1, "time": "12:00"}]}.
+    # MAWAQIT keeps its Jumuah on the Friday's row in masjid_day_times instead.
+    upcoming_jumuah: Mapped[dict | None] = mapped_column(JSON)
 
 
 class MasjidDayTimes(Base):
@@ -362,8 +374,9 @@ class MasjidDayTimes(Base):
 class MasjidFetchJob(Base):
     """One read of one masjid's source.
 
-    The ID is "{source}:{masjid_id}:{6-hour block}", so each masjid is read
-    at most once per block, however many users picked it.
+    The ID is "{source}:{masjid_id}:{slot}": a 6-hour UTC block for MAWAQIT,
+    or a local hour or "midday" for mymasjid.ca. So each masjid is read at
+    most once per slot, however many users picked it.
     """
 
     __tablename__ = "masjid_fetch_jobs"

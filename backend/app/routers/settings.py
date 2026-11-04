@@ -31,8 +31,9 @@ from app.event_plan import date_text
 from app.masjid_times.announced import announcement_for
 from app.masjid_times.auto_link import link_and_fetch
 from app.masjid_times.freshness import FRESH_FOR, USABLE_FOR, Freshness, freshness
+from app.masjid_times.source import get_source
 from app.jumuah_choices import JumuahChoices, jumuah_choices
-from app.models import Masjid, MasjidSource, PrayerEvent, User, WeeklyMasjidPrayers
+from app.models import Masjid, MasjidSource, MawaqitListEntry, PrayerEvent, User, WeeklyMasjidPrayers
 from app.prayer_sync import SyncIncomplete
 from app.prayer_times import DEFAULT_TIMEZONE
 from app.update_jobs import queue_update, run_update
@@ -120,7 +121,7 @@ class SettingsOut(BaseModel):
     # Popup reminders, minutes before the event, 0 to 60. 0 means no notification.
     leave_reminder_minutes: int = DEFAULT_LEAVE_REMINDER_MINUTES
     home_reminder_minutes: int = DEFAULT_HOME_REMINDER_MINUTES
-    # "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown at the top of Settings.
+    # "KMA's times couldn't be confirmed since Oct 25, 2026. ..." Shown once, under "every 5 minutes" on Settings.
     masjid_notices: list[str] = []
 
 
@@ -152,15 +153,20 @@ def times_status(db: Session, masjid: Masjid, now: datetime, time_zone: str) -> 
 
 
 def _mawaqit_status(source: MasjidSource, now: datetime, time_zone: str) -> str:
+    # "MAWAQIT", or "mymasjid.ca" for Masjid ar-Rahmah.
+    site = get_source(source.source).label
     age = freshness(source.last_success_at, now)
     if age is Freshness.NEVER:
-        return "Linked to MAWAQIT. Its times haven't been read yet"
+        return f"Linked to {site}. Its times haven't been read yet"
+    # The notice under "every 5 minutes" explains a stale read and what the
+    # calendar uses, so this only says when the source was last read. Saying it
+    # in both places showed the same message twice.
     if age is Freshness.STALE:
-        return f"MAWAQIT times couldn't be confirmed since {date_text(source.last_success_at, time_zone)}, so the last times read are used"
+        return f"Times from {site}, last read {date_text(source.last_success_at, time_zone)}"
     if age is Freshness.TOO_OLD:
-        return f"MAWAQIT times couldn't be confirmed since {date_text(source.last_success_at, time_zone)}, so calculated times are used"
+        return f"Linked to {site}, last read {date_text(source.last_success_at, time_zone)}"
     changed = source.last_changed_at or source.last_success_at
-    return f"Times from MAWAQIT, updated {date_text(changed, time_zone)}"
+    return f"Times from {site}, updated {date_text(changed, time_zone)}"
 
 
 def masjid_notices(db: Session, masjids: list[tuple[Masjid, str]], now: datetime, time_zone: str) -> list[str]:
@@ -168,8 +174,10 @@ def masjid_notices(db: Session, masjids: list[tuple[Masjid, str]], now: datetime
 
     masjids: each masjid with the label the user sees, like "KMA".
     A masjid linked less than 24 hours ago that hasn't been read yet gets no notice.
-    For up to 7 days the last times read are still used, so the notice says
-    when the calendar switches to calculated times.
+    MAWAQIT: for up to 7 days the last times read are still used, so the
+    notice says when the calendar switches to calculated times.
+    mymasjid.ca: it only shows today, so a day that wasn't read is already
+    on calculated times, and the notice says that.
     """
     notices = []
     for masjid, label in masjids:
@@ -182,11 +190,17 @@ def masjid_notices(db: Session, masjids: list[tuple[Masjid, str]], now: datetime
         since = source.last_success_at or source.linked_at
         if now - since < FRESH_FOR:
             continue
-        if age is Freshness.STALE:
+        adapter = get_source(source.source)
+        if age is Freshness.STALE and adapter.keeps_future_days:
             notices.append(
                 f"{label}'s times couldn't be confirmed since {date_text(since, time_zone)}. "
-                "Your calendar is still using the last times read from MAWAQIT, and switches to calculated times on "
+                f"Your calendar is still using the last times read from {adapter.label}, and switches to calculated times on "
                 f"{date_text(since + USABLE_FOR, time_zone)} if they still can't be read."
+            )
+        elif age is Freshness.STALE:
+            notices.append(
+                f"{label}'s times couldn't be confirmed since {date_text(since, time_zone)}. "
+                f"Your calendar is using calculated times for the days {adapter.label} couldn't be read."
             )
         else:
             notices.append(
@@ -452,7 +466,7 @@ class PickRequest(BaseModel):
 
 
 def _masjid_from_list(db: Session, picked: Suggestion, now: datetime) -> Masjid:
-    """The masjid for a pick from my MAWAQIT list, linked to its page straight away.
+    """The masjid for a pick from my masjid list, linked to its source straight away.
 
     If someone already picked the same masjid from OpenStreetMap and it's
     linked to this list entry, that row is reused, so it isn't counted twice.
@@ -485,10 +499,12 @@ def _masjid_from_list(db: Session, picked: Suggestion, now: datetime) -> Masjid:
     masjid = db.get(Masjid, masjid_id, populate_existing=True)
     if not masjid.no_auto_link:
         # Its own list entry, so the distance is 0. Never over a link I made or removed by hand.
+        # The entry says which source to read: MAWAQIT, or mymasjid.ca for Masjid ar-Rahmah.
+        entry = db.get(MawaqitListEntry, external_id)
         db.execute(
             insert(MasjidSource)
             .values(
-                masjid_id=masjid_id, source="mawaqit", external_id=external_id, origin="auto",
+                masjid_id=masjid_id, source=entry.source if entry else "mawaqit", external_id=external_id, origin="auto",
                 list_external_id=external_id, match_distance_m=0, linked_at=now,
             )
             .on_conflict_do_nothing()

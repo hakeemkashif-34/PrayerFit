@@ -1016,6 +1016,38 @@ ul.colour-list li[aria-selected="true"] {
   max-width: 360px;
 }
 
+/* Settings: the masjid notice sits under "every 5 minutes" on the left.
+   On a phone everything stacks: intro, notice, then the button. */
+.settings-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "intro" "notices" "action";
+  align-items: end;
+}
+
+.settings-top .top-intro {
+  grid-area: intro;
+}
+
+.settings-top .top-notices {
+  grid-area: notices;
+}
+
+.settings-top .top-action {
+  grid-area: action;
+}
+
+.top-notices .notice + .notice {
+  margin-top: 12px;
+}
+
+@media (min-width: 760px) {
+  .settings-top {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "intro action" "notices .";
+  }
+}
+
 .blocked-note {
   margin: 8px 0 0;
 }
@@ -1639,6 +1671,14 @@ main.adding h1 {
   text-align: right;
   padding-right: 0;
   font-variant-numeric: tabular-nums;
+}
+
+/* Why a masjid's last read failed. Long errors wrap instead of widening the table. */
+.last-read {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
 }
 
 /* "No MAWAQIT times": small, so the name stays the main thing. */

@@ -142,9 +142,10 @@ How matching, freshness, and the fallback work is in [TECHNICAL.md](TECHNICAL.md
 MAWAQIT's search needs a login and it has no sitemap, so the app can't find a masjid's page by itself. I keep my own list in `backend/app/data/mawaqit_masjids.csv`, one masjid per line:
 
 ```
-name,short_name,address,mawaqit_link,latitude,longitude
+name,short_name,address,times_link,latitude,longitude
 Kanata Muslim Association,KMA,,https://mawaqit.net/en/id/9793,45.356128,-75.9283718
 Barrhaven Islamic Centre,BIC,"3971 Greenbank Road, Ottawa",https://mawaqit.net/en/id/17559,45.2364361,-75.7255711
+Masjid ar-Rahmah,AMA,"1216 Hunt Club Rd., Ottawa",https://www.mymasjid.ca/prayer/,45.3517835,-75.6473151
 ```
 
 | Column | Required | What it's for |
@@ -152,12 +153,12 @@ Barrhaven Islamic Centre,BIC,"3971 Greenbank Road, Ottawa",https://mawaqit.net/e
 | `name` | yes | The name shown in setup and on /stats |
 | `short_name` | no | What people call it, like "BIC". Setup's search finds it by this too |
 | `address` | no | Shown under its name in setup. Put it in quotes if it has a comma |
-| `mawaqit_link` | yes | The masjid's MAWAQIT link |
+| `times_link` | yes | The masjid's MAWAQIT link, or `https://www.mymasjid.ca/prayer/` for Masjid ar-Rahmah |
 | `latitude`, `longitude` | yes | Where it is, for matching and distances |
 
-The first line must be exactly `name,short_name,address,mawaqit_link,latitude,longitude`. If it isn't, or any line is bad, the backend logs "Couldn't load the MAWAQIT list" and keeps the rows it already saved. A test reads the file on every push, so a typo shows up there first.
+The first line must be exactly `name,short_name,address,times_link,latitude,longitude`. If it isn't, or any line is bad, the backend logs "Couldn't load the MAWAQIT list" and keeps the rows it already saved. A test reads the file on every push, so a typo shows up there first.
 
-It has 23 masjids around Ottawa. The link is either a share link (`https://mawaqit.net/en/id/9793`, from MAWAQIT's Share button) or a page link (`https://mawaqit.net/en/cio-gatineau`). The app saves `id/9793` or `cio-gatineau` and reads the times from that link. A share link answers with the masjid's page straight away.
+It has 25 masjids around Ottawa: 24 on MAWAQIT, and Masjid ar-Rahmah (AMA), which isn't on MAWAQIT, so its times are read from its own website (see "Masjid ar-Rahmah from mymasjid.ca" in [TECHNICAL.md](TECHNICAL.md)). A MAWAQIT link is either a share link (`https://mawaqit.net/en/id/9793`, from MAWAQIT's Share button) or a page link (`https://mawaqit.net/en/cio-gatineau`). The app saves `id/9793` or `cio-gatineau` and reads the times from that link. A share link answers with the masjid's page straight away.
 
 The backend and the worker load the file every time they start. Loading it again never adds a copy. If I fix a name or a location in the file, the saved one changes too.
 
@@ -200,6 +201,14 @@ docker compose exec backend python -m app.admin scan-area
    ```
 
    Then `docker compose exec worker python -m app.worker run-now --force` to update calendars straight away.
+
+   After 3 failed reads in a row, or a 403 or 429 from MAWAQIT, the masjid waits 24 hours before the next read, and this command says `skipped. Waiting until ...`. If I just deployed a fix for my own bug, `--ignore-wait` reads it now anyway:
+
+   ```bash
+   docker compose exec backend python -m app.admin fetch-mawaqit --masjid <masjid id> --ignore-wait
+   ```
+
+   Don't use it after a 403 or 429. That means MAWAQIT asked the app to slow down. `python -m app.admin stats` and the /stats page show each masjid's last read error.
 
 4. To stop using a page: `python -m app.admin unlink-mawaqit --masjid <masjid id>`. Calendars go back to calculated times, and the masjid won't be linked automatically again. Linking it by hand undoes that.
 

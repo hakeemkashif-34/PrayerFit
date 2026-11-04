@@ -1,12 +1,15 @@
-"""Read each linked masjid's times, at most once every 6 hours.
+"""Read each linked masjid's times: MAWAQIT once every 6 hours, mymasjid.ca at set local times.
 
-One job per masjid per 6-hour block, never one per user. The job ID is
-"{source}:{masjid_id}:{block}", saved before it runs, so a second worker
-or a retry finds the same job instead of fetching again.
+One job per masjid per read slot, never one per user. The source picks the
+slot (read_slot): a 6-hour UTC block for MAWAQIT, a local hour or "midday"
+for mymasjid.ca. The job ID is "{source}:{masjid_id}:{slot}", saved before it
+runs, so a second worker or a retry finds the same job instead of fetching again.
 
 After a 403, a 429, or 3 failures in a row, the masjid waits 24 hours.
 A failed fetch never touches the saved times, so the last good ones
-stay in use (see freshness.py for how long).
+stay in use (see freshness.py for how long). The same goes for a single
+day that fails a check: the other days are saved, and that day keeps its
+last good times.
 """
 
 import logging
@@ -21,9 +24,9 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.geo.timezones import masjid_time_zone
-from app.masjid_times.source import SourceBlocked, SourceError, get_source
-from app.masjid_times.store import save_days
-from app.models import Masjid, MasjidFetchJob, MasjidSource, UserSettings
+from app.masjid_times.source import SkippedDay, SourceBlocked, SourceError, get_source
+from app.masjid_times.store import save_days, save_upcoming_jumuah
+from app.models import Masjid, MasjidDayTimes, MasjidFetchJob, MasjidSource, UserSettings
 from app.update_jobs import queue_update, users_of_masjid
 
 logger = logging.getLogger("app.masjid_times")
@@ -42,8 +45,17 @@ def block_start(now: datetime) -> datetime:
     return utc.replace(hour=utc.hour - utc.hour % BLOCK_HOURS, minute=0, second=0, microsecond=0)
 
 
-def fetch_job_id(source: str, masjid_id: uuid.UUID, now: datetime) -> str:
-    return f"{source}:{masjid_id}:{block_start(now):%Y-%m-%dT%H}"
+def fetch_job_id(source: str, masjid_id: uuid.UUID, slot: str) -> str:
+    """Like "mawaqit:<masjid>:2026-10-25T12". The source picks the slot (see read_slot)."""
+    return f"{source}:{masjid_id}:{slot}"
+
+
+def _read_today(db: Session, masjid_id: uuid.UUID, source: str, today) -> bool:
+    return db.scalars(
+        select(MasjidDayTimes.id).where(
+            MasjidDayTimes.masjid_id == masjid_id, MasjidDayTimes.source == source, MasjidDayTimes.local_date == today
+        )
+    ).first() is not None
 
 
 @dataclass
@@ -52,6 +64,15 @@ class FetchResult:
     status: str  # done, failed, blocked, or skipped
     changed: bool = False
     message: str = ""
+
+
+def skipped_text(skipped: list[SkippedDay]) -> str | None:
+    """"Skipped 1 day: 2026-11-05 isha iqamah is ...", or None when every day passed."""
+    if not skipped:
+        return None
+    if len(skipped) == 1:
+        return f"Skipped 1 day: {skipped[0].reason}"
+    return f"Skipped {len(skipped)} days, like {skipped[0].reason}"
 
 
 def _has_users(masjid_id):
@@ -94,32 +115,43 @@ def _finish(db: Session, job_id: str, status: str, now: datetime, error: str | N
     db.commit()
 
 
-def run_fetch(db: Session, http: httpx2.Client, masjid_id: uuid.UUID, now: datetime, force: bool = False) -> FetchResult:
+def run_fetch(
+    db: Session, http: httpx2.Client, masjid_id: uuid.UUID, now: datetime, force: bool = False, ignore_wait: bool = False
+) -> FetchResult:
     """Fetch one masjid's times, if this block's job hasn't run yet.
 
     force runs it again in the same block, for the admin command. It still
-    respects a 24-hour wait after a block.
+    respects a 24-hour wait after a block, unless ignore_wait is set too:
+    that's for right after I deploy a fix, never for a masjid that sent a 403 or 429.
     """
     source_row = db.get(MasjidSource, masjid_id)
     if source_row is None:
         return FetchResult("", "skipped", message="This masjid isn't linked to a source.")
-    job_id = fetch_job_id(source_row.source, masjid_id, now)
-    if source_row.retry_after is not None and source_row.retry_after > now:
+    source = get_source(source_row.source)
+    masjid = db.get(Masjid, masjid_id)
+    zone = ZoneInfo(masjid_time_zone(masjid))
+    local_now = now.astimezone(zone)
+    today = local_now.date()
+    # MAWAQIT: one read per 6-hour block. mymasjid.ca: only at hours when its
+    # page shows today, starting soon after midnight (see mymasjid.py).
+    # Checked before the job is saved. Never skipped, not even by the admin command.
+    slot = source.read_slot(local_now, _read_today(db, masjid_id, source.name, today))
+    if slot is None:
+        return FetchResult("", "skipped", message=f"Not a time {source.label} is read.")
+    job_id = fetch_job_id(source_row.source, masjid_id, slot)
+    if source_row.retry_after is not None and source_row.retry_after > now and not ignore_wait:
         return FetchResult(job_id, "skipped", message=f"Waiting until {source_row.retry_after:%Y-%m-%d %H:%M} UTC.")
     job = _save_job(db, job_id, masjid_id)
     if force and job.status in ("done", "failed", "blocked"):
         db.execute(update(MasjidFetchJob).where(MasjidFetchJob.id == job_id).values(status="pending"))
         db.commit()
     if not _claim(db, job_id, now):
-        return FetchResult(job_id, "skipped", message="Already fetched in this 6-hour block.")
+        return FetchResult(job_id, "skipped", message="Already read at this time.")
 
-    source = get_source(source_row.source)
-    masjid = db.get(Masjid, masjid_id)
-    today = now.astimezone(ZoneInfo(masjid_time_zone(masjid))).date()
     source_row = db.get(MasjidSource, masjid_id, populate_existing=True)
     source_row.last_attempt_at = now
     try:
-        days = source.fetch(http, source_row.external_id, today, FETCH_DAYS)
+        fetched = source.fetch(http, source_row.external_id, today, FETCH_DAYS)
     except SourceError as error:
         db.rollback()
         source_row = db.get(MasjidSource, masjid_id, populate_existing=True)
@@ -129,26 +161,42 @@ def run_fetch(db: Session, http: httpx2.Client, masjid_id: uuid.UUID, now: datet
         blocked = isinstance(error, SourceBlocked) or source_row.consecutive_failures >= MAX_FAILURES_IN_A_ROW
         if blocked:
             source_row.retry_after = now + WAIT_AFTER_BLOCK
+            # A 403 or 429 is the site asking to slow down, so that always waits 24 hours.
+            # Otherwise a source can wait less (mymasjid.ca: see wait_after_failures).
+            sooner = None if isinstance(error, SourceBlocked) else source.wait_after_failures(local_now)
+            if sooner is not None:
+                source_row.retry_after = min(source_row.retry_after, sooner)
         db.commit()
-        # Only the masjid's ID and the reason. Never an address or anything about a user.
-        logger.warning("%s fetch for masjid %s failed: %s", source.label, masjid_id, error)
+        # The masjid's ID, its public page name, and the reason. Never an address or anything about a user.
+        logger.warning(
+            "%s fetch for masjid %s (page %s) failed: %s", source.label, masjid_id, source_row.external_id, error
+        )
         status = "blocked" if blocked else "failed"
         _finish(db, job_id, status, now, str(error))
         return FetchResult(job_id, status, message=str(error))
 
-    changed = save_days(db, masjid_id, source.name, days, now)
+    changed = save_days(db, masjid_id, source.name, fetched.days, now)
+    changed = save_upcoming_jumuah(source_row, fetched.jumuah) or changed
     source_row.last_success_at = now
     source_row.consecutive_failures = 0
     source_row.retry_after = None
-    source_row.last_error = None
+    # Kept after a good read too, so /stats shows a day that keeps getting skipped.
+    source_row.last_error = skipped_text(fetched.skipped)
     if changed:
         source_row.last_changed_at = now
         for user_id in users_of_masjid(db, masjid_id):
             queue_update(db, user_id, source.name, now)
     db.commit()
     _finish(db, job_id, "done", now)
-    logger.info("%s fetch for masjid %s done, %s", source.label, masjid_id, "times changed" if changed else "no change")
-    return FetchResult(job_id, "done", changed=changed)
+    logger.info(
+        "%s fetch for masjid %s (page %s) done, %s%s",
+        source.label,
+        masjid_id,
+        source_row.external_id,
+        "times changed" if changed else "no change",
+        f", {len(fetched.skipped)} day(s) skipped" if fetched.skipped else "",
+    )
+    return FetchResult(job_id, "done", changed=changed, message=source_row.last_error or "")
 
 
 def run_due_fetches(engine: Engine, http: httpx2.Client, now: datetime) -> list[FetchResult]:

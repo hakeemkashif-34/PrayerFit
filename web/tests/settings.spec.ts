@@ -378,6 +378,28 @@ test("users without free/busy access get a banner to sign in again", async ({ pa
   expect(bannerBox!.y).toBeLessThan(card!.y);
 });
 
+test("a save that needs sign-in hides the banner, so Sign in again shows once", async ({ page }) => {
+  const api = new MockApi().signedIn(finishedSettings(), { busy_access: false });
+  await api.install(page);
+  await page.route("**/api/settings/weekly", (route) =>
+    route.fulfill({
+      json: {
+        settings: finishedSettings(),
+        calendar: { status: "sign_in_needed", sent: 0, waiting: 69, message: "Saved. Sign in again so your calendar can update." },
+      },
+    }),
+  );
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: /Sign in again so your prayers/ })).toBeVisible();
+
+  await openEditor(page, "Edit prayers at the masjid");
+  await page.getByRole("button", { name: "Save" }).click();
+
+  await expect(page.getByRole("status")).toContainText("Saved. Sign in again so your calendar can update.");
+  await expect(page.getByRole("region", { name: /Sign in again so your prayers/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Sign in again" })).toHaveCount(1);
+});
+
 test("Not now hides the banner, and it stays hidden in this browser", async ({ page }) => {
   const api = new MockApi().signedIn(finishedSettings(), { busy_access: false });
   await api.install(page);
@@ -495,6 +517,51 @@ test("a notice at the top says when a masjid's times couldn't be confirmed", asy
   // Above both cards.
   const [box, card] = await Promise.all([shown.boundingBox(), page.locator(".settings-card.required").boundingBox()]);
   expect(box!.y).toBeLessThan(card!.y);
+});
+
+test("the stale-times notice shows exactly once, under the every 5 minutes line", async ({ page }) => {
+  const notice =
+    "KMA's times couldn't be confirmed since Oct 31, 2026. Your calendar is still using the last times read " +
+    "from MAWAQIT, and switches to calculated times on Nov 7, 2026 if they still can't be read.";
+  const settings = finishedSettings();
+  await new MockApi()
+    .signedIn({
+      ...settings,
+      masjid_notices: [notice],
+      // What the backend sends for a stale masjid: when it was last read, not the notice again.
+      main_masjid: { ...settings.main_masjid!, iqamah_status: "Times from MAWAQIT, last read Oct 31, 2026" },
+    })
+    .install(page);
+  await page.goto("/");
+
+  // Once on the whole page, in any wording.
+  await expect(page.getByText(/couldn't be confirmed/)).toHaveCount(1);
+  await expect(page.getByText(notice)).toHaveCount(1);
+
+  // In the header, right under "every 5 minutes", and on its left side.
+  const shown = page.locator("header.top .top-notices").getByRole("status");
+  await expect(shown).toHaveText(notice);
+  const fiveMinutes = page.getByText(/reflected on your calendar every 5 minutes/);
+  const [noticeBox, textBox, button] = await Promise.all([
+    shown.boundingBox(),
+    fiveMinutes.boundingBox(),
+    page.getByRole("link", { name: "Open Google Calendar" }).boundingBox(),
+  ]);
+  expect(noticeBox!.y).toBeGreaterThanOrEqual(textBox!.y + textBox!.height);
+  expect(Math.abs(noticeBox!.x - textBox!.x)).toBeLessThan(2);
+  // Desktop: the button stays beside the intro, so the notice is the only thing under it.
+  // Phone: everything stacks, and the button comes after the notice.
+  if (page.viewportSize()!.width >= 760) {
+    expect(button!.y).toBeLessThan(noticeBox!.y);
+  } else {
+    expect(button!.y).toBeGreaterThan(noticeBox!.y + noticeBox!.height);
+  }
+
+  // Under Main masjid, only when MAWAQIT was last read.
+  await expect(page.getByText("Times from MAWAQIT, last read Oct 31, 2026")).toBeVisible();
+  // Nothing on the page is wider than the screen.
+  const wide = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(wide).toBe(false);
 });
 
 test("no notice when every masjid's times are fresh", async ({ page }) => {

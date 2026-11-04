@@ -40,6 +40,8 @@ class MasjidOut(BaseModel):
     users: int
     # False shows a "No MAWAQIT times" tag, so I know which to add.
     mawaqit_linked: bool
+    # Why the last MAWAQIT read failed or skipped a day, like "MAWAQIT answered status 403 Forbidden".
+    last_error: str | None = None
 
 
 class StatsOut(BaseModel):
@@ -63,7 +65,10 @@ class UsersOut(BaseModel):
 @router.get("/admin/stats", response_model=StatsOut, dependencies=[Depends(require_admin)])
 def read_stats(db: DbDep) -> StatsOut:
     return StatsOut(
-        masjids=[MasjidOut(name=m.name, users=m.users, mawaqit_linked=m.mawaqit_linked) for m in masjid_counts(db)],
+        masjids=[
+            MasjidOut(name=m.name, users=m.users, mawaqit_linked=m.mawaqit_linked, last_error=m.last_error)
+            for m in masjid_counts(db)
+        ],
     )
 
 
